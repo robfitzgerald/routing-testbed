@@ -1,0 +1,11 @@
+.DS_Store
+target/
+.idea
+result
+/*.sh
+*.sc
+*.log
+*.zip
+lib/classes
+lib/resolution-cache
+metastore_db
