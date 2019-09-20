@@ -6,5 +6,5 @@ case class PathSegment(edgeId: EdgeId, cost: Cost)
 
 object PathSegment {
   type Path = List[PathSegment]
-  val EmptyPath = List.empty[PathSegment]
+  val EmptyPath: Path = List.empty[PathSegment]
 }

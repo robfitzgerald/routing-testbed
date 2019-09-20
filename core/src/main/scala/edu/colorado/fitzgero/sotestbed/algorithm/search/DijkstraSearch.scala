@@ -3,6 +3,9 @@ package edu.colorado.fitzgero.sotestbed.algorithm.search
 import scala.annotation.tailrec
 import scala.collection.immutable
 
+import cats.Monad
+import cats.implicits._
+
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.PathSegment.{EmptyPath, Path}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
@@ -21,14 +24,16 @@ object DijkstraSearch {
     * @tparam E edge type
     * @return
     */
-  def vertexOrientedShortestPath[V, E](roadNetworkModel: RoadNetworkState[V, E],
+  def vertexOrientedShortestPath[F[_] : Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E],
                                        costFunction: E => Cost)(
       srcVertexId: VertexId,
       dstVertexId: VertexId,
-      direction: TraverseDirection): Option[Path] = {
+      direction: TraverseDirection): F[Option[Path]] = {
 
     if (srcVertexId == dstVertexId) {
-      Some { EmptyPath }
+      Monad[F].pure {
+        Some { EmptyPath }
+      }
     } else {
 
       val (treeSource, treeDestination) =
@@ -38,12 +43,16 @@ object DijkstraSearch {
         }
 
       for {
-        spanningTree <- vertexOrientedMinSpanningTree(roadNetworkModel, costFunction)(treeSource, Some {
+        spanningTreeOption <- vertexOrientedMinSpanningTree(roadNetworkModel, costFunction)(treeSource, Some {
           treeDestination
         }, direction)
-        path <- backtrack(spanningTree)(treeDestination)
       } yield {
-        path
+        for {
+          spanningTree <- spanningTreeOption
+          path <- backtrack(spanningTree)(treeDestination)
+        } yield {
+          path
+        }
       }
     }
   }
@@ -59,41 +68,75 @@ object DijkstraSearch {
     * @tparam E edge type
     * @return
     */
-  def edgeOrientedShortestPath[V, E](roadNetworkModel: RoadNetworkState[V, E],
-                                     costFunction: E => Cost)(
+  def edgeOrientedShortestPath[F[_] : Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E],
+                                     costFunction          : E => Cost)(
       srcEdgeId: EdgeId,
       dstEdgeId: EdgeId,
-      direction: TraverseDirection): Option[Path] = {
-    for {
-      srcVertex <- roadNetworkModel.destination(srcEdgeId)
-      dstVertex <- roadNetworkModel.source(dstEdgeId)
-    } yield {
-      if (srcEdgeId != dstEdgeId) {
-        // the agent is at both source and destination
-        EmptyPath
-      } else if (srcVertex == dstVertex) {
-
-        // edges are incident, path is length 2 and can be constructed without a search
-        val srcCost: Cost = roadNetworkModel.edge(srcEdgeId) match {
-          case None       => Cost.Zero
-          case Some(edge) => costFunction(edge)
-        }
-        val dstCost: Cost = roadNetworkModel.edge(dstEdgeId) match {
-          case None       => Cost.Zero
-          case Some(edge) => costFunction(edge)
-        }
-        List(PathSegment(srcEdgeId, srcCost), PathSegment(dstEdgeId, dstCost))
-      } else {
-
-        // search for shortest path
-        vertexOrientedShortestPath(roadNetworkModel, costFunction)(srcVertex, dstVertex, direction)
-          .getOrElse(EmptyPath)
+      direction: TraverseDirection): F[Option[Path]] = {
+    if (srcEdgeId == dstEdgeId) {
+      Monad[F].pure{
+        Some{EmptyPath}
       }
+    } else {
+
+
+
+      val result: F[F[Option[Path]]] = for {
+        dstVertexOfSrcEdgeOption <- roadNetworkModel.destination(srcEdgeId)
+        srcVertexOfDstEdgeOption <- roadNetworkModel.source(dstEdgeId)
+      } yield {
+        val result: Option[F[Option[Path]]] = for {
+          dstVertexOfSrcEdge <- dstVertexOfSrcEdgeOption
+          srcVertexOfDstEdge <- srcVertexOfDstEdgeOption
+        } yield {
+          if (dstVertexOfSrcEdge == srcVertexOfDstEdge) {
+
+            // edges are incident, path is length 2 and can be constructed without a search
+            val incidentPathResult: F[Option[Path]] = for {
+              srcEdgeOption <- roadNetworkModel.edge(srcEdgeId)
+              dstEdgeOption <- roadNetworkModel.edge(dstEdgeId)
+            } yield {
+              for {
+                srcEdge <- srcEdgeOption
+                dstEdge <- dstEdgeOption
+              } yield {
+                List(PathSegment(srcEdgeId, costFunction(srcEdge)), PathSegment(dstEdgeId, costFunction(dstEdge)))
+              }
+            }
+
+            incidentPathResult
+
+          } else {
+
+            // search for shortest path
+            val searchPathResult: F[Option[Path]] = for {
+              pathOption <- vertexOrientedShortestPath(roadNetworkModel, costFunction)(dstVertexOfSrcEdge, srcVertexOfDstEdge, direction)
+            } yield {
+              pathOption
+            }
+
+            searchPathResult
+          }
+        }
+      }
+
+      result.flatten
     }
   }
 
 
-
+  case class TreeBuildingAccumulator(
+    queue: immutable.SortedSet[MinSpanningTraversal],
+    solution: MinSpanningTree,
+    foundTarget: Boolean = false
+  )
+  object TreeBuildingAccumulator {
+    def apply(source: VertexId, direction: TraverseDirection)(implicit ord: Ordering[MinSpanningTraversal]): TreeBuildingAccumulator =
+      TreeBuildingAccumulator(
+        immutable.SortedSet(MinSpanningTraversal(None, source, Cost.Zero)),
+        MinSpanningTree(direction)
+      )
+  }
 
   /**
     * builds a Dijkstra's spanning tree rooted at a vertex, optionally with a stopping point
@@ -107,56 +150,89 @@ object DijkstraSearch {
     * @tparam E edge type
     * @return
     */
-  def vertexOrientedMinSpanningTree[V, E](roadNetworkModel: RoadNetworkState[V, E], costFunction: E => Cost)(
+  def vertexOrientedMinSpanningTree[F[_] : Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E], costFunction: E => Cost)(
       src: VertexId,
       dst: Option[VertexId],
-      direction: TraverseDirection): Option[MinSpanningTree] = {
+      direction: TraverseDirection): F[Option[MinSpanningTree]] = {
 
-    import MinSpanningTraversal.MinSpanningTraversalOrdering
+    // tree routed at search source
+    val initialTree: TreeBuildingAccumulator = TreeBuildingAccumulator(src, direction)(MinSpanningTraversal.MinSpanningTraversalOrdering)
 
-    @scala.annotation.tailrec
-    def _spanningTree(queue: immutable.SortedSet[MinSpanningTraversal],
-                      solution: MinSpanningTree = MinSpanningTree(direction)): MinSpanningTree =
-      queue.headOption match {
-        case None => solution
+    // recursive tree search
+    val result: F[TreeBuildingAccumulator] = initialTree.iterateUntilM{ state =>
+      state.queue.headOption match {
+        case None =>
+          Monad[F].pure{ state }
         case Some(nextVertex) =>
 
           // get the neighbors of the next vertex
-          val discoveredVertices: List[MinSpanningTraversal] = for {
-            (edgeId, neighbor) <- roadNetworkModel.edgesAndNeighbors(nextVertex.connectingVertex, direction)
-            edge <- roadNetworkModel.edge(edgeId)
-            cost = costFunction(edge)
+          for {
+            edgesAndNeighborsF <- roadNetworkModel.edgesAndNeighbors(nextVertex.connectingVertex, direction)
+            edgesInNetwork <- edgesAndNeighborsF.traverse( tup => roadNetworkModel.edge(tup._1))
           } yield {
-            MinSpanningTraversal(Some{ edgeId }, neighbor, cost)
-          }
 
-          // if we haven't added this vertex to the solution before, then, let's do it!
-          val updatedSolution: MinSpanningTree =
-            solution.tree.get(nextVertex.connectingVertex) match {
-              case None =>
-                solution.copy(
-                  tree = solution.tree.updated(nextVertex.connectingVertex, nextVertex)
-                )
-              case Some(_) => solution
+            val discoveredVertices: List[MinSpanningTraversal] = for {
+              edge <- edgesInNetwork
+              (edgeId, neighbor) <- edgesAndNeighborsF
+              //              edgeF <- roadNetworkModel.edge(edgeId)
+              //            edge <- edgeF
+              cost = costFunction(edge)
+            } yield {
+              MinSpanningTraversal(Some{ edgeId }, neighbor, cost)
             }
 
-          dst match {
-            case None =>
-              _spanningTree(queue ++ discoveredVertices, updatedSolution)
-            case Some(dstVertex) =>
-              if (nextVertex.connectingVertex == dstVertex) {
-                // stop when we hit the provided solution
-                updatedSolution
-              } else {
-                _spanningTree(queue ++ discoveredVertices, updatedSolution)
+            // if we haven't added this vertex to the solution before, then, let's do it!
+            val updatedSolution: MinSpanningTree =
+              state.solution.tree.get(nextVertex.connectingVertex) match {
+                case None =>
+                  state.solution.copy(
+                    tree = state.solution.tree.updated(nextVertex.connectingVertex, nextVertex)
+                  )
+                case Some(_) => state.solution
               }
+
+            dst match {
+              case None =>
+                state.copy(
+                  queue = state.queue ++ discoveredVertices,
+                  solution = updatedSolution
+                )
+              case Some(dstVertex) =>
+                if (nextVertex.connectingVertex == dstVertex) {
+                  // stop when we hit the provided solution
+                  state.copy(
+                    solution = updatedSolution,
+                    foundTarget = true
+                  )
+                } else {
+                  state.copy(
+                    queue = state.queue ++ discoveredVertices,
+                    solution = updatedSolution
+                  )
+                }
+            }
           }
-
-
       }
+    }(_.queue.headOption.isEmpty)
 
-    Some {
-      _spanningTree(immutable.SortedSet(MinSpanningTraversal(None, src, Cost.Zero)))
+    // handle tree result
+    // if the search requested a destination
+    for {
+      tree <- result
+    } yield {
+      if (dst.isEmpty) {
+        Some {
+          tree
+        }
+      } else {
+        if (tree.foundTarget) {
+          Some {
+            tree
+          }
+        } else {
+          None
+        }
+      }
     }
   }
 

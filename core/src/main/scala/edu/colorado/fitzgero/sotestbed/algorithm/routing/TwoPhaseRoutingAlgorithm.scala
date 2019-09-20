@@ -1,48 +1,44 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
+
+import cats._
+import cats.implicits._
+
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetworkState
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
-trait TwoPhaseRoutingAlgorithm[V, E]
-    extends RoutingAlgorithm[V, E]
-    with AltPathsAlgorithm[V, E]
-    with SelectionAlgorithm[V, E] { self =>
+class TwoPhaseRoutingAlgorithm[F[_] : Monad, V, E] (
+  altPathsAlgorithm: AltPathsAlgorithm[F, V, E],
+  selectionAlgorithm: SelectionAlgorithm[F, V, E]
+) extends RoutingAlgorithm[F, V, E] {
 
   def timeLimit: RunTime             = RunTime(31536000) // one year.
   def limitAltsRuntime: Boolean      = true
   def limitSelectionRuntime: Boolean = true
 
-  final override def route(reqs: List[Request],
-                           roadNetworkModel: RoadNetworkState[V, E]): RoutingAlgorithm.Result = {
+  final override def route(reqs       : List[Request],
+                           roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] = {
 
-    val (alts, altsRuntime, altsEndTimeOption) = if (limitAltsRuntime) {
-      val startTime: RunTime = RunTime(System.currentTimeMillis)
-      val endTime: RunTime   = startTime + timeLimit
-      val (alts, runtime)    = self.generateAlts(reqs, roadNetworkModel, Some { endTime })
-      (alts, runtime, Some { startTime })
-    } else {
-      val (alts, runtime) = self.generateAlts(reqs, roadNetworkModel, None)
-      (alts, runtime, Option.empty[RunTime])
-    }
-
-    val selectionEndTime: Option[RunTime] =
-      if (limitSelectionRuntime) {
-        altsEndTimeOption.orElse(Some {
-          RunTime(System.currentTimeMillis)
-        })
-      } else {
-        None
+    val startTime: RunTime = RunTime(System.currentTimeMillis)
+    val endTime: Option[RunTime] = if (limitAltsRuntime) {
+      Some {
+        startTime + timeLimit
       }
+    } else None
 
-    val (selection, selectionRuntime) =
-      self.selectRoutes(alts, roadNetworkModel, selectionEndTime)
-
-    RoutingAlgorithm.Result(
-      selection,
-      altsRuntime,
-      selectionRuntime
-    )
+    for {
+      altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, endTime)
+      (alts, altsRuntime) = altsResult
+      selectionResult <- selectionAlgorithm.selectRoutes(alts, roadNetwork, endTime)
+      (selection, selectionRuntime) = selectionResult
+    } yield {
+      RoutingAlgorithm.Result(
+        selection,
+        altsRuntime,
+        selectionRuntime
+      )
+    }
   }
 }

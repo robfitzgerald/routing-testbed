@@ -1,13 +1,15 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection
+import cats.Monad
+
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetworkState}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork}
 
-trait SelectionAlgorithm[V, E] {
+abstract class SelectionAlgorithm[F[_] : Monad, V, E] {
 
-  def selectRoutes(alts: Map[Request, Seq[EdgeId]],
-                   roadNetworkModel: RoadNetworkState[V, E],
-                   endTime: Option[RunTime]): (List[Response], Option[RunTime])
+  def selectRoutes(alts: Map[Request, List[EdgeId]],
+                   roadNetwork: RoadNetwork[F, V, E],
+                   endTime: Option[RunTime]): F[(List[Response], Option[RunTime])]
 }
 
 // hey, here's a few ideas for a SelectionAlgorithm:

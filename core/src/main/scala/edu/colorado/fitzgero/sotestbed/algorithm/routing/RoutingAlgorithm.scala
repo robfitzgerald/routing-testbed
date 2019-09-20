@@ -1,11 +1,13 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
+import cats.Monad
+
 import edu.colorado.fitzgero.sotestbed.model.agent._
 import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetworkState
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
-trait RoutingAlgorithm[V, E] {
-  def route(requests: List[Request], roadNetworkModel: RoadNetworkState[V, E]): RoutingAlgorithm.Result
+trait RoutingAlgorithm[F[_], V, E] {
+  def route(requests: List[Request], roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result]
 }
 
 object RoutingAlgorithm {

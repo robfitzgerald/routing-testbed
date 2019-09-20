@@ -1,15 +1,19 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
+
+import cats.Monad
+import cats.implicits._
+
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetworkState}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork}
 
-class kSPwLO_SVP[V, E] extends AltPathsAlgorithm[V, E] {
+class kSPwLO_SVP[F[_] : Monad, V, E] extends AltPathsAlgorithm[F, V, E] {
 
-  def generateAlts(requests: Seq[Request],
-    roadNetworkModel: RoadNetworkState[V, E],
-    endTime: Option[RunTime]): (Map[Request, Seq[EdgeId]], Option[RunTime]) = {
+  def generateAlts(requests: List[Request],
+    roadNetworkModel: RoadNetwork[F, V, E],
+    endTime: Option[RunTime]): F[(Map[Request, List[EdgeId]], Option[RunTime])] = {
 
-    if (requests.isEmpty) (Map.empty, None)
+    if (requests.isEmpty) Monad[F].pure { (Map.empty, None) }
     else {
       val startTime: Option[Long] = endTime match {
         case Some(_) => Some { System.currentTimeMillis }
