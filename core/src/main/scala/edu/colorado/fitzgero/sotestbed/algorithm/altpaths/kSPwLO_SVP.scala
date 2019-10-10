@@ -1,38 +1,186 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 
-import cats.Monad
+import scala.annotation.tailrec
+
+import cats.{Monad, Parallel}
+import cats.data.OptionT
 import cats.implicits._
 
+import edu.colorado.fitzgero.sotestbed.algorithm.search.{DijkstraSearch, SpanningTree}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
 
-class kSPwLO_SVP[F[_] : Monad, V, E] extends AltPathsAlgorithm[F, V, E] {
+/**
+  *
+  * @param theta percent that paths can be similar to each other, with default of 100% similarity
+  * @tparam F
+  * @tparam V
+  * @tparam E
+  */
+class kSPwLO_SVP[F[_]: Monad: Parallel, V, E](
+  theta: Cost = Cost(1.0), // @TODO: percentage numeric type, or, numeric library brah
+  retainSrcDstEdgesInPaths: Boolean = false
+) extends AltPathsAlgorithm[F, V, E] {
 
-  def generateAlts(requests: List[Request],
-    roadNetworkModel: RoadNetwork[F, V, E],
-    endTime: Option[RunTime]): F[(Map[Request, List[EdgeId]], Option[RunTime])] = {
+  def generateAlts(
+    requests: List[Request],
+    roadNetwork: RoadNetwork[F, V, E],
+    costFunction: E => Cost,
+    terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean
+  ): F[AltPathsAlgorithm.AltPathsResult] = {
+    if (requests.isEmpty) Monad[F].pure { AltPathsAlgorithm.AltPathsResult(Map.empty) } else {
 
-    if (requests.isEmpty) Monad[F].pure { (Map.empty, None) }
-    else {
-      val startTime: Option[Long] = endTime match {
-        case Some(_) => Some { System.currentTimeMillis }
-        case None => None
+      for {
+        alts <- requests.parTraverse { request =>
+          kSPwLO_SVP.generateAltsForRequest(
+            request,
+            roadNetwork,
+            costFunction,
+            theta,
+            terminationFunction
+          )
+        }
+      } yield {
+
+        AltPathsAlgorithm.AltPathsResult(
+          alts
+            .flatten
+            .map{ case kSPwLO_SVP.SingleSVPResult(req, alts, _) => req -> alts }
+            .toMap
+        )
       }
+    }
+  }
+}
 
-      // min spanning tree forward
+object kSPwLO_SVP {
 
-      // min spanning tree backward
+  final case class SingleSVPResult(request: Request, alts: List[Path], pathsSeen: NaturalNumber)
+
+  def generateAltsForRequest[F[_]: Monad, V, E](
+    request: Request,
+    roadNetwork: RoadNetwork[F, V, E],
+    costFunction: E => Cost,
+    theta: Cost,
+    terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean
+  ): F[Option[SingleSVPResult]] = {
+
+    for {
+      fwdTree <- OptionT {
+        SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.origin, request.destination, TraverseDirection.Forward)
+      }
+      revTree <- OptionT {
+        SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.destination, request.origin, TraverseDirection.Reverse)
+      }
+    } yield {
+
+      val intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
+        for {
+          vertexId <- fwdTree.tree.keys.toSet.intersect(revTree.tree.keys.toSet).toList
+          cost = fwdTree.tree(vertexId).cost + revTree.tree(vertexId).cost
+        } yield {
+          AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
+        }
+      }.sortBy { _.cost }
+
+      val startState: AltPathsAlgorithm.AltPathsState = AltPathsAlgorithm.AltPathsState(intersectionVertices)
 
       // for each node, store the svp distance as the fwd dist + bwd dist, and store combined path
       //  place in a heap
 
       // go through shortest -> longest, testing overlap according to written algorithm
 
-      // TODO: we can't do this without a VertexId and vertex ops in RoadNetworkModel
+      @tailrec
+      def _svp(searchState: AltPathsAlgorithm.AltPathsState): AltPathsAlgorithm.AltPathsState = {
+        if (terminationFunction(searchState)) searchState
+        else {
+          searchState.intersectionVertices.headOption match {
+            case None                                                                           => searchState
+            case Some(AltPathsAlgorithm.VertexWithDistance(thisIntersectionVertexId, thisCost)) =>
+              // construct a path from the intersection through both spanning trees
+              val possiblyUpdatedState: Option[AltPathsAlgorithm.AltPathsState] = for {
+                fwdPath <- DijkstraSearch.backtrack(fwdTree)(thisIntersectionVertexId)
+                revPath <- DijkstraSearch.backtrack(revTree)(thisIntersectionVertexId)
+                thisPath: Path = fwdPath ++ revPath
+                hasCycles      = thisPath.map { _.edgeId }.toSet.size < thisPath.length
+                if !hasCycles
+              } yield {
 
-      ???
+                // test for similarity with all previous paths found
+                val similarities: Iterable[Cost] = for {
+                  (altPath, altCost) <- searchState.alts
+                } yield {
+                  if (altCost < thisCost) costOfOverlap(thisPath, altPath) / thisCost
+                  else costOfOverlap(altPath, thisPath) / altCost
+                }
 
+                val sufficientlyDissimilar: Boolean = similarities.forall { _ < theta }
+
+                if (sufficientlyDissimilar) {
+                  val addToAlts: (Path, Cost) = (thisPath, thisCost)
+                  searchState.copy(
+                    intersectionVertices = searchState.intersectionVertices.tail,
+                    alts = addToAlts +: searchState.alts,
+                    pathsSeen = searchState.pathsSeen + NaturalNumber.One
+                  )
+                } else {
+                  searchState.copy(
+                    intersectionVertices = searchState.intersectionVertices.tail,
+                    pathsSeen = searchState.pathsSeen + NaturalNumber.One
+                  )
+                }
+              }
+
+              possiblyUpdatedState match {
+                case None =>
+                  // failed for one of these possible reasons:
+                  //  1. unable to backtrack from the vertex to create a path
+                  //  2. the constructed single-via path had a cycle
+                  val nextState = searchState.copy(
+                    intersectionVertices = searchState.intersectionVertices.tail,
+                    pathsSeen = searchState.pathsSeen + NaturalNumber.One
+                  )
+                  _svp(nextState)
+                case Some(updatedState) =>
+                  _svp(updatedState)
+              }
+          }
+        }
+      }
+
+      val AltPathsAlgorithm.AltPathsState(_, altsWithCosts, pathsSeen) = _svp(startState)
+
+      val alts: List[Path] = altsWithCosts.map { case (path, _) => path }
+
+      SingleSVPResult(request, alts, pathsSeen)
     }
+  }.value
+
+  /**
+    * computes the sum of Costs of overlap for two paths, one which is given to be longer than the other
+    *
+    * @param longerPath the path of the two which has a higher overall Cost
+    * @param shorterPath the path of the two which has a lower overall Cost
+    * @return the sum of Costs for links which overlap
+    */
+  def costOfOverlap(longerPath: Path, shorterPath: Path): Cost = {
+
+    val altPathMap: Map[EdgeId, Cost] =
+      longerPath.map { pathSegment =>
+        (pathSegment.edgeId, pathSegment.cost)
+      }.toMap
+
+    val thisPathOverlapCost: Cost = {
+      for {
+        PathSegment(altEdgeId, altEdgeCost) <- shorterPath
+        if altPathMap.isDefinedAt(altEdgeId)
+      } yield {
+        altEdgeCost
+      }
+    }.foldLeft(Cost.Zero) { _ + _ }
+
+    thisPathOverlapCost
   }
+
 }

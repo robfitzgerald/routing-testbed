@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE network SYSTEM "data/matsim-dtd/network_v2.dtd">
+<network>
+
+<!-- ====================================================================== -->
+
+	<nodes>
+		<node id="src" x="-1000"    y="0" />
+		<node id="0"   x="0"    y="0" />
+		<node id="1a"  x="1000" y="0" />
+		<node id="1b"  x="2000" y="0" />
+		<node id="2a"  x="1000" y="1000" />
+		<node id="2b"  x="2000" y="1000" />
+		<node id="3a"  x="1000" y="-1000" />
+		<node id="3b"  x="2000" y="-1000" />
+		<node id="4"   x="3000" y="0" />
+		<node id="dst" x="4000" y="0" />
+	</nodes>	
+
+<!-- ====================================================================== -->
+
+	<links>
+		<link id="src->0"   from="src"  to="0"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="0->1a"   from="0"  to="1a"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="0->2a"   from="0"  to="2a"  length="1414" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="0->3a"   from="0"  to="3a"  length="1414" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="1a->1b"   from="1a"  to="1b"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="2a->2b"   from="2a"  to="2b"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="3a->3b"   from="3a"  to="3b"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="1b->4"   from="1b"  to="4"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="2b->4"   from="2b"  to="4"  length="1414" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="3b->4"   from="3b"  to="4"  length="1414" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+		<link id="4->dst"   from="4"  to="dst"  length="1000" freespeed="25.0" capacity="1200" permlanes="1.0"/>
+	</links>
+
+<!-- ====================================================================== -->
+
+</network>

@@ -1,42 +1,51 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
-import cats._
+import cats.Monad
 import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
-class TwoPhaseRoutingAlgorithm[F[_] : Monad, V, E] (
-  altPathsAlgorithm: AltPathsAlgorithm[F, V, E],
-  selectionAlgorithm: SelectionAlgorithm[F, V, E]
+class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
+    altPathsAlgorithm: AltPathsAlgorithm[F, V, E],
+    selectionAlgorithm: SelectionAlgorithm[F, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost,
+    kspTerminationFunction: AltPathsAlgorithm.AltPathsState => Boolean,
+    selectionTerminationFunction: SelectionAlgorithm.SelectionState => Boolean,
+    timeLimit: RunTime = RunTime(31536000), // one year.
+    limitAltsRuntime: Boolean = true,
+    limitSelectionRuntime: Boolean = true
 ) extends RoutingAlgorithm[F, V, E] {
 
-  def timeLimit: RunTime             = RunTime(31536000) // one year.
-  def limitAltsRuntime: Boolean      = true
-  def limitSelectionRuntime: Boolean = true
-
-  final override def route(reqs       : List[Request],
+  final override def route(reqs: List[Request],
                            roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] = {
 
-    val startTime: RunTime = RunTime(System.currentTimeMillis)
-    val endTime: Option[RunTime] = if (limitAltsRuntime) {
-      Some {
-        startTime + timeLimit
-      }
-    } else None
+    val startTime: RunTime      = RunTime(System.currentTimeMillis)
+    val costFunction: E => Cost = e => marginalCostFunction(e)(Flow.Zero)
 
     for {
-      altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, endTime)
-      (alts, altsRuntime) = altsResult
-      selectionResult <- selectionAlgorithm.selectRoutes(alts, roadNetwork, endTime)
-      (selection, selectionRuntime) = selectionResult
+      altsResult <- altPathsAlgorithm.generateAlts(reqs,
+                                                   roadNetwork,
+                                                   costFunction,
+                                                   kspTerminationFunction)
+      kspRuntime = RunTime(System.currentTimeMillis) - startTime
+      selectionResult <- selectionAlgorithm.selectRoutes(altsResult.alternatives,
+                                                         roadNetwork,
+                                                         pathToMarginalFlowsFunction,
+                                                         combineFlowsFunction,
+                                                         marginalCostFunction,
+                                                         selectionTerminationFunction)
+      selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
     } yield {
       RoutingAlgorithm.Result(
-        selection,
-        altsRuntime,
+        altsResult.alternatives,
+        selectionResult.selectedRoutes,
+        kspRuntime,
         selectionRuntime
       )
     }

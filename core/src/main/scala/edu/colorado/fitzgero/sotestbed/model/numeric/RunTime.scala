@@ -2,6 +2,11 @@ package edu.colorado.fitzgero.sotestbed.model.numeric
 
 final class RunTime(val value: Double) extends AnyVal {
   def + (that: RunTime): RunTime = RunTime(this.value + that.value)
+  def - (that: RunTime): RunTime = RunTime(this.value - that.value)
+  def < (that: Double): Boolean = this.value < that
+  def <= (that: Double): Boolean = this.value < that
+  def > (that: Double): Boolean = this.value > that
+  def >= (that: Double): Boolean = this.value >= that
 }
 
 object RunTime {

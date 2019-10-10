@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge
 
-import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 
 object EdgeBPRCostOps {
   // based on default values from literature
@@ -8,16 +8,24 @@ object EdgeBPRCostOps {
 
   def costFunction(alpha: Double, beta: Double): EdgeBPR => Cost = {
     edge: EdgeBPR => {
-      val term1 = edge.freeFlowTravelTime.value
-      val term2 = alpha * edge.freeFlowTravelTime.value
-      val term3 = math.pow(edge.flow.value / edge.capacity.value, beta)
-      Cost(term1 + term2 * term3)
+      marginalCostFunction(alpha, beta)(edge)(edge.flow)
     }
   }
 
   def freeFlowCostFunction: EdgeBPR => Cost = {
     edge: EdgeBPR => {
       Cost(edge.freeFlowTravelTime.value)
+    }
+  }
+
+  def marginalCostFunction(alpha: Double, beta: Double): EdgeBPR => Flow => Cost = {
+    edge: EdgeBPR => {
+      flow: Flow => {
+        val term1 = edge.freeFlowTravelTime.value
+        val term2 = alpha * edge.freeFlowTravelTime.value
+        val term3 = math.pow(flow.value / edge.capacity.value, beta)
+        Cost(term1 + term2 * term3)
+      }
     }
   }
 }

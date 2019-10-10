@@ -33,11 +33,27 @@ lazy val scalac =  List(
 //RootProject(uri("https://github.com/robfitzgerald/dabtree.git"))
 
 // External Dependencies
-
 lazy val coreDependencies = List(
-  "org.typelevel" %% "cats-core" % "2.0.0-RC1",
-  "org.typelevel" %% "cats-effect" % "1.3.1",
-  "com.typesafe.akka" %% "akka-actor" % "2.5.25"
+  // PURE FP LIBRARY
+  "org.typelevel" %% "cats-core" % "2.0.0",
+  "org.typelevel" %% "cats-effect" % "2.0.0",
+
+  // LOGGING SYSTEM
+  "ch.qos.logback" % "logback-classic" % "1.2.3",
+  "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2",
+
+  // COMMAND LINE PARSING
+  "com.monovore" %% "decline" % "1.0.0",
+
+  // CONFIG
+  "com.typesafe" % "config" % "1.3.4",
+
+  // XML
+  "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
+
+  // TEST
+  "org.scalactic" %% "scalactic" % "3.0.8",
+  "org.scalatest" %% "scalatest" % "3.0.8" % "test"
 )
 
 lazy val matsimDependencies = List(

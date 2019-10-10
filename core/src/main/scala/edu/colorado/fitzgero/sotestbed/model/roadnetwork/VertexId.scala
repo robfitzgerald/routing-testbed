@@ -1,3 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.model.roadnetwork
 
 final class VertexId(val value: String) extends AnyVal
+
+object VertexId {
+  def apply(s: String): VertexId = new VertexId(s)
+}

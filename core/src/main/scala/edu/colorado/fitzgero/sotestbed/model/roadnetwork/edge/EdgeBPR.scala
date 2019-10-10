@@ -19,6 +19,6 @@ case class EdgeBPR (
   flowHistory: List[Flow] = List(Flow.Zero),
   flowHistoryLength: Int = 1
 ) {
-  lazy val freeFlowTravelTime: TravelTimeSeconds = distance / freeFlowSpeed
+  lazy val freeFlowTravelTime: TravelTimeSeconds = Meters.toTravelTime(distance, freeFlowSpeed)
 }
 

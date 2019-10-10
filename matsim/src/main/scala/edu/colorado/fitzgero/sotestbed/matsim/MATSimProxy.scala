@@ -151,7 +151,7 @@ trait MATSimProxy extends SimulatorOps[IO] { self =>
                                   val link: Link = qSim.getNetsimNetwork
                                     .getNetsimLink(Id.createLinkId(l.toString))
                                     .getLink
-                                  (l, Meters(link.getLength) / MetersPerSecond(link.getFreespeed))
+                                  (l, Meters.toTravelTime(Meters(link.getLength), MetersPerSecond(link.getFreespeed)))
                                 }
                                 .foldLeft(MATSimProxy.ReasonableStartPointFoldAccumulator(
                                   config.routing.reasonableReplanningLeadTime)) {
