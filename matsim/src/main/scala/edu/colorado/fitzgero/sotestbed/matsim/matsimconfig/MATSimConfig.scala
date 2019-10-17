@@ -3,41 +3,50 @@ package edu.colorado.fitzgero.sotestbed.matsim.matsimconfig
 import java.io.File
 import java.nio.file.{Path, Paths}
 
-import edu.colorado.fitzgero.sotestbed.model.numeric.{NaturalNumber, SimTime, TravelTimeSeconds}
-import org.matsim.api.core.v01.Id
-import org.matsim.api.core.v01.population.Person
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber, SimTime, TravelTimeSeconds}
 
 final case class MATSimConfig(
   fs: MATSimConfig.FileSystem,
   run: MATSimConfig.Run,
-  routing: MATSimConfig.Routing
+  routing: MATSimConfig.Routing,
+  algorithm: MATSimConfig.Algorithm
 )
 
 object MATSimConfig {
 
   final case class Run(
-    iterations: Int = 0,
+    iterations: Int,
+    soRoutingIterationCycle: Int,
     startOfSimTime: SimTime,
     endOfSimTime: SimTime,
     endOfRoutingTime: SimTime
-  )
+  ) {
+    require(soRoutingIterationCycle < iterations, "matsimConfig.run.soRoutingIterationCycle needs to be less than matsimConfig.run.iterations")
+  }
 
   final case class Routing(
-    agentsUnderControl: Set[Id[Person]],
     networkFlowCaptureBuffer: SimTime,
     k: NaturalNumber,
     batchWindow: SimTime,
     reasonableReplanningLeadTime: TravelTimeSeconds,
-    routeIterations: List[Int]
+    theta: Cost
   )
 
   final case class FileSystem(
     matsimNetworkFile: File,
-    workingDirectory: Path = Paths.get("/tmp"),
+    populationFile: File,
+    experimentTimestamp: Long = System.currentTimeMillis,
+    workingBaseDirectory: Path = Paths.get("/tmp"),
     name: String = "so-matsim"
   ) {
+
+    def workingDirectory: Path = this.workingBaseDirectory.resolve(s"$experimentTimestamp")
 
     def experimentSubdirectoryName: String =
       s"$name-${System.currentTimeMillis}"
   }
+
+  final case class Algorithm(
+
+  )
 }

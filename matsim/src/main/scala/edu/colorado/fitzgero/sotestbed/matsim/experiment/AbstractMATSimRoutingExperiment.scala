@@ -16,9 +16,6 @@ abstract class AbstractMATSimRoutingExperiment[V, E] (
   finalReportFile: File
 ) extends RoutingExperiment[IO, V, E] with MATSimProxy {
 
-  override type Simulator              = MATSimSimulation
-  override type SimulatorConfiguration = MATSimConfig
-
   val routingResultFileReport: RoutingResultFileReport = new RoutingResultFileReport(routingResultFile)
   val finalReport: MATSimFinalReport = new MATSimFinalReport(finalReportFile)
 

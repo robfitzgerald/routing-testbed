@@ -58,12 +58,14 @@ object kSPwLO_SVP {
 
   final case class SingleSVPResult(request: Request, alts: List[Path], pathsSeen: NaturalNumber)
 
+  val ExhaustiveSearchTerminationFunction: AltPathsAlgorithm.AltPathsState => Boolean = _ => false
+
   def generateAltsForRequest[F[_]: Monad, V, E](
     request: Request,
     roadNetwork: RoadNetwork[F, V, E],
     costFunction: E => Cost,
     theta: Cost,
-    terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean
+    terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean = ExhaustiveSearchTerminationFunction
   ): F[Option[SingleSVPResult]] = {
 
     for {
@@ -78,7 +80,7 @@ object kSPwLO_SVP {
       val intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
         for {
           vertexId <- fwdTree.tree.keys.toSet.intersect(revTree.tree.keys.toSet).toList
-          cost = fwdTree.tree(vertexId).cost + revTree.tree(vertexId).cost
+          cost = fwdTree.tree(vertexId).pathCost + revTree.tree(vertexId).pathCost
         } yield {
           AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
         }
@@ -151,7 +153,8 @@ object kSPwLO_SVP {
 
       val AltPathsAlgorithm.AltPathsState(_, altsWithCosts, pathsSeen) = _svp(startState)
 
-      val alts: List[Path] = altsWithCosts.map { case (path, _) => path }
+      // sort in order discovered which should also be a sort by cost; only return the path
+      val alts: List[Path] = altsWithCosts.reverse.map { case (path, _) => path }
 
       SingleSVPResult(request, alts, pathsSeen)
     }

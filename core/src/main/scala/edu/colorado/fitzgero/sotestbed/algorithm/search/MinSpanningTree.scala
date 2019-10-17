@@ -2,6 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.search
 
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{RoadNetwork, TraverseDirection, VertexId}
 
+
 final case class MinSpanningTree[E](
   traverseDirection: TraverseDirection,
   tree: Map[VertexId, MinSpanningTraversal[E]] = Map.empty[VertexId, MinSpanningTraversal[E]]
@@ -16,5 +17,12 @@ final case class MinSpanningTree[E](
 }
 
 object MinSpanningTree {
+
+  /**
+    * output of MinSpanningTree.traverse() function
+    * @param minSpanningTraversal the traversal data
+    * @param edgeTriplet the related edgeTriplet
+    * @tparam E link attribute type
+    */
   final case class TraverseData[E](minSpanningTraversal: MinSpanningTraversal[E], edgeTriplet: RoadNetwork.EdgeTriplet[E])
 }

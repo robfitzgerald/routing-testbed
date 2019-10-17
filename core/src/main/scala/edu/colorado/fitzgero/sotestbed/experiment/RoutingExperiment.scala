@@ -21,13 +21,13 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
 
   final def run(
       config: SimulatorConfiguration,
-      startState: ExperimentState,
+      roadNetwork: RoadNetwork[F, V, E],
       routingAlgorithm: RoutingAlgorithm[F, V, E],
       updateFunction: Edge.UpdateFunction[E],
       doneRoutingAtSimTime: SimTime
   ): F[ExperimentState] = {
 
-    def _run(): F[ExperimentState] = {
+    def _run(startState: ExperimentState): F[ExperimentState] = {
 
       val experiment: F[ExperimentState] = startState.iterateUntilM { state =>
         for {
@@ -40,7 +40,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
           currentSimTime <- getCurrentSimTime(state.simulator)
           _ = updateReports(result, currentSimTime) // unit is ok here, no modifications to application state
         } yield ExperimentState(s2, r1, currentSimTime) // should be passed updated versions of state
-      }(_.currentSimTime == doneRoutingAtSimTime)
+      }(_.currentSimTime == config)
 
       for {
         finalState <- experiment
@@ -51,8 +51,9 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
     }
 
     for {
-      _      <- initializeSimulator(config)
-      result <- _run()
+      initialSimulatorState      <- initializeSimulator(config)
+      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork)
+      result <- _run(initialExperimentState)
     } yield {
       result
     }

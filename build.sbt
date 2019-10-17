@@ -46,7 +46,8 @@ lazy val coreDependencies = List(
   "com.monovore" %% "decline" % "1.0.0",
 
   // CONFIG
-  "com.typesafe" % "config" % "1.3.4",
+  "com.github.pureconfig" %% "pureconfig" % "0.12.1",
+//  "com.typesafe" % "config" % "1.3.4",
 
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",

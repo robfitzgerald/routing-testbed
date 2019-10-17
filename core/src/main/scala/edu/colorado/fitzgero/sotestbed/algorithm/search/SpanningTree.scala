@@ -120,7 +120,7 @@ object SpanningTree {
         state.frontier.headOption match {
           case None =>
             Monad[F].pure { state }
-          case Some((thisEdgeTriplet, thisEdgeTripletCost)) =>
+          case Some((thisEdgeTriplet, thisPathCost)) =>
             val traversalVertex: VertexId = if (direction == TraverseDirection.Forward) thisEdgeTriplet.dst else thisEdgeTriplet.src
 
             if (direction == TraverseDirection.Reverse) {
@@ -147,7 +147,7 @@ object SpanningTree {
                   nextVertexId            = if (direction == TraverseDirection.Forward) edgeTriplet.dst else edgeTriplet.src
                   frontierEdgeTripletCost = costFunction(edgeTriplet.attr)
                 } yield {
-                  MinSpanningTraversal(Some { edgeTriplet }, nextVertexId, thisEdgeTripletCost + frontierEdgeTripletCost)
+                  MinSpanningTraversal(Some { edgeTriplet }, nextVertexId, thisPathCost, thisPathCost + frontierEdgeTripletCost)
                 }
 
                 // add this edge to the solution
@@ -155,7 +155,8 @@ object SpanningTree {
                   MinSpanningTraversal(
                     Some { thisEdgeTriplet },
                     traversalVertex,
-                    thisEdgeTripletCost
+                    costFunction(thisEdgeTriplet.attr),
+                    thisPathCost
                   )
 
                 val updatedSolution: MinSpanningTree[E] =
@@ -168,7 +169,7 @@ object SpanningTree {
                     minSpanningTraversal <- discoveredVertices
                     edgeTriplet          <- minSpanningTraversal.traversalEdgeTriplet
                   } yield {
-                    (edgeTriplet, minSpanningTraversal.cost)
+                    (edgeTriplet, minSpanningTraversal.pathCost)
                   }
 
                 dst match {
