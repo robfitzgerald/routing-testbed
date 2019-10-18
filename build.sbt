@@ -24,7 +24,8 @@ lazy val matsim = project
   .dependsOn(core)
 
 lazy val scalac =  List(
-  "-language:higherKinds"
+  "-language:higherKinds",                   // FP type wizardry
+  "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 //  "-Ypartial-unification"
 )
 

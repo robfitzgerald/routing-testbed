@@ -24,7 +24,7 @@ object MATSimExperimentApp extends App {
   implicit val ctx: ContextShift[IO] = IO.contextShift(global)
 
   for {
-    config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/default.conf").load[MATSimConfig]
+    config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/default-experiment.conf").load[MATSimConfig]
     network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.fs.matsimNetworkFile)
   } yield {
 

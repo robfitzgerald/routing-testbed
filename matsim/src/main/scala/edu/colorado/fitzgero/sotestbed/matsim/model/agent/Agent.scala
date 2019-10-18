@@ -12,21 +12,25 @@ final case class Agent(
   activities: List[AgentActivityPair],
 ) {
 
-  /**
-    * creates a departure time for the first non-home activity based on that activity's start time
-    * @return Some start time, except for agents with no activities, which return None
-    */
-  def leaveHomeTime: Option[LocalTime] = activities.headOption.flatMap { _.leaveHomeTime }
-  for {
-    firstActivityPair <- activities.headOption
-    leaveHomeTime     <- firstActivityPair.leaveHomeTime
-  } yield leaveHomeTime
-
   def homeLocation: Option[EdgeId] =
     for {
       firstActivityPair <- activities.headOption
       homeLocation      <- firstActivityPair.homeLocation
     } yield homeLocation
+
+  def firstActivityEndTime: Option[LocalTime] =
+    for {
+      firstActivityPair <- activities.headOption
+      act1 <- firstActivityPair.act1 match {
+        case AgentActivity.FirstActivity(_, _, endTime) =>
+          Some { endTime }
+        case _ =>
+          None
+      }
+
+    } yield {
+      act1
+    }
 
   def activitiesToRequests: List[Request] =
     for {
@@ -47,10 +51,10 @@ final case class Agent(
     */
   def toXML: Either[Agent.AgentFailure, xml.Elem] = {
 
-    val selected: String = requestClass match {
-      case RequestClass.UE => "no"
-      case _               => "yes"
-    }
+//    val selected: String = requestClass match {
+//      case RequestClass.UE => "no"
+//      case _               => "yes"
+//    }
 
     for {
       startActivity <- Agent.xmlForStartActivity(this)
@@ -59,9 +63,9 @@ final case class Agent(
 
       <person id={this.id}>
         <attributes>
-          <attribute name="requestClass" class={this.requestClass.toString}></attribute>
+          <attribute name="requestClass" class={this.requestClass.toString}/>
         </attributes>
-        <plan selected={selected}>
+        <plan>
           {startActivity}{remainingActivities}
         </plan>
       </person>
@@ -77,29 +81,25 @@ object Agent {
   def xmlForStartActivity(agent: Agent): Either[AgentFailure, xml.Elem] = {
 
     val leaveHomeTimeString: String =
-      agent.leaveHomeTime
+      agent.firstActivityEndTime
         .getOrElse(LocalTime.parse("23:59:59"))
         .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
 
     for {
       homeLocation <- agent.homeLocation.toRight(Agent.MissingHomeLocation(agent.id))
     } yield {
-        <activity type={ActivityType.Home.toString} link={homeLocation.value} end_time={leaveHomeTimeString.format(DateTimeFormatter.ofPattern("HH:mm:ss"))}/>
+      <activity type={ActivityType.Home.toString} link={homeLocation.value} end_time={leaveHomeTimeString.format(DateTimeFormatter.ofPattern("HH:mm:ss"))}/>
     }
   }
-
 
   def xmlForRemainingActivities(agent: Agent): List[xml.Elem] = {
     for {
       actPair <- agent.activities
     } yield {
-      actPair.act2 match {
-        case hasDepartureTime: HasDepartureTime =>
-          List(
-              <leg mode={actPair.travelMode.toString} dep_time={hasDepartureTime.departureTime.format(DateTimeFormatter.ofPattern("HH:mm:ss"))}/>,
-            actPair.act2.toXML
-          )
-      }
+      List(
+        <leg mode={actPair.travelMode.toString}/>,
+        actPair.act2.toXML
+      )
     }
   }.flatten
 }

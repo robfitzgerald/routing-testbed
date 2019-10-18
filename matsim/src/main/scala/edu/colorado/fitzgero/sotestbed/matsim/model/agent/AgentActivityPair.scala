@@ -12,19 +12,6 @@ final case class AgentActivityPair(
   travelMode: TravelMode
 ) {
 
-  def leaveHomeTime: Option[LocalTime] = {
-    act1 match {
-      case _: AgentActivity.FirstActivity =>
-        act2 match {
-          case hasDepartureTime: HasDepartureTime =>
-            Some{
-              hasDepartureTime.departureTime
-            }
-        }
-      case _ => None
-    }
-  }
-
   def homeLocation: Option[EdgeId] = {
     act1 match {
       case AgentActivity.FirstActivity(_, location, _) =>

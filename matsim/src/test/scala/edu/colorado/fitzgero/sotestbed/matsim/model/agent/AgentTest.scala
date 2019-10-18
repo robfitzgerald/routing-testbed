@@ -24,7 +24,6 @@ class AgentTest extends SoTestBedBaseTest {
             Activity(
               ActivityType.Work,
               EdgeId("e2"),
-              LocalTime.parse("08:30:00"),
               LocalTime.parse("09:00:00"),
               LocalTime.parse("17:00:00")
             ),
@@ -34,14 +33,12 @@ class AgentTest extends SoTestBedBaseTest {
             Activity(
               ActivityType.Work,
               EdgeId("e2"),
-              LocalTime.parse("08:30:00"),
               LocalTime.parse("09:00:00"),
               LocalTime.parse("17:00:00")
             ),
             FinalActivity(
               ActivityType.Home,
-              EdgeId("e1"),
-              LocalTime.parse("17:00:00")
+              EdgeId("e1")
             ),
             TravelMode.Car
           )

@@ -11,17 +11,6 @@ sealed trait AgentActivity {
   def toXML: xml.Elem
 }
 
-// TODO:
-//  Leg departure time is internal; we don't need to figure it out.
-//  all we need is for activities to have end_times, except final
-//  activities.
-//  FIX IT YO! redraw, redo, refactor, recompoop.
-
-
-trait HasDepartureTime {
-  def departureTime: LocalTime
-}
-
 object AgentActivity {
 
   val MATSimTextTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
@@ -37,18 +26,16 @@ object AgentActivity {
   final case class Activity(
     activityType: ActivityType,
     location: EdgeId,
-    departureTime: LocalTime, // TODO: comes from road network path estimate during Agent construction
     startTime: LocalTime,
     endTime: LocalTime,
-  ) extends AgentActivity with HasDepartureTime {
+  ) extends AgentActivity {
     def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} end_time={endTime.format(MATSimTextTimeFormat)}/>
   }
 
   final case class FinalActivity(
     activityType: ActivityType,
-    location: EdgeId,
-    departureTime: LocalTime
-  ) extends AgentActivity with HasDepartureTime{
+    location: EdgeId
+  ) extends AgentActivity {
     def toXML: xml.Elem = <activity type={activityType.toString} link={location.value}/>
   }
 }
