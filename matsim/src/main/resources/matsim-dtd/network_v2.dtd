@@ -2,29 +2,25 @@
 
 <!-- ============================================================ -->
 
-<!-- For further information or questions, please contact
-     Michael Balmer, balmermi at inf dot ethz dot ch -->
-
-<!-- ============================================================ -->
-
-<!ELEMENT network (nodes,links)>
+<!ELEMENT network (attributes?,nodes,links)>
 <!ATTLIST network
-          name       CDATA #IMPLIED
-          type       CDATA #IMPLIED
-          capDivider CDATA #IMPLIED
-          xml:lang NMTOKEN "de-CH">
+          name       CDATA #IMPLIED>
+
+<!ELEMENT attributes    (attribute*)>
+
+<!ELEMENT attribute       (#PCDATA)>
+<!ATTLIST attribute
+          name        CDATA #REQUIRED
+          class       CDATA #REQUIRED>
 
 <!ELEMENT nodes (node)*>
 
 <!ELEMENT links (link)*>
 <!ATTLIST links capperiod  CDATA "01:00:00"
-				effectivecellsize CDATA "7.5"
-				effectivelanewidth CDATA "3.75"
-                capPeriod  CDATA #IMPLIED
-                capDivider CDATA #IMPLIED
-                capdivider CDATA #IMPLIED>
+          effectivecellsize CDATA "7.5"
+          effectivelanewidth CDATA "3.75">
 
-<!ELEMENT node EMPTY>
+<!ELEMENT node (attributes?)>
 <!ATTLIST node id          CDATA #REQUIRED
                x           CDATA #REQUIRED
                y           CDATA #REQUIRED
@@ -32,7 +28,7 @@
                type        CDATA #IMPLIED
                origid      CDATA #IMPLIED>
 
-<!ELEMENT link EMPTY>
+<!ELEMENT link (attributes?)>
 <!ATTLIST link id          CDATA #REQUIRED
                from        CDATA #REQUIRED
                to          CDATA #REQUIRED
@@ -41,10 +37,7 @@
                capacity    CDATA #REQUIRED
                permlanes   CDATA #REQUIRED
                oneway      CDATA #FIXED    "1"
-               volume      CDATA #IMPLIED
                origid      CDATA #IMPLIED
-               nt_category CDATA #IMPLIED
-               nt_type     CDATA #IMPLIED
                type        CDATA #IMPLIED
                modes       CDATA "car">
 

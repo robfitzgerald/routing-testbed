@@ -23,9 +23,9 @@ class AgentsInSimulationNeedingReplanningHandler(
 
   def getNumberOfPathAssignmentsForAgent(agent: Id[Person]): Option[Int] = agentsInSimulation.get(agent).map{_.numberOfPathAssignments}
 
-  def getRequestDataForAgent: Unit = ???
-
-  def getRequestsUnderControl: Unit = ???
+//  def getRequestDataForAgent: Unit = ???
+//
+//  def getRequestsUnderControl: Unit = ???
 
   def addPathToAgent(agent: Id[Person], path: List[Id[Link]]): Unit = {
     agentsInSimulation.get(agent) match {
@@ -55,6 +55,13 @@ class AgentsInSimulationNeedingReplanningHandler(
     */
   def handleEvent(event: PersonArrivalEvent): Unit =
     if (agentsUnderControl(event.getPersonId)) agentsInSimulation - event.getPersonId
+
+  /**
+    * restart between iterations
+    */
+  def clear(): Unit = {
+    agentsInSimulation.clear()
+  }
 }
 
 object AgentsInSimulationNeedingReplanningHandler {

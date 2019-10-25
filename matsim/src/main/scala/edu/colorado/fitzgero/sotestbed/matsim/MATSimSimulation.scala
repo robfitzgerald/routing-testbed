@@ -2,7 +2,9 @@ package edu.colorado.fitzgero.sotestbed.matsim
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.events.Event
@@ -14,55 +16,74 @@ import org.matsim.core.mobsim.framework.events.MobsimBeforeSimStepEvent
 import org.matsim.core.mobsim.qsim.QSim
 
 final case class MATSimSimulation(
-  qSim: QSim,
-  controler: Controler,
-  playPauseSimulationControl: PlayPauseSimulationControl,
-  agentsInSimulationHandler: AgentsInSimulationNeedingReplanningHandler,
-  roadNetworkDeltaHandler: RoadNetworkDeltaHandler,
-  temporaryPathPrefixStore: collection.mutable.Map[Id[Person], List[Id[Link]]] = collection.mutable.Map.empty,
-  replanningPayload: Option[MATSimProxy.RouteRequests] = None,
-  currentSimTime: SimTime = SimTime.Zero
-) {
+  currentSimTime: SimTime = SimTime.Zero,
+  isRunning: Boolean = false
+) extends Serializable with LazyLogging {
 
-  def hasCompletedDayAndExited(simulationTailTimeout: Duration = Duration(60, MINUTES))
-    : Either[MATSimSimulation.IsDoneFailure, Boolean] = {
-    if (playPauseSimulationControl.isFinished) Right(true)
-    else {
-      val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
+  def hasCompletedDayAndExited(
+    simulationTailTimeout: Duration,
+    playPauseSimulationControl: PlayPauseSimulationControl,
+    thread: Thread
+  ): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
 
-      @tailrec
-      def _isDone(): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
-        if (playPauseSimulationControl.isFinished) {
-          Right(true)
-        } else if (System.currentTimeMillis > timeoutStop) {
-          Left(MATSimSimulation.IsDoneFailure.TimeoutFailure(
+    val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
+
+    @tailrec
+    def _isDone(): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
+      if (!thread.isAlive) {
+        Right(playPauseSimulationControl.isFinished)
+      } else if (System.currentTimeMillis > timeoutStop) {
+        Left(
+          MATSimSimulation.IsDoneFailure.TimeoutFailure(
             s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
-        } else {
-          wait(Duration(5, SECONDS).toMillis)
-          _isDone()
+      } else {
+        Try { Thread.sleep(100) } match {
+          case Success(()) => _isDone()
+          case Failure(e) =>
+            Left(MATSimSimulation.IsDoneFailure.TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}"))
         }
       }
-
-      _isDone()
     }
+
+    _isDone()
   }
 
-  def advance(endOfRoutingTime: SimTime, stepSize: SimTime = SimTime(1)): MATSimSimulation = {
-
-    // advance either the defined sim step, or, if we have reached the end of routing time,
-    // then run the remaining simulation
-    val thisSimStep: SimTime = if (endOfRoutingTime <= currentSimTime) {
-      SimTime.EndOfDay
-    } else stepSize
-
-    // run simulation for the suggested duration
-    playPauseSimulationControl.doStep(currentSimTime.value.toInt + thisSimStep.value.toInt)
-
-    // update local time state
+  def advance(newTime: SimTime): MATSimSimulation =
     this.copy(
-      currentSimTime = currentSimTime + stepSize
+      currentSimTime = newTime
     )
-  }
+
+//  def advance(endOfRoutingTime: SimTime, stepSize: SimTime = SimTime(1), playPauseSimulationControl: PlayPauseSimulationControl): MATSimSimulation = {
+//
+//    println()
+//    // advance either the defined sim step, or, if we have reached the end of routing time,
+//    // then run the remaining simulation
+//    // guard against boundary conditions
+//    val yoEndOfDay = SimTime.EndOfDay.value.toDouble
+//    val getLocalYo = playPauseSimulationControl.getLocalTime
+//    val advanceToSimTime: Int =
+////      if (SimTime.EndOfDay.value.toDouble < playPauseSimulationControl.getLocalTime) 0
+//    if (yoEndOfDay < getLocalYo) {
+//      println()
+//      0
+//    } else {
+//      val thisSimStep: SimTime = if (endOfRoutingTime <= currentSimTime) {
+//        SimTime.EndOfDay
+//      } else stepSize
+//      currentSimTime.value.toInt + thisSimStep.value.toInt
+//    }
+//
+//    // run simulation for the suggested duration
+//    playPauseSimulationControl.synchronized {
+//      playPauseSimulationControl.doStep(advanceToSimTime)
+//    }
+//    val newTime: Double = playPauseSimulationControl.getLocalTime
+//
+//    // update local time state
+//    this.copy(
+//      currentSimTime = SimTime(newTime)
+//    )
+//  }
 }
 
 object MATSimSimulation {

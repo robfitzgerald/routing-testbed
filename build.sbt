@@ -19,7 +19,7 @@ lazy val matsim = project
     name := "so-testbed-matsim",
     scalaVersion := "2.12.9",
     scalacOptions ++= scalac,
-    libraryDependencies ++= coreDependencies ++ matsimDependencies
+    libraryDependencies ++= coreDependencies // ++ matsimDependencies
   )
   .dependsOn(core)
 
@@ -58,6 +58,7 @@ lazy val coreDependencies = List(
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
 )
 
-lazy val matsimDependencies = List(
-  "org.matsim" % "matsim" % "0.10.1"
-)
+//lazy val matsimDependencies = List(
+//  "org.matsim" % "matsim" % "0.10.1" // most recent official release/tag
+//)
+//lazy val matsimGithubDependency = ProjectRef(uri("https://github.com/matsim-org/matsim.git#master"), "matsim")

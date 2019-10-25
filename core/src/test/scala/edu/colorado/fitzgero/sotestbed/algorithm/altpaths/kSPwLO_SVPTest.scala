@@ -28,7 +28,7 @@ class kSPwLO_SVPTest extends SoTestBedBaseTest {
           request = Request("test", EdgeId("src->0"), EdgeId("4->dst"), RequestClass.UE, TravelMode.Car)
         } yield {
 
-          val altsAlgResult = kSPwLO_SVP.generateAltsForRequest(
+          val altsAlgResult = kSPwLO_SVP_Algorithm.generateAltsForRequest(
             request,
             network,
             EdgeBPRCostOps.BPRCostFunctionWithBookCoefficients,
@@ -37,7 +37,7 @@ class kSPwLO_SVPTest extends SoTestBedBaseTest {
 
           altsAlgResult.unsafeRunSync() match {
             case None => fail()
-            case Some(kSPwLO_SVP.SingleSVPResult(_, alts, pathsSeen)) =>
+            case Some(kSPwLO_SVP_Algorithm.SingleSVPResult(_, alts, pathsSeen)) =>
 
               // only 3 possible unique paths
               alts.size should equal(3)

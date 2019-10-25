@@ -13,7 +13,8 @@ trait RoutingAlgorithm[F[_], V, E] {
 object RoutingAlgorithm {
 
   /**
-    * Wraps the response from any Routing Algorithm
+    * Wraps the response from any Routing Algorithm. Default case is reserved for
+    * Empty route requests.
     *
     * @param alternatives the alternatives generated
     * @param responses route solutions for each [[Request]]-ing agent
@@ -21,10 +22,10 @@ object RoutingAlgorithm {
     * @param selectionRuntime optional runtime for any selection algorithm run
     */
   case class Result(
-    alternatives: Map[Request, List[Path]],
-    responses: List[Response],
-    kspRuntime: RunTime,
-    selectionRuntime: RunTime
+    alternatives: Map[Request, List[Path]] = Map.empty,
+    responses: List[Response] = List.empty,
+    kspRuntime: RunTime = RunTime.Zero,
+    selectionRuntime: RunTime = RunTime.Zero
   )
 
 }

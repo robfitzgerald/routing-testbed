@@ -2,59 +2,15 @@ package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 
 import scala.annotation.tailrec
 
-import cats.{Monad, Parallel}
+import cats.Monad
 import cats.data.OptionT
-import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.search.{DijkstraSearch, SpanningTree}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, PathSegment, RoadNetwork, TraverseDirection}
 
-/**
-  *
-  * @param theta percent that paths can be similar to each other, with default of 100% similarity
-  * @tparam F
-  * @tparam V
-  * @tparam E
-  */
-class kSPwLO_SVP[F[_]: Monad: Parallel, V, E](
-  theta: Cost = Cost(1.0), // @TODO: percentage numeric type, or, numeric library brah
-  retainSrcDstEdgesInPaths: Boolean = false
-) extends AltPathsAlgorithm[F, V, E] {
-
-  def generateAlts(
-    requests: List[Request],
-    roadNetwork: RoadNetwork[F, V, E],
-    costFunction: E => Cost,
-    terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean
-  ): F[AltPathsAlgorithm.AltPathsResult] = {
-    if (requests.isEmpty) Monad[F].pure { AltPathsAlgorithm.AltPathsResult(Map.empty) } else {
-
-      for {
-        alts <- requests.parTraverse { request =>
-          kSPwLO_SVP.generateAltsForRequest(
-            request,
-            roadNetwork,
-            costFunction,
-            theta,
-            terminationFunction
-          )
-        }
-      } yield {
-
-        AltPathsAlgorithm.AltPathsResult(
-          alts
-            .flatten
-            .map{ case kSPwLO_SVP.SingleSVPResult(req, alts, _) => req -> alts }
-            .toMap
-        )
-      }
-    }
-  }
-}
-
-object kSPwLO_SVP {
+object kSPwLO_SVP_Algorithm {
 
   final case class SingleSVPResult(request: Request, alts: List[Path], pathsSeen: NaturalNumber)
 
@@ -67,6 +23,8 @@ object kSPwLO_SVP {
     theta: Cost,
     terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean = ExhaustiveSearchTerminationFunction
   ): F[Option[SingleSVPResult]] = {
+
+    val startTime: Long = System.currentTimeMillis
 
     for {
       fwdTree <- OptionT {
@@ -84,9 +42,9 @@ object kSPwLO_SVP {
         } yield {
           AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
         }
-      }.sortBy { _.cost }
+        }.sortBy { _.cost }
 
-      val startState: AltPathsAlgorithm.AltPathsState = AltPathsAlgorithm.AltPathsState(intersectionVertices)
+      val startState: AltPathsAlgorithm.AltPathsState = AltPathsAlgorithm.AltPathsState(intersectionVertices, startTime)
 
       // for each node, store the svp distance as the fwd dist + bwd dist, and store combined path
       //  place in a heap
@@ -151,14 +109,14 @@ object kSPwLO_SVP {
         }
       }
 
-      val AltPathsAlgorithm.AltPathsState(_, altsWithCosts, pathsSeen) = _svp(startState)
+      val AltPathsAlgorithm.AltPathsState(_, _, pathsSeen, altsWithCosts) = _svp(startState)
 
       // sort in order discovered which should also be a sort by cost; only return the path
       val alts: List[Path] = altsWithCosts.reverse.map { case (path, _) => path }
 
       SingleSVPResult(request, alts, pathsSeen)
     }
-  }.value
+    }.value
 
   /**
     * computes the sum of Costs of overlap for two paths, one which is given to be longer than the other
@@ -181,7 +139,7 @@ object kSPwLO_SVP {
       } yield {
         altEdgeCost
       }
-    }.foldLeft(Cost.Zero) { _ + _ }
+      }.foldLeft(Cost.Zero) { _ + _ }
 
     thisPathOverlapCost
   }

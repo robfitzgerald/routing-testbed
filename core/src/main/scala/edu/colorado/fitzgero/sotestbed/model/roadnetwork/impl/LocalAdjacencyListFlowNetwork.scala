@@ -5,7 +5,7 @@ import java.io.File
 import scala.util.Try
 import scala.xml.XML
 
-import cats.effect.IO
+import cats.effect.SyncIO
 
 import cse.bdlab.fitzgero.sorouting.common.util.XMLParserIgnoresDTD
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, MetersPerSecond, NaturalNumber}
@@ -17,15 +17,15 @@ case class LocalAdjacencyListFlowNetwork[V, E](
     vertices: Map[VertexId, V],
     adjList: Map[VertexId, Map[EdgeId, VertexId]],
     revAdjList: Map[VertexId, Map[EdgeId, VertexId]]
-) extends RoadNetwork[IO, V, E] {
+) extends RoadNetwork[SyncIO, V, E] {
 
-  def vertex(vertexId: VertexId): IO[Option[RoadNetwork.VertexIdAndAttribute[V]]] = IO {
+  def vertex(vertexId: VertexId): SyncIO[Option[RoadNetwork.VertexIdAndAttribute[V]]] = SyncIO {
     vertices.get(vertexId).map { attr =>
       RoadNetwork.VertexIdAndAttribute(vertexId, attr)
     }
   }
 
-  def vertices(vertexIds: List[VertexId]): IO[List[RoadNetwork.VertexIdAndAttribute[V]]] = IO {
+  def vertices(vertexIds: List[VertexId]): SyncIO[List[RoadNetwork.VertexIdAndAttribute[V]]] = SyncIO {
     for {
       vertexId <- vertexIds
       attr     <- vertices.get(vertexId)
@@ -34,14 +34,14 @@ case class LocalAdjacencyListFlowNetwork[V, E](
     }
   }
 
-  def edge(edgeId: EdgeId): IO[Option[RoadNetwork.EdgeIdAndAttribute[E]]] = IO {
+  def edge(edgeId: EdgeId): SyncIO[Option[RoadNetwork.EdgeIdAndAttribute[E]]] = SyncIO {
     edges.get(edgeId).map {
       case RoadNetwork.EdgeTriplet(_, _, _, attr) =>
         RoadNetwork.EdgeIdAndAttribute(edgeId, attr)
     }
   }
 
-  def edges(edgeIds: List[EdgeId]): IO[List[RoadNetwork.EdgeIdAndAttribute[E]]] = IO {
+  def edges(edgeIds: List[EdgeId]): SyncIO[List[RoadNetwork.EdgeIdAndAttribute[E]]] = SyncIO {
     for {
       edgeId                                                <- edgeIds
       RoadNetwork.EdgeTriplet(_, _, _, attr) <- edges.get(edgeId)
@@ -50,29 +50,29 @@ case class LocalAdjacencyListFlowNetwork[V, E](
     }
   }
 
-  def hasVertex(vertexId: VertexId): IO[Boolean] = IO { vertices.isDefinedAt(vertexId) }
+  def hasVertex(vertexId: VertexId): SyncIO[Boolean] = SyncIO { vertices.isDefinedAt(vertexId) }
 
-  def hasEdge(edgeId: EdgeId): IO[Boolean] = IO { edges.isDefinedAt(edgeId) }
+  def hasEdge(edgeId: EdgeId): SyncIO[Boolean] = SyncIO { edges.isDefinedAt(edgeId) }
 
-  def source(edgeId: EdgeId): IO[Option[VertexId]] = IO { edges.get(edgeId).map { _.src } }
+  def source(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edges.get(edgeId).map { _.src } }
 
-  def destination(edgeId: EdgeId): IO[Option[VertexId]] = IO { edges.get(edgeId).map { _.dst } }
+  def destination(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edges.get(edgeId).map { _.dst } }
 
-  def incidentEdges(vertexId: VertexId, direction: TraverseDirection): IO[List[EdgeId]] = IO {
+  def incidentEdges(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[EdgeId]] = SyncIO {
     direction match {
       case TraverseDirection.Forward => adjList.get(vertexId).toList.flatMap { _.keys }
       case TraverseDirection.Reverse => revAdjList.get(vertexId).toList.flatMap { _.keys }
     }
   }
 
-  def neighbors(vertexId: VertexId, direction: TraverseDirection): IO[List[VertexId]] = IO {
+  def neighbors(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[VertexId]] = SyncIO {
     direction match {
       case TraverseDirection.Forward => adjList.get(vertexId).toList.flatMap { _.values }
       case TraverseDirection.Reverse => revAdjList.get(vertexId).toList.flatMap { _.values }
     }
   }
 
-  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): IO[List[RoadNetwork.EdgeTriplet[E]]] = IO {
+  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[RoadNetwork.EdgeTriplet[E]]] = SyncIO {
     val lookup: Map[VertexId, Map[EdgeId, VertexId]] = direction match {
       case TraverseDirection.Forward => adjList
       case TraverseDirection.Reverse => revAdjList
@@ -86,8 +86,8 @@ case class LocalAdjacencyListFlowNetwork[V, E](
     }
   }
 
-  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (E, Flow) => E): IO[LocalAdjacencyListFlowNetwork[V, E]] =
-    IO {
+  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (E, Flow) => E): SyncIO[LocalAdjacencyListFlowNetwork[V, E]] =
+    SyncIO {
 
       // update only the edges provided in the flows argument
       val updatedEdges =

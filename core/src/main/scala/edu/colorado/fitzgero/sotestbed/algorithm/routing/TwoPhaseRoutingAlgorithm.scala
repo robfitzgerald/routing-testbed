@@ -12,7 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
   altPathsAlgorithm: AltPathsAlgorithm[F, V, E],
   selectionAlgorithm: SelectionAlgorithm[F, V, E],
-  pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[F, V, E],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: E => Flow => Cost,
   kspTerminationFunction: AltPathsAlgorithm.AltPathsState => Boolean,
@@ -28,26 +28,30 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
     val startTime: RunTime      = RunTime(System.currentTimeMillis)
     val costFunction: E => Cost = e => marginalCostFunction(e)(Flow.Zero)
 
-    for {
-      altsResult <- altPathsAlgorithm.generateAlts(reqs,
-                                                   roadNetwork,
-                                                   costFunction,
-                                                   kspTerminationFunction)
-      kspRuntime = RunTime(System.currentTimeMillis) - startTime
-      selectionResult <- selectionAlgorithm.selectRoutes(altsResult.alternatives,
-                                                         roadNetwork,
-                                                         pathToMarginalFlowsFunction,
-                                                         combineFlowsFunction,
-                                                         marginalCostFunction,
-                                                         selectionTerminationFunction)
-      selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
-    } yield {
-      RoutingAlgorithm.Result(
-        altsResult.alternatives,
-        selectionResult.selectedRoutes,
-        kspRuntime,
-        selectionRuntime
-      )
+    if (reqs.isEmpty) {
+      Monad[F].pure(RoutingAlgorithm.Result())
+    } else {
+      for {
+        altsResult <- altPathsAlgorithm.generateAlts(reqs,
+          roadNetwork,
+          costFunction,
+          kspTerminationFunction)
+        kspRuntime = RunTime(System.currentTimeMillis) - startTime
+        selectionResult <- selectionAlgorithm.selectRoutes(altsResult.alternatives,
+          roadNetwork,
+          pathToMarginalFlowsFunction,
+          combineFlowsFunction,
+          marginalCostFunction,
+          selectionTerminationFunction)
+        selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
+      } yield {
+        RoutingAlgorithm.Result(
+          altsResult.alternatives,
+          selectionResult.selectedRoutes,
+          kspRuntime,
+          selectionRuntime
+        )
+      }
     }
   }
 }

@@ -37,9 +37,10 @@ object SelectionAlgorithm {
   )
 
   final case class SelectionState(
-    bestSelectionIndices: List[Int],
+    bestSelectionIndices: Seq[Int],
     bestCost: Cost,
-    samples: NaturalNumber
+    samples: NaturalNumber,
+    startTime: Long
   )
 
   def evaluateCostOfSelection[F[_] : Monad, V, E](

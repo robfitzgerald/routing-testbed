@@ -15,12 +15,12 @@ final class SimTime(val value: Long) extends AnyVal {
   def toHourOfDay: Long = this.value / 3600
   def toMinuteOfHour: Long = (this.value % 3600) / 60
 
+
   override def toString: String = {
-    val hour: String = {
-      val hourValue = this.value / 3600
-      if (hourValue < 10) s"0$hourValue" else hourValue.toString
-    }
-    val min: String = ((this.value % 3600) / 60).toString
+    def padLeft(n: String): String = if (n.length == 1) s"0$n" else n
+    val hour: String =
+      padLeft((this.value / 3600).toString)
+    val min: String = padLeft(((this.value % 3600) / 60).toString)
     s"$hour:$min"
   }
 }
@@ -28,6 +28,8 @@ final class SimTime(val value: Long) extends AnyVal {
 object SimTime {
   val Zero: SimTime = new SimTime(0)
   val StartOfDay: SimTime = SimTime.Zero
+  // used by MATSim to flag time before the first time of the day
+  val Infinity: SimTime = SimTime(Double.PositiveInfinity)
   val Minute: SimTime = SimTime(60)
   val Hour: SimTime = Minute * SimTime(60)
   def hour(h: Int): SimTime = Hour * SimTime(h)

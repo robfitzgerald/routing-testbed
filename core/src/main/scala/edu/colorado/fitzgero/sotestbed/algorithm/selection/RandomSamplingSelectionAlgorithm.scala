@@ -29,6 +29,8 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       terminationFunction: SelectionState => Boolean
   ): F[SelectionAlgorithm.Result] = {
 
+    val startTime: Long = System.currentTimeMillis
+
     // turn path alternatives into vector for faster indexing performance
     val indexedAlts: Map[Request, Vector[Path]] =
       alts.map { tuple =>
@@ -56,7 +58,8 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       startState = SelectionState(
         bestSelectionIndices = selfishAssignmentSelection,
         bestCost = selfishCost,
-        samples = NaturalNumber.One
+        samples = NaturalNumber.One,
+        startTime = startTime
       )
       endState <- RandomSamplingSelectionAlgorithm.performRandomSampling(
         startState,
@@ -152,7 +155,8 @@ object RandomSamplingSelectionAlgorithm {
           SelectionAlgorithm.SelectionState(
             bestSelectionIndices = thisRandomSelectionIndices,
             bestCost = thisCost,
-            samples = state.samples + NaturalNumber.One
+            samples = state.samples + NaturalNumber.One,
+            state.startTime
           )
         }
       }

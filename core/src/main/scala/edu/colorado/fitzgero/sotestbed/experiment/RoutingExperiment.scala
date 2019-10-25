@@ -29,15 +29,15 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
 
     def _run(startState: ExperimentState): F[ExperimentState] = {
 
-      val experiment: F[ExperimentState] = startState.iterateUntilM { state =>
+      val experiment: F[ExperimentState] = startState.iterateUntilM { case ExperimentState(s0, r0, _) =>
         for {
-          s1             <- advance(state.simulator) // should return updated simulator
+          s1             <- advance(s0) // should return updated simulator
           edges          <- getUpdatedEdges(s1)
-          r1             <- state.roadNetwork.updateEdgeFlows(edges, updateFunction) // should return updated road network
+          r1             <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
           persons        <- getActiveRequests(s1)
-          result         <- routingAlgorithm.route(persons, state.roadNetwork)
+          result         <- routingAlgorithm.route(persons, r1)
           s2             <- assignRoutes(s1, result.responses) // should return updated simulator
-          currentSimTime <- getCurrentSimTime(state.simulator)
+          currentSimTime <- getCurrentSimTime(s2)
           _ = updateReports(result, currentSimTime) // unit is ok here, no modifications to application state
         } yield ExperimentState(s2, r1, currentSimTime) // should be passed updated versions of state
       }(_.currentSimTime == config)
