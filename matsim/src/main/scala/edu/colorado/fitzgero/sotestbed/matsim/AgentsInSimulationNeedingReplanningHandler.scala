@@ -17,6 +17,8 @@ class AgentsInSimulationNeedingReplanningHandler(
 
   private val agentsInSimulation: collection.mutable.Map[Id[Person], AgentData] = collection.mutable.Map.empty
 
+  def isUnderControl(agent: Id[Person]): Boolean = agentsUnderControl(agent)
+
   def getActiveAgentIds: List[Id[Person]] = agentsInSimulation.keys.toList
 
   def getPathForAgent(agent: Id[Person]): Option[List[Id[Link]]] = agentsInSimulation.get(agent).map{_.path}

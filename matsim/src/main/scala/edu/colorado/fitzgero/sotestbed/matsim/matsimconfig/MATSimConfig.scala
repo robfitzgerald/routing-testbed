@@ -17,15 +17,15 @@ final case class MATSimConfig(
 object MATSimConfig {
 
   final case class Run(
-    iterations: Int,
+    lastIteration          : Int,
     soRoutingIterationCycle: Int,
-    startOfSimTime: SimTime,
-    endOfSimTime: SimTime,
-    endOfRoutingTime: SimTime,
-    matsimStepSize: SimTime,
-    simulationTailTimeout: Duration
+    startOfSimTime         : SimTime,
+    endOfSimTime           : SimTime,
+    endOfRoutingTime       : SimTime,
+    matsimStepSize         : SimTime,
+    simulationTailTimeout  : Duration
   ) {
-    require(soRoutingIterationCycle < iterations, "matsimConfig.run.soRoutingIterationCycle needs to be less than matsimConfig.run.iterations")
+    require(soRoutingIterationCycle < lastIteration, "matsimConfig.run.soRoutingIterationCycle needs to be less than matsimConfig.run.lastIteration")
   }
 
   final case class Routing(

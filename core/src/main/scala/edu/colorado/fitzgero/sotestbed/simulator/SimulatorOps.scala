@@ -12,6 +12,18 @@ trait SimulatorOps[F[_]] {
   def getUpdatedEdges(simulator: Simulator): F[List[(EdgeId, Flow)]]
   def getActiveRequests(simulator: Simulator): F[List[Request]]
   def assignRoutes(simulator: Simulator, xs: List[Response]): F[Simulator]
-  def isDone(simulator: Simulator): F[Boolean]
+  def getState(simulator: Simulator): F[Either[String, SimulatorOps.SimulatorState]]
   def getCurrentSimTime(simulator: Simulator): F[SimTime]
+}
+
+object SimulatorOps {
+
+  sealed trait SimulatorState
+  object SimulatorState {
+    final case object Uninitialized extends SimulatorState
+    final case object Initialized   extends SimulatorState
+    final case object Running       extends SimulatorState
+    final case object Finishing     extends SimulatorState
+    final case object Finished      extends SimulatorState
+  }
 }

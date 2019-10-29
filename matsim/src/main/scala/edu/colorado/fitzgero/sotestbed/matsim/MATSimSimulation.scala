@@ -15,43 +15,46 @@ import org.matsim.core.mobsim.framework.{Mobsim, PlayPauseSimulationControl}
 import org.matsim.core.mobsim.framework.events.MobsimBeforeSimStepEvent
 import org.matsim.core.mobsim.qsim.QSim
 
+/**
+  * tracks the MATSim simulation state
+  */
 final case class MATSimSimulation(
-  currentSimTime: SimTime = SimTime.Zero,
-  isRunning: Boolean = false
-) extends Serializable with LazyLogging {
+//  currentSimTime: SimTime = SimTime.Zero,
+//  iteration: Int = 1,
+) extends Serializable {
 
-  def hasCompletedDayAndExited(
-    simulationTailTimeout: Duration,
-    playPauseSimulationControl: PlayPauseSimulationControl,
-    thread: Thread
-  ): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
+//  def hasCompletedDayAndExited(
+//    simulationTailTimeout: Duration,
+//    playPauseSimulationControl: PlayPauseSimulationControl,
+//    thread: Thread
+//  ): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
+//
+//    val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
+//
+//    @tailrec
+//    def _isDone(): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
+//      if (!thread.isAlive) {
+//        Right(playPauseSimulationControl.isFinished)
+//      } else if (System.currentTimeMillis > timeoutStop) {
+//        Left(
+//          MATSimSimulation.IsDoneFailure.TimeoutFailure(
+//            s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
+//      } else {
+//        Try { Thread.sleep(100) } match {
+//          case Success(()) => _isDone()
+//          case Failure(e) =>
+//            Left(MATSimSimulation.IsDoneFailure.TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}"))
+//        }
+//      }
+//    }
+//
+//    _isDone()
+//  }
 
-    val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
-
-    @tailrec
-    def _isDone(): Either[MATSimSimulation.IsDoneFailure, Boolean] = {
-      if (!thread.isAlive) {
-        Right(playPauseSimulationControl.isFinished)
-      } else if (System.currentTimeMillis > timeoutStop) {
-        Left(
-          MATSimSimulation.IsDoneFailure.TimeoutFailure(
-            s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
-      } else {
-        Try { Thread.sleep(100) } match {
-          case Success(()) => _isDone()
-          case Failure(e) =>
-            Left(MATSimSimulation.IsDoneFailure.TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}"))
-        }
-      }
-    }
-
-    _isDone()
-  }
-
-  def advance(newTime: SimTime): MATSimSimulation =
-    this.copy(
-      currentSimTime = newTime
-    )
+//  def advance(newTime: SimTime): MATSimSimulation =
+//    this.copy(
+//      currentSimTime = newTime
+//    )
 
 //  def advance(endOfRoutingTime: SimTime, stepSize: SimTime = SimTime(1), playPauseSimulationControl: PlayPauseSimulationControl): MATSimSimulation = {
 //

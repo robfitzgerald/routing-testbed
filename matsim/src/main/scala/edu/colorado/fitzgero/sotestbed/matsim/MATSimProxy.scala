@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.matsim
 import java.io.File
 import java.nio.file.{Files, Path}
 
+import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
@@ -11,6 +12,7 @@ import cats.effect.{IO, Sync, SyncIO}
 
 import com.google.inject.Provider
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.MATSimRunConfig
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.ActivityType
@@ -18,12 +20,15 @@ import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, Respo
 import edu.colorado.fitzgero.sotestbed.model.numeric._
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps
+import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps.SimulatorState
 import org.matsim.api.core.v01.{Id, Scenario}
 import org.matsim.api.core.v01.events.{PersonEntersVehicleEvent, PersonLeavesVehicleEvent}
 import org.matsim.api.core.v01.events.handler.{PersonEntersVehicleEventHandler, PersonLeavesVehicleEventHandler}
 import org.matsim.api.core.v01.network.Link
 import org.matsim.api.core.v01.population.{Person, Route}
 import org.matsim.core.config._
+import org.matsim.core.controler.events.IterationStartsEvent
+import org.matsim.core.controler.listener.IterationStartsListener
 import org.matsim.core.controler.{AbstractModule, Controler}
 import org.matsim.core.events.handler.EventHandler
 import org.matsim.core.mobsim.framework.events.{MobsimBeforeCleanupEvent, MobsimBeforeSimStepEvent, MobsimInitializedEvent}
@@ -43,12 +48,14 @@ import org.matsim.withinday.mobsim.MobsimDataProvider
   *
   */
 trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
-  // todo: add Logging
+
   override type Simulator              = MATSimSimulation
   override type SimulatorConfiguration = MATSimRunConfig
 
+  var matsimState: SimulatorOps.SimulatorState                                               = SimulatorOps.SimulatorState.Uninitialized
   var matsimStepSize: SimTime                                                                = SimTime(1)
   var endOfRoutingTime: SimTime                                                              = SimTime.EndOfDay
+  var lastIteration: Int                                                                     = 0
   var newRouteRequests: Option[MATSimProxy.RouteRequests]                                    = None
   var soReplanningThisIteration: Boolean                                                     = false
   var controler: Controler                                                                   = _
@@ -56,18 +63,23 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var playPauseSimulationControl: PlayPauseSimulationControl                                 = _
   var roadNetworkDeltaHandler: RoadNetworkDeltaHandler                                       = _
   var agentsInSimulationNeedingReplanningHandler: AgentsInSimulationNeedingReplanningHandler = _
-  val completePathStore: collection.mutable.Map[Id[Person], List[Id[Link]]] = collection.mutable.Map.empty
-  val temporaryPathPrefixStore: collection.mutable.Map[Id[Person], List[Id[Link]]] = collection.mutable.Map.empty
+  val completePathStore: collection.mutable.Map[Id[Person], List[Id[Link]]]                  = collection.mutable.Map.empty
+  val temporaryPathPrefixStore: collection.mutable.Map[Id[Person], List[Id[Link]]]           = collection.mutable.Map.empty
   var simulationTailTimeout: Duration                                                        = _
   var t: Thread                                                                              = _
+  var observedMATSimIteration: Int                                                           = 0
+  var observedHitMidnight: Boolean                                                           = false
+//  var advanceToSimTime: SimTime = SimTime.Zero
 
   override def initializeSimulator(config: SimulatorConfiguration): SyncIO[MATSimSimulation] = SyncIO {
 
     logger.debug("MATSimProxy.initializeSimulator")
 
+    // MATSimProxy config
     endOfRoutingTime = config.run.endOfRoutingTime
     matsimStepSize = config.run.matsimStepSize
     simulationTailTimeout = config.run.simulationTailTimeout
+    lastIteration = config.run.lastIteration
 
     // file system configuration
     val experimentPath: Path =
@@ -75,11 +87,12 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     Files.createDirectories(experimentPath)
 
     // matsim configuration
-    val matsimConfig: Config = ConfigUtils.createConfig()
+//    val matsimConfig: Config = ConfigUtils.createConfig()
+    val matsimConfig: Config = ConfigUtils.loadConfig(config.fs.matsimConfigFile.toString)
     matsimConfig.controler.setOutputDirectory(experimentPath.toString)
     matsimConfig.plans.setInputFile(config.fs.populationFile.toString)
     matsimConfig.network.setInputFile(config.fs.matsimNetworkFile.toString)
-    matsimConfig.controler.setLastIteration(config.run.iterations)
+    matsimConfig.controler.setLastIteration(config.run.lastIteration)
 
     // start MATSim and capture object references to simulation in broader MATSimActor scope
     controler = new Controler(matsimConfig)
@@ -88,277 +101,289 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     agentsInSimulationNeedingReplanningHandler = new AgentsInSimulationNeedingReplanningHandler(config.pop.agentsUnderControl)
     roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
 
+    // track iterations in MATSimProxy
+    controler.addControlerListener(new IterationStartsListener {
+      def notifyIterationStarts(event: IterationStartsEvent): Unit = {
+        logger.debug(s"beginning iteration ${event.getIteration}")
+        observedMATSimIteration = event.getIteration
+        observedHitMidnight = false
+//        advanceToSimTime = SimTime.StartOfDay
+      }
+    })
+
     // inject handlers and listeners for MATSim integration
     controler.addOverridingModule(new AbstractModule() {
       @Override def install(): Unit = {
 
-        this.addMobsimListenerBinding().toInstance(new MobsimInitializedListener {
+        this
+          .addMobsimListenerBinding()
+          .toInstance(new MobsimInitializedListener {
 
-          def notifyMobsimInitialized(e: MobsimInitializedEvent[_ <: Mobsim]): Unit = {
-            self.qSim = e.getQueueSimulation.asInstanceOf[QSim]
+            def notifyMobsimInitialized(e: MobsimInitializedEvent[_ <: Mobsim]): Unit = {
+              self.qSim = e.getQueueSimulation.asInstanceOf[QSim]
 
-            // start the playPause functionality
-            playPauseSimulationControl = new PlayPauseSimulationControl(qSim)
-            playPauseSimulationControl.pause()
+              // start the playPause functionality
+              playPauseSimulationControl = new PlayPauseSimulationControl(qSim)
+              playPauseSimulationControl.pause()
 
-            // track active agents under control
-            self.qSim.getEventsManager.addHandler(agentsInSimulationNeedingReplanningHandler)
+              // track active agents under control
+              self.qSim.getEventsManager.addHandler(agentsInSimulationNeedingReplanningHandler)
+              self.qSim.getEventsManager.addHandler(roadNetworkDeltaHandler)
 
-            // handler to force SO agents to use their SO assigned paths at each iteration of MATSim
-            self.qSim.getEventsManager.addHandler(new PersonEntersVehicleEventHandler {
-              override def handleEvent(event: PersonEntersVehicleEvent): Unit = {
+              // handler to force SO agents to use their SO assigned paths at each iteration of MATSim
+              self.qSim.getEventsManager.addHandler(new PersonEntersVehicleEventHandler {
+                override def handleEvent(event: PersonEntersVehicleEvent): Unit = {
 
-                // during so-replanning iterations, they are implicitly forced to apply their routes
-                // when not receiving so-replanning routing, the SO agent routes would by default
-                // be assigned by MATSim using the built-in GA policy.
-                if (soReplanningThisIteration) {
+                  // during so-replanning iterations, they are implicitly forced to apply their routes
+                  // when not receiving so-replanning routing, the SO agent routes would by default
+                  // be assigned by MATSim using the built-in GA policy.
+                  if (soReplanningThisIteration) {
 
-                  // wipe the stored routes, they will be over-written
-                  completePathStore.remove(event.getPersonId)
+                    // wipe the stored routes, they will be over-written
+                    completePathStore.remove(event.getPersonId)
 
-                } else {
+                  } else if (agentsInSimulationNeedingReplanningHandler.isUnderControl(event.getPersonId)) {
 
-                  // if this person is SO, overwrite their plan and select it, using stored plan
-                  for {
-                    pathFromPathStore <- completePathStore.get(event.getPersonId)
-                    person            <- controler.getScenario.getPopulation.getPersons.asScala.get(event.getPersonId)
-                    mobsimAgent       <- qSim.getAgents.asScala.get(event.getPersonId)
-                    requestClass      <- MATSimProxy.getRequestClass(person)
-                    if (requestClass match { case RequestClass.SO(_) => true; case _ => false }) &&
-                      pathFromPathStore.tail.drop(1).nonEmpty
-                  } {
+                    // if this person is SO, overwrite their plan and select it, using stored plan
+                    for {
 
-                    val startEdge = pathFromPathStore.head
-                    val endEdge   = pathFromPathStore.last
-                    val innerPath = pathFromPathStore.tail.drop(1)
-                    // grab stored route and apply it
-                    WithinDayAgentUtils
-                      .getModifiableCurrentLeg(mobsimAgent)
-                      .getRoute
-                      .asInstanceOf[NetworkRoute]
-                      .setLinkIds(startEdge, innerPath.asJava, endEdge)
-                  }
-                }
-              }
-              logger.debug("added person enters vehicle handler")
-            })
+//                    person            <- controler.getScenario.getPopulation.getPersons.asScala.get(event.getPersonId)
+                      mobsimAgent <- qSim.getAgents.asScala.get(event.getPersonId)
+                      pathFromPathStore = completePathStore.getOrElse(event.getPersonId, List.empty[Id[Link]])
+//                    requestClass      <- MATSimProxy.getRequestClass(person)
+//                    if (requestClass match { case RequestClass.SO(_) => true; case _ => false }) &&
+                      if MATSimProxy.pathHasAtLeastTwoLinks(pathFromPathStore)
+                    } {
 
-            self.qSim.getEventsManager.addHandler(new PersonLeavesVehicleEventHandler {
-              def handleEvent(event: PersonLeavesVehicleEvent): Unit = {
-                if (soReplanningThisIteration) {
-                  for {
-                    person       <- controler.getScenario.getPopulation.getPersons.asScala.get(event.getPersonId)
-                    mobsimAgent  <- self.qSim.getAgents.asScala.get(event.getPersonId)
-                    requestClass <- MATSimProxy.getRequestClass(person)
-                    if (requestClass match { case RequestClass.SO(_) => true; case _ => false })
-                  } {
-                    // ok. we finished some SO trip assignment round. store the experienced route.
-                    val agentExperiencedRoute: List[Id[Link]] =
+                      val startEdge = pathFromPathStore.head
+                      val endEdge   = pathFromPathStore.last
+                      val innerPath = pathFromPathStore.tail.drop(1)
+                      // grab stored route and apply it
                       WithinDayAgentUtils
                         .getModifiableCurrentLeg(mobsimAgent)
                         .getRoute
                         .asInstanceOf[NetworkRoute]
-                        .getLinkIds
-                        .asScala
-                        .toList
-                    completePathStore.update(event.getPersonId, agentExperiencedRoute)
+                        .setLinkIds(startEdge, innerPath.asJava, endEdge)
+                    }
                   }
                 }
-              }
-              logger.debug("added person exits vehicle handler")
-            })
+                logger.debug("added person enters vehicle handler")
+              })
 
-            self.qSim.addQueueSimulationListeners(new MobsimBeforeSimStepListener {
-              override def notifyMobsimBeforeSimStep(e: MobsimBeforeSimStepEvent[_ <: Mobsim]): Unit = {
-
-                if (e.getSimulationTime.toInt < 0) {
-                  // start of simulation. do we replan this iteration?
-                  // TODO: may be a cleaner way to get notified about the start of an iteration
-                  // MATSim uses -1.0 for the first-observed beforeSimStep call (and Infinity for inactive sims)
-
-                  agentsInSimulationNeedingReplanningHandler.clear()
-                  roadNetworkDeltaHandler.clear()
-
-                  soReplanningThisIteration =
-                    controler.getIterationNumber % config.run.soRoutingIterationCycle == 0
+              self.qSim.getEventsManager.addHandler(new PersonLeavesVehicleEventHandler {
+                def handleEvent(event: PersonLeavesVehicleEvent): Unit = {
+                  if (soReplanningThisIteration && agentsInSimulationNeedingReplanningHandler.isUnderControl(event.getPersonId)) {
+                    for {
+//                    person       <- controler.getScenario.getPopulation.getPersons.asScala.get(event.getPersonId)
+                      mobsimAgent <- self.qSim.getAgents.asScala.get(event.getPersonId)
+//                    requestClass <- MATSimProxy.getRequestClass(person)
+//                    if (requestClass match { case RequestClass.SO(_) => true; case _ => false })
+                    } {
+                      // ok. we finished some SO trip assignment round. store the experienced route.
+                      val agentExperiencedRoute: List[Id[Link]] =
+                        WithinDayAgentUtils
+                          .getModifiableCurrentLeg(mobsimAgent)
+                          .getRoute
+                          .asInstanceOf[NetworkRoute]
+                          .getLinkIds
+                          .asScala
+                          .toList
+                      completePathStore.update(event.getPersonId, agentExperiencedRoute)
+                    }
+                  }
                 }
+                logger.debug("added person exits vehicle handler")
+              })
 
-                if (soReplanningThisIteration) {
+              self.qSim.addQueueSimulationListeners(new MobsimBeforeSimStepListener {
+                override def notifyMobsimBeforeSimStep(e: MobsimBeforeSimStepEvent[_ <: Mobsim]): Unit = {
 
-                  // TODO: confirm that the SO group will use the same plan when no replanning in an iteration
-                  // TODO: confirm that the code below can be "skipped"
-                  //   maybe solve both problems simulataneously by adding conditional logic to the control flow below
-                  //   which only injects new routes when soReplanningThisIteration is true
-                  // only perform this re-planning every few iterations allowing for UE equilibrium to take effect between
+                  if (e.getSimulationTime.toInt < 0) {
+                    // start of simulation. do we replan this iteration?
+                    // TODO: may be a cleaner way to get notified about the start of an iteration
+                    // MATSim uses -1.0 for the first-observed beforeSimStep call (and Infinity for inactive sims)
 
-                  val nextSimTime = SimTime(e.getSimulationTime.toInt + 1)
-
-                  if (config.run.endOfRoutingTime <= nextSimTime) {
-                    // noop
-                    //  log.info(s"SimTime ${e.getSimulationTime} is beyond end of routing time ${conf.run.endOfRoutingTime} set in config - no routing will occur")
-                  } else {
-
-                    // get the changes to the road network observed since last sim step
-                    val networkDeltas: Map[EdgeId, Int] = roadNetworkDeltaHandler.getDeltasAsEdgeIds
+                    agentsInSimulationNeedingReplanningHandler.clear()
                     roadNetworkDeltaHandler.clear()
 
-                    // find the agents who are eligible for re-planning
-                    val agentsInSimulation: Map[Id[Person], MobsimAgent] =
-                      e.getQueueSimulation.asInstanceOf[QSim].getAgents.asScala.toMap
-                    val agentsEligibleForReplanning: List[MobsimAgent] =
-                      agentsInSimulationNeedingReplanningHandler.getActiveAgentIds
-                        .foldLeft(List.empty[MobsimAgent]) { (mobsimAgents, agentInSimulation) =>
-                          agentsInSimulation.get(agentInSimulation) match {
-                            case None =>
-                              throw new IllegalStateException(s"agent $agentInSimulation that emitted a departure event was not found in QSim")
-                            case Some(mobsimAgent) => mobsimAgent +: mobsimAgents
-                          }
-                        }
+                    soReplanningThisIteration =
+                      controler.getIterationNumber % config.run.soRoutingIterationCycle == 0
+                  }
 
-                    // convert the active agents eligible for re-planning into a List of Requests
-                    val agentsForReplanning: List[Request] =
-                      agentsEligibleForReplanning
-                        .flatMap {
-                          mobsimAgent: MobsimAgent =>
-                            // TODO: turn into a route request. we want to
-                            //   1. see if agentsInSimulationHandler has a path, and, if so,
-                            //     try and estimate a good point to modify the agent's remaining path
-                            //     or just pass the current point they are at if they are new to the routing algorithm
-                            //   2. pass this origin, and their known destination (mobsimAgent.getDestinationLinkId) to the route planner
+                  if (soReplanningThisIteration) {
 
-                            // MISSING: a way to estimate travel time over the road network links
-                            val agentId: Id[Person]     = mobsimAgent.getId
-                            val currentEdgeId: Id[Link] = mobsimAgent.getCurrentLinkId
+                    // TODO: confirm that the SO group will use the same plan when no replanning in an iteration
+                    // TODO: confirm that the code below can be "skipped"
+                    //   maybe solve both problems simulataneously by adding conditional logic to the control flow below
+                    //   which only injects new routes when soReplanningThisIteration is true
+                    // only perform this re-planning every few iterations allowing for UE equilibrium to take effect between
 
-                            // we want the remaining previously-assigned route starting from the agent's current Id[Link]
-                            val previousPathFromCurrentOrigin: List[Id[Link]] =
-                              agentsInSimulationNeedingReplanningHandler.getPathForAgent(agentId) match {
-                                case None               => List.empty
-                                case Some(previousPath) =>
-                                  // catch up with recent history. this can be empty if the current EdgeId isn't on the recorded path
-                                  previousPath.dropWhile(_ != currentEdgeId).map {
-                                    Id.createLinkId(_)
-                                  }
-                              }
+                    val nextSimTime = SimTime(e.getSimulationTime.toInt + 1)
 
-                            // the easy part...
-                            val requestDestination: EdgeId =
-                              EdgeId(mobsimAgent.getDestinationLinkId.toString)
+                    if (config.run.endOfRoutingTime <= nextSimTime) {
+                      // noop
+                      //  log.info(s"SimTime ${e.getSimulationTime} is beyond end of routing time ${conf.run.endOfRoutingTime} set in config - no routing will occur")
+                    } else {
 
-                            // pick a reasonable starting point.
-                            // we want to find a point that will take at least "conf.routing.reasonableReplanningLeadTime" to reach
-                            // which we compute based on the free flow travel time for the remaining links.
-                            val requestOriginOption: Option[EdgeId] =
-                              previousPathFromCurrentOrigin match {
-                                case Nil =>
-                                  // no previously assigned route, so, start from currentEdgeId
-                                  Some {
-                                    EdgeId(currentEdgeId.toString)
-                                  }
-                                case previousPath =>
-                                  val reasonableStartPointFoldAccumulator: matsim.MATSimProxy.ReasonableStartPointFoldAccumulator =
-                                    previousPath
-                                      .map { l =>
-                                        val link: Link = self.qSim.getNetsimNetwork
-                                          .getNetsimLink(Id.createLinkId(l.toString))
-                                          .getLink
-                                        (l, Meters.toTravelTime(Meters(link.getLength), MetersPerSecond(link.getFreespeed)))
-                                      }
-                                      .foldLeft(MATSimProxy.ReasonableStartPointFoldAccumulator(config.routing.reasonableReplanningLeadTime)) {
-                                        (acc, tup) =>
-                                          acc.startPoint match {
-                                            case Some(_) =>
-                                              // already found - skip
-                                              acc
-                                            case None =>
-                                              val (linkId, travelTimeSeconds)           = tup
-                                              val nextRemainingSlack: TravelTimeSeconds = acc.remainingSlack - travelTimeSeconds
-                                              if (nextRemainingSlack <= TravelTimeSeconds.Zero)
-                                                acc.copy(
-                                                  remainingSlack = nextRemainingSlack,
-                                                  startPoint = Some {
-                                                    EdgeId(linkId.toString)
-                                                  }
-                                                )
-                                              else
-                                                acc.copy(
-                                                  remainingSlack = nextRemainingSlack,
-                                                  pathPrefix = acc.pathPrefix :+ linkId
-                                                )
-                                          }
-                                      }
+                      // get the changes to the road network observed since last sim step
+                      val networkDeltas: Map[EdgeId, Int] = roadNetworkDeltaHandler.getDeltasAsEdgeIds
+                      roadNetworkDeltaHandler.clear()
 
-                                  // if there isn't a reasonable future replanning point, then we shouldn't disturb this agent
-
-                                  reasonableStartPointFoldAccumulator.startPoint match {
-                                    case None =>
-                                      agentsInSimulationNeedingReplanningHandler.getNumberOfPathAssignmentsForAgent(agentId) match {
-                                        case None =>
-                                          throw new IllegalStateException(
-                                            s"agent $agentId that emmitted a departure event should be stored in our handler")
-                                        case Some(numRoutes) =>
-                                          if (numRoutes == 0) {
-                                            // ok. agent's trip is short, we still need to find a route, even though
-                                            // a route would be shorter than the lower bound of "conf.routing.reasonableReplanningLeadTime"
-                                            temporaryPathPrefixStore.update(agentId, List.empty)
-                                            Some {
-                                              EdgeId(currentEdgeId.toString)
-                                            }
-                                          } else {
-                                            // ok, this agent's remaining trip is too short as it is below the lower bound
-                                            // provided by "conf.routing.reasonableReplanningLeadTime",
-                                            // so we won't send a re-routing request here
-                                            None
-                                          }
-                                      }
-                                    case Some(startPoint) =>
-                                      temporaryPathPrefixStore
-                                        .update(agentId, reasonableStartPointFoldAccumulator.pathPrefix)
-                                      Some {
-                                        startPoint
-                                      }
-                                  }
-                              }
-
-                            // requestOriginOption, if none, means we are cancelling this agent's route request
-                            // which is our way of telling the algorithm that the agent's remaining trip is too
-                            // short to re-plan
-                            //                        TravelMode.fromString(mobsimAgent.getMode) match {
-                            //                          // TODO: something parse, handle empty case
-                            //                        }
-                            requestOriginOption.map { requestOrigin =>
-                              Request(agentId.toString, requestOrigin, requestDestination, RequestClass.SO(), TravelMode.Car)
+                      // find the agents who are eligible for re-planning
+                      val agentsInSimulation: Map[Id[Person], MobsimAgent] = self.qSim.getAgents.asScala.toMap
+                      val agentsEligibleForReplanning: List[MobsimAgent] =
+                        agentsInSimulationNeedingReplanningHandler.getActiveAgentIds
+                          .foldLeft(List.empty[MobsimAgent]) { (mobsimAgents, agentInSimulation) =>
+                            agentsInSimulation.get(agentInSimulation) match {
+                              case None =>
+                                throw new IllegalStateException(s"agent $agentInSimulation that emitted a departure event was not found in QSim")
+                              case Some(mobsimAgent) => mobsimAgent +: mobsimAgents
                             }
-                        }
+                          }
 
-                    // construct the payload for this routing request
-                    val payload: MATSimProxy.RouteRequests =
-                      MATSimProxy.RouteRequests(
-                        e.getSimulationTime,
-                        agentsForReplanning,
-                        networkDeltas
-                      )
+                      // convert the active agents eligible for re-planning into a List of Requests
+                      val agentsForReplanning: List[Request] =
+                        agentsEligibleForReplanning
+                          .flatMap {
+                            mobsimAgent: MobsimAgent =>
+                              // TODO: turn into a route request. we want to
+                              //   1. see if agentsInSimulationHandler has a path, and, if so,
+                              //     try and estimate a good point to modify the agent's remaining path
+                              //     or just pass the current point they are at if they are new to the routing algorithm
+                              //   2. pass this origin, and their known destination (mobsimAgent.getDestinationLinkId) to the route planner
 
-                    // set aside payload of agents to route
-                    newRouteRequests = Some { payload }
-                    logger.debug(
-                      s"[MobsimBeforeSimStepEvent] at time ${e.getSimulationTime} storing ${payload.requests.length} requests for batch route module")
+                              // MISSING: a way to estimate travel time over the road network links
+                              val agentId: Id[Person]     = mobsimAgent.getId
+                              val currentEdgeId: Id[Link] = mobsimAgent.getCurrentLinkId
 
+                              // we want the remaining previously-assigned route starting from the agent's current Id[Link]
+                              val previousPathFromCurrentOrigin: List[Id[Link]] =
+                                agentsInSimulationNeedingReplanningHandler.getPathForAgent(agentId) match {
+                                  case None               => List.empty
+                                  case Some(previousPath) =>
+                                    // catch up with recent history. this can be empty if the current EdgeId isn't on the recorded path
+                                    previousPath.dropWhile(_ != currentEdgeId).map {
+                                      Id.createLinkId(_)
+                                    }
+                                }
+
+                              // the easy part...
+                              val requestDestination: EdgeId =
+                                EdgeId(mobsimAgent.getDestinationLinkId.toString)
+
+                              // pick a reasonable starting point.
+                              // we want to find a point that will take at least "conf.routing.reasonableReplanningLeadTime" to reach
+                              // which we compute based on the free flow travel time for the remaining links.
+                              val requestOriginOption: Option[EdgeId] =
+                                previousPathFromCurrentOrigin match {
+                                  case Nil =>
+                                    // no previously assigned route, so, start from currentEdgeId
+                                    Some {
+                                      EdgeId(currentEdgeId.toString)
+                                    }
+                                  case previousPath =>
+                                    val reasonableStartPointFoldAccumulator: matsim.MATSimProxy.ReasonableStartPointFoldAccumulator =
+                                      previousPath
+                                        .map { l =>
+                                          val link: Link = self.qSim.getNetsimNetwork
+                                            .getNetsimLink(Id.createLinkId(l.toString))
+                                            .getLink
+                                          (l, Meters.toTravelTime(Meters(link.getLength), MetersPerSecond(link.getFreespeed)))
+                                        }
+                                        .foldLeft(MATSimProxy.ReasonableStartPointFoldAccumulator(config.routing.reasonableReplanningLeadTime)) {
+                                          (acc, tup) =>
+                                            acc.startPoint match {
+                                              case Some(_) =>
+                                                // already found - skip
+                                                acc
+                                              case None =>
+                                                val (linkId, travelTimeSeconds)           = tup
+                                                val nextRemainingSlack: TravelTimeSeconds = acc.remainingSlack - travelTimeSeconds
+                                                if (nextRemainingSlack <= TravelTimeSeconds.Zero)
+                                                  acc.copy(
+                                                    remainingSlack = nextRemainingSlack,
+                                                    startPoint = Some {
+                                                      EdgeId(linkId.toString)
+                                                    }
+                                                  )
+                                                else
+                                                  acc.copy(
+                                                    remainingSlack = nextRemainingSlack,
+                                                    pathPrefix = acc.pathPrefix :+ linkId
+                                                  )
+                                            }
+                                        }
+
+                                    // if there isn't a reasonable future replanning point, then we shouldn't disturb this agent
+
+                                    reasonableStartPointFoldAccumulator.startPoint match {
+                                      case None =>
+                                        agentsInSimulationNeedingReplanningHandler.getNumberOfPathAssignmentsForAgent(agentId) match {
+                                          case None =>
+                                            throw new IllegalStateException(
+                                              s"agent $agentId that emmitted a departure event should be stored in our handler")
+                                          case Some(numRoutes) =>
+                                            if (numRoutes == 0) {
+                                              // ok. agent's trip is short, we still need to find a route, even though
+                                              // a route would be shorter than the lower bound of "conf.routing.reasonableReplanningLeadTime"
+                                              temporaryPathPrefixStore.update(agentId, List.empty)
+                                              Some {
+                                                EdgeId(currentEdgeId.toString)
+                                              }
+                                            } else {
+                                              // ok, this agent's remaining trip is too short as it is below the lower bound
+                                              // provided by "conf.routing.reasonableReplanningLeadTime",
+                                              // so we won't send a re-routing request here
+                                              None
+                                            }
+                                        }
+                                      case Some(startPoint) =>
+                                        temporaryPathPrefixStore
+                                          .update(agentId, reasonableStartPointFoldAccumulator.pathPrefix)
+                                        Some {
+                                          startPoint
+                                        }
+                                    }
+                                }
+
+                              // requestOriginOption, if none, means we are cancelling this agent's route request
+                              // which is our way of telling the algorithm that the agent's remaining trip is too
+                              // short to re-plan
+                              //                        TravelMode.fromString(mobsimAgent.getMode) match {
+                              //                          // TODO: something parse, handle empty case
+                              //                        }
+                              requestOriginOption.map { requestOrigin =>
+                                Request(agentId.toString, requestOrigin, requestDestination, RequestClass.SO(), TravelMode.Car)
+                              }
+                          }
+
+                      // construct the payload for this routing request
+                      val payload: MATSimProxy.RouteRequests =
+                        MATSimProxy.RouteRequests(
+                          e.getSimulationTime,
+                          agentsForReplanning,
+                          networkDeltas
+                        )
+
+                      // set aside payload of agents to route
+                      newRouteRequests = Some { payload }
+                      logger.debug(
+                        s"[MobsimBeforeSimStepEvent] at time ${e.getSimulationTime} storing ${payload.requests.length} requests for batch route module")
+
+                    }
                   }
                 }
-              }
-              logger.debug("added overriding router as before simstep handler")
-            })
-          }
-        })
+                logger.debug("added overriding router as before simstep handler")
+              })
+            }
+          })
 
       }
     })
 
+    matsimState = SimulatorOps.SimulatorState.Initialized
     MATSimSimulation()
   }
-
-
 
   override def assignRoutes(simulator: Simulator, responses: List[Response]): SyncIO[Simulator] = SyncIO {
 
@@ -473,65 +498,220 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
   }
 
   ///////////////////////////////////////////////// check if simulation is done
-  override def isDone(simulator: Simulator): SyncIO[Boolean] = SyncIO {
+  override def getState(simulator: Simulator): SyncIO[Either[String, SimulatorState]] = SyncIO {
 
-    logger.debug("MATSimProxy.isDone")
+    logger.debug("MATSimProxy.getState")
 
-    synchronized {
-      simulator.hasCompletedDayAndExited(simulationTailTimeout, playPauseSimulationControl, t) match {
-        case Left(error) =>
-          logger.debug(s"[isDone] status received error $error")
-          //        log.error("")
-          false
-        case Right(isDone) =>
-          logger.debug(s"[isDone] status: $isDone")
-          isDone
-      }
+    matsimState match {
+      case SimulatorState.Finishing =>
+        val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
+
+        @tailrec
+        def _isDone(): Either[MATSimSimulation.IsDoneFailure, SimulatorState] = {
+          if (!t.isAlive) {
+            logger.info(s"MATSim Simulation exited normally")
+            Right(SimulatorState.Finished)
+          } else if (System.currentTimeMillis > timeoutStop) {
+            Left(
+              MATSimSimulation.IsDoneFailure.TimeoutFailure(
+                s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
+          } else {
+            Try { Thread.sleep(1000) } match {
+              case Success(()) => _isDone()
+              case Failure(e) =>
+                Left(MATSimSimulation.IsDoneFailure.TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}"))
+            }
+          }
+        }
+
+        playPauseSimulationControl.play()
+        _isDone() match {
+          case Left(err)            => Left(err.toString)
+          case Right(finishedState) => Right(finishedState)
+        }
+      case other => Right(other)
     }
   }
 
   override def advance(simulator: Simulator): SyncIO[Simulator] = SyncIO {
 
+    // TODO:
+    //  is something not updating the PlayPause that the iteration has restarted the time?
+    //  is there a lag there?
+    //  i think "isFinished" is when local time on PlayPause == Double.PositiveInfinity
+    // it gets to the end of iteration 1 normally. what needs to be done to start the next iteration
+    // correctly? it just "stops" and after inspection, it seems while we just started iteration 1,
+    // the simulation is "finished" according to the PlayPause thingie.
+
     logger.debug("MATSimProxy.advance")
 
-    if (simulator.isRunning) {
-      logger.debug(s"[advance] moving forward one simstep")
-
-      val currentTime: SimTime = SimTime(playPauseSimulationControl.getLocalTime)
-
-      val thisSimStep: SimTime = if (endOfRoutingTime <= currentTime) {
-        SimTime.EndOfDay
-      } else matsimStepSize
-
-      val advanceToSimTime: SimTime = currentTime + thisSimStep
-
-      // run simulation for the suggested duration
-      playPauseSimulationControl.doStep(advanceToSimTime.value.toInt)
-
-      logger.debug("[advance] reached point where simulator can hand off to experiment runner")
-
-      simulator.advance(advanceToSimTime)
-    } else {
-
-      logger.debug("[advance] running MATSim")
-
-      t = new Thread(controler)
-      t.setName("matsim")
-      t.start()
-      while (self.playPauseSimulationControl == null) {
-        Try { Thread.sleep(100) } match {
-          case Success(()) => ()
-          case Failure(e) =>
-            logger.error("attempting to activate MATSim in child thread, failed:")
-            throw e
-        }
-      }
-
-      val activatedSimulator = simulator.copy(isRunning = true)
-
-      logger.debug("[advance] reached point where simulator can hand off to experiment runner")
-      activatedSimulator
+    if (observedMATSimIteration == 1) {
+      logger.debug("Yo")
     }
+
+    matsimState match {
+      case SimulatorState.Initialized =>
+        logger.debug("[advance] initializing MATSim")
+
+        t = new Thread(controler)
+        t.setName("matsim")
+        t.start()
+        while (self.playPauseSimulationControl == null) {
+          Try { Thread.sleep(100) } match {
+            case Success(()) => ()
+            case Failure(e) =>
+              logger.error("attempting to activate MATSim in child thread, failed:")
+              throw e
+          }
+        }
+
+        matsimState = SimulatorState.Running
+
+        logger.debug("[advance] reached point where simulator can hand off to experiment runner")
+        simulator
+
+      case SimulatorState.Running =>
+        // crank matsim
+
+        logger.debug(s"[advance] moving forward one simstep")
+
+        val iterationBeforeCrank: Int = observedMATSimIteration
+
+        // move one sim step forward, or, if "current time" exceeds end of day (from previous iteration),
+        // then advance to zero and collect $200.00.
+
+        val currentTime: SimTime      = SimTime(playPauseSimulationControl.getLocalTime)
+        val advanceToSimTime: SimTime = currentTime + matsimStepSize
+        playPauseSimulationControl.doStep(advanceToSimTime.value.toInt)
+
+        val thisIterationIsFinishedAfterCrank: Boolean = playPauseSimulationControl.getLocalTime == Double.MaxValue
+
+        if (thisIterationIsFinishedAfterCrank) {
+
+          observedHitMidnight = true
+          logger.debug("[advance] hit midnight")
+
+          if (iterationBeforeCrank < lastIteration) {
+            // we are already on the next iteration - possibly last iteration - though time hasn't restarted.
+            // since we aren't on the last iteration, then we should expect time to come around
+            // so, let's wait for that to be true.
+            var i = 0
+            while (self.playPauseSimulationControl.getLocalTime >= SimTime.EndOfDay.value) {
+              Try {
+                Thread.sleep(1000)
+              } match {
+                case Success(()) =>
+                  i = i + 1
+                  logger.debug(s"[advance] waited $i seconds for time to restart...")
+                case Failure(e) =>
+                  logger.error("attempting to activate MATSim in child thread, failed:")
+                  throw e
+              }
+            }
+          } else {
+
+            logger.debug("[advance] hit end of simulation")
+            matsimState = SimulatorState.Finishing
+          }
+        }
+
+        // done cranking
+        simulator
+
+      case x =>
+        throw new IllegalStateException(s"advance should never see matsim simulation in state '$x'")
+    }
+
+//    if (matsimState == SimulatorState.Initialized) {
+//
+//      logger.debug("[advance] initializing MATSim")
+//
+//      t = new Thread(controler)
+//      t.setName("matsim")
+//      t.start()
+//      while (self.playPauseSimulationControl == null) {
+//        Try { Thread.sleep(100) } match {
+//          case Success(()) => ()
+//          case Failure(e) =>
+//            logger.error("attempting to activate MATSim in child thread, failed:")
+//            throw e
+//        }
+//      }
+//
+//      matsimState = SimulatorState.Running
+//
+//      logger.debug("[advance] reached point where simulator can hand off to experiment runner")
+//      simulator
+//
+//    } else if (matsimState == SimulatorState.Running) {
+//
+//      // crank matsim
+//
+//      logger.debug(s"[advance] moving forward one simstep")
+//
+//      val iterationBeforeCrank: Int = observedMATSimIteration
+//
+//      // move one sim step forward, or, if "current time" exceeds end of day (from previous iteration),
+//      // then advance to zero and collect $200.00.
+//
+//      val currentTime: SimTime      = SimTime(playPauseSimulationControl.getLocalTime)
+//      val advanceToSimTime: SimTime = currentTime + matsimStepSize
+//      playPauseSimulationControl.doStep(advanceToSimTime.value.toInt)
+//
+//      val thisIterationIsFinishedAfterCrank: Boolean = SimTime.EndOfDay.value < playPauseSimulationControl.getLocalTime
+//
+//      if (thisIterationIsFinishedAfterCrank) {
+//
+//        observedHitMidnight = true
+//        logger.debug("[advance] hit midnight")
+//
+//        if (iterationBeforeCrank < lastIteration) {
+//          // we are already on the next iteration - possibly last iteration - though time hasn't restarted.
+//          // since we aren't on the last iteration, then we should expect time to come around
+//          // so, let's wait for that to be true.
+//          var i = 0
+//          while (self.playPauseSimulationControl.getLocalTime >= SimTime.EndOfDay.value) {
+//            Try {
+//              Thread.sleep(1000)
+//            } match {
+//              case Success(()) =>
+//                i = i + 1
+//                logger.debug(s"[advance] waited $i seconds for time to restart...")
+//              case Failure(e) =>
+//                logger.error("attempting to activate MATSim in child thread, failed:")
+//                throw e
+//            }
+//          }
+//        } else {
+//
+//          logger.debug("[advance] hit end of simulation")
+//          matsimState = SimulatorState.Finishing
+//
+//        }
+//      }
+//
+//      //      } else if (observedHitMidnight && observedMATSimIteration == lastIteration) {
+//      //
+//      //        // end of day of last iteration, matsim is finishing up
+//      //
+//      //        matsimState = SimulatorState.Finishing
+//      //        simulator
+//      //      } else {
+//      //
+//      //        // noop - maybe between iterations, so thread sleep, and then continue
+//      //        Try { Thread.sleep(100) } match {
+//      //          case Success(()) =>
+//      //            simulator
+//      //          case Failure(e) =>
+//      //            logger.error("attempting to activate MATSim in child thread, failed:")
+//      //            throw e
+//      //        }
+//      //      }
+//      simulator
+//    } else {
+//      // no op
+//      simulator
+//    }
   }
 
   override def getUpdatedEdges(simulator: Simulator): SyncIO[List[(EdgeId, Flow)]] = SyncIO {
@@ -574,8 +754,9 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
   }
 
   override def getCurrentSimTime(simulator: Simulator): SyncIO[SimTime] = SyncIO {
-    logger.debug(s"MATSimProxy.getCurrentSimTime ${simulator.currentSimTime}")
-    simulator.currentSimTime
+    val currentTime = SimTime(playPauseSimulationControl.getLocalTime)
+    logger.debug(s"MATSimProxy.getCurrentSimTime $currentTime")
+    currentTime
   }
   // handle MobsimBeforeSimStepListener to catch the next sim time
   // from inside the event handler,
@@ -586,6 +767,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
 }
 
 object MATSimProxy {
+
   final case class RouteRequests(
     timeOfDay: Double,
     requests: List[Request],
@@ -607,6 +789,10 @@ object MATSimProxy {
     val requestClassString: String =
       person.getAttributes.getAttribute(RequestClassAttributeLabel).asInstanceOf[String]
     RequestClass(requestClassString)
+  }
+
+  def pathHasAtLeastTwoLinks(path: List[Id[Link]]): Boolean = {
+    path.nonEmpty && path.tail.drop(1).nonEmpty
   }
 
   def createScenario(config: Config): Scenario = {
@@ -643,11 +829,7 @@ object MATSimProxy {
     sc
   }
 }
-
-
 //////// GRAVEYARD
-
-
 //        module
 //          .bindMobsim()
 //          .toProvider(new Provider[Mobsim] {
