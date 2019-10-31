@@ -21,7 +21,8 @@ final class SimTime(val value: Long) extends AnyVal {
     val hour: String =
       padLeft((this.value / 3600).toString)
     val min: String = padLeft(((this.value % 3600) / 60).toString)
-    s"$hour:$min"
+    val sec: String = padLeft((this.value % 60).toString)
+    s"$hour:$min:$sec"
   }
 }
 

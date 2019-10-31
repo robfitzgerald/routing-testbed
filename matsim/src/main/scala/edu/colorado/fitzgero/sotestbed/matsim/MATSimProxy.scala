@@ -105,17 +105,28 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     controler.addControlerListener(new IterationStartsListener {
       def notifyIterationStarts(event: IterationStartsEvent): Unit = {
         logger.debug(s"beginning iteration ${event.getIteration}")
+
         observedMATSimIteration = event.getIteration
         observedHitMidnight = false
-//        advanceToSimTime = SimTime.StartOfDay
+
+        agentsInSimulationNeedingReplanningHandler.clear()
+        roadNetworkDeltaHandler.clear()
+
+        soReplanningThisIteration =
+          if (config.run.soRoutingIterationCycle == 0) {
+            true
+          } else {
+            event.getIteration % config.run.soRoutingIterationCycle == 0
+          }
+        //        advanceToSimTime = SimTime.StartOfDay
       }
     })
 
     // inject handlers and listeners for MATSim integration
-    controler.addOverridingModule(new AbstractModule() {
+    controler.addOverridingModule(new AbstractModule() { module =>
       @Override def install(): Unit = {
 
-        this
+        module
           .addMobsimListenerBinding()
           .toInstance(new MobsimInitializedListener {
 
@@ -123,7 +134,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
               self.qSim = e.getQueueSimulation.asInstanceOf[QSim]
 
               // start the playPause functionality
-              playPauseSimulationControl = new PlayPauseSimulationControl(qSim)
+              playPauseSimulationControl = new PlayPauseSimulationControl(self.qSim)
               playPauseSimulationControl.pause()
 
               // track active agents under control
@@ -143,8 +154,17 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                     completePathStore.remove(event.getPersonId)
 
                   } else if (agentsInSimulationNeedingReplanningHandler.isUnderControl(event.getPersonId)) {
-
+                    logger.debug(s"[PersonEntersVehicleEventHandler] agent ${event.getPersonId} is under control")
                     // if this person is SO, overwrite their plan and select it, using stored plan
+
+                    // TODO:
+                    //  this needs to be WithinDayAgentUtils.getModifiablePlan when the current
+                    //  leg doesn't exist (before the trip has begun!)
+                    //  maybe this shouldn't be happening at the PersonEntersVehicleEvent, despite
+                    //  how convenient that is, because any trip we give them may be overwritten
+                    //  momentarily. perhaps instead "person enters link" should involve inspecting
+                    //  if this agent has been "observed starting their trip already" and then
+                    //  branch out from there.
                     for {
 
 //                    person            <- controler.getScenario.getPopulation.getPersons.asScala.get(event.getPersonId)
@@ -159,6 +179,9 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       val endEdge   = pathFromPathStore.last
                       val innerPath = pathFromPathStore.tail.drop(1)
                       // grab stored route and apply it
+
+                      logger.debug(s"${SimTime(playPauseSimulationControl.getLocalTime)} agent ${event.getPersonId}: applying stored route with ${pathFromPathStore.length} edges")
+
                       WithinDayAgentUtils
                         .getModifiableCurrentLeg(mobsimAgent)
                         .getRoute
@@ -173,6 +196,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
               self.qSim.getEventsManager.addHandler(new PersonLeavesVehicleEventHandler {
                 def handleEvent(event: PersonLeavesVehicleEvent): Unit = {
                   if (soReplanningThisIteration && agentsInSimulationNeedingReplanningHandler.isUnderControl(event.getPersonId)) {
+                    logger.debug(s"[PersonLeavesVehicleEventHandler] agent ${event.getPersonId} is under control")
                     for {
 //                    person       <- controler.getScenario.getPopulation.getPersons.asScala.get(event.getPersonId)
                       mobsimAgent <- self.qSim.getAgents.asScala.get(event.getPersonId)
@@ -188,6 +212,9 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           .getLinkIds
                           .asScala
                           .toList
+
+                      logger.debug(s"${SimTime(playPauseSimulationControl.getLocalTime)} agent ${event.getPersonId}: storing completed route with ${agentExperiencedRoute.length} edges")
+
                       completePathStore.update(event.getPersonId, agentExperiencedRoute)
                     }
                   }
@@ -198,17 +225,17 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
               self.qSim.addQueueSimulationListeners(new MobsimBeforeSimStepListener {
                 override def notifyMobsimBeforeSimStep(e: MobsimBeforeSimStepEvent[_ <: Mobsim]): Unit = {
 
-                  if (e.getSimulationTime.toInt < 0) {
-                    // start of simulation. do we replan this iteration?
-                    // TODO: may be a cleaner way to get notified about the start of an iteration
-                    // MATSim uses -1.0 for the first-observed beforeSimStep call (and Infinity for inactive sims)
-
-                    agentsInSimulationNeedingReplanningHandler.clear()
-                    roadNetworkDeltaHandler.clear()
-
-                    soReplanningThisIteration =
-                      controler.getIterationNumber % config.run.soRoutingIterationCycle == 0
-                  }
+//                  if (e.getSimulationTime.toInt < 0) {
+//                    // start of simulation. do we replan this iteration?
+//                    // TODO: may be a cleaner way to get notified about the start of an iteration
+//                    // MATSim uses -1.0 for the first-observed beforeSimStep call (and Infinity for inactive sims)
+//
+//                    agentsInSimulationNeedingReplanningHandler.clear()
+//                    roadNetworkDeltaHandler.clear()
+//
+//                    soReplanningThisIteration =
+//                      controler.getIterationNumber % config.run.soRoutingIterationCycle == 0
+//                  }
 
                   if (soReplanningThisIteration) {
 
@@ -220,10 +247,12 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
                     val nextSimTime = SimTime(e.getSimulationTime.toInt + 1)
 
-                    if (config.run.endOfRoutingTime <= nextSimTime) {
+                    if (endOfRoutingTime <= nextSimTime) {
                       // noop
-                      //  log.info(s"SimTime ${e.getSimulationTime} is beyond end of routing time ${conf.run.endOfRoutingTime} set in config - no routing will occur")
+                        logger.debug(s"[MobsimBeforeSimStepListener] time ${e.getSimulationTime} is beyond end of routing time ${endOfRoutingTime.toString} set in config - no routing will occur")
                     } else {
+
+                      logger.debug(s"[MobsimBeforeSimStepListener] finding agents for routing at time ${SimTime(e.getSimulationTime)}")
 
                       // get the changes to the road network observed since last sim step
                       val networkDeltas: Map[EdgeId, Int] = roadNetworkDeltaHandler.getDeltasAsEdgeIds
@@ -236,7 +265,8 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           .foldLeft(List.empty[MobsimAgent]) { (mobsimAgents, agentInSimulation) =>
                             agentsInSimulation.get(agentInSimulation) match {
                               case None =>
-                                throw new IllegalStateException(s"agent $agentInSimulation that emitted a departure event was not found in QSim")
+                                logger.error(s"[MobsimBeforeSimStepListener] agent $agentInSimulation that emitted a departure event was not found in QSim")
+                                mobsimAgents
                               case Some(mobsimAgent) => mobsimAgent +: mobsimAgents
                             }
                           }
@@ -365,10 +395,12 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           networkDeltas
                         )
 
+                      logger.debug(s"requesting routing\n$payload")
+
                       // set aside payload of agents to route
                       newRouteRequests = Some { payload }
                       logger.debug(
-                        s"[MobsimBeforeSimStepEvent] at time ${e.getSimulationTime} storing ${payload.requests.length} requests for batch route module")
+                        s"[MobsimBeforeSimStepEvent] at time ${SimTime(e.getSimulationTime)} storing ${payload.requests.length} requests for batch route module")
 
                     }
                   }
@@ -529,6 +561,13 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
           case Left(err)            => Left(err.toString)
           case Right(finishedState) => Right(finishedState)
         }
+      case SimulatorState.Running if !t.isAlive =>
+        matsimState = SimulatorState.Finished
+        Left(
+          MATSimSimulation.IsDoneFailure.TimeoutFailure(
+            s"MATSim may have had a fatal error").toString
+        )
+
       case other => Right(other)
     }
   }
@@ -544,10 +583,6 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     // the simulation is "finished" according to the PlayPause thingie.
 
     logger.debug("MATSimProxy.advance")
-
-    if (observedMATSimIteration == 1) {
-      logger.debug("Yo")
-    }
 
     matsimState match {
       case SimulatorState.Initialized =>
@@ -572,6 +607,8 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
       case SimulatorState.Running =>
         // crank matsim
+
+        logger.debug(qSim.getAgents.asScala.map{case (key, value) => s"$key - ${value.toString}"}.mkString("agents\n", "\n", ""))
 
         logger.debug(s"[advance] moving forward one simstep")
 
