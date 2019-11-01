@@ -19,26 +19,38 @@ class AgentsInSimulationNeedingReplanningHandler(
 
   def isUnderControl(agent: Id[Person]): Boolean = agentsUnderControl(agent)
 
-  def getActiveAgentIds: List[Id[Person]] = agentsInSimulation.keys.toList
+  def getActiveAgentsEligibleForReplanning(maxPathAssignments: Int): List[Id[Person]] =
+    agentsInSimulation
+      .filter{_._2.numberOfPathAssignments <= maxPathAssignments}
+      .keys.toList
 
-  def getPathForAgent(agent: Id[Person]): Option[List[Id[Link]]] = agentsInSimulation.get(agent).map{_.path}
+//  def getPathForAgent(agent: Id[Person]): Option[List[Id[Link]]] = agentsInSimulation.get(agent).map{_.path}
+//
+  def incrementNumberOfPathAssignmentsForAgent(agent: Id[Person]): Option[Unit] =
+    agentsInSimulation
+      .get(agent)
+      .map{a =>
+        agentsInSimulation.update(agent, a.increment())
+      }
 
   def getNumberOfPathAssignmentsForAgent(agent: Id[Person]): Option[Int] = agentsInSimulation.get(agent).map{_.numberOfPathAssignments}
+
+  def getDepartureTimeForAgent(agent: Id[Person]): Option[MATSimProxy.DepartureTime] = agentsInSimulation.get(agent).map{_.departureTimeOfCurrentLeg}
 
 //  def getRequestDataForAgent: Unit = ???
 //
 //  def getRequestsUnderControl: Unit = ???
 
-  def addPathToAgent(agent: Id[Person], path: List[Id[Link]]): Unit = {
-    agentsInSimulation.get(agent) match {
-      case None => () // todo: should log here
-      case Some(agentData) =>
-        agentsInSimulation.update(
-          agent,
-          agentData.addPath(path)
-        )
-    }
-  }
+//  def addPathToAgent(agent: Id[Person], path: List[Id[Link]]): Unit = {
+//    agentsInSimulation.get(agent) match {
+//      case None => () // todo: should log here
+//      case Some(agentData) =>
+//        agentsInSimulation.update(
+//          agent,
+//          agentData.addPath(path)
+//        )
+//    }
+//  }
 
   // for more information on these events, see The MATSim Book, page 19, Fig 2.2: Mobsim events
 
@@ -48,7 +60,7 @@ class AgentsInSimulationNeedingReplanningHandler(
     */
   def handleEvent(event: PersonDepartureEvent): Unit =
     if (agentsUnderControl(event.getPersonId)) {
-      agentsInSimulation + (event.getPersonId -> AgentData())
+      agentsInSimulation + (event.getPersonId -> AgentData(MATSimProxy.DepartureTime(event.getTime.toInt)))
     }
 
   /**
@@ -68,13 +80,16 @@ class AgentsInSimulationNeedingReplanningHandler(
 
 object AgentsInSimulationNeedingReplanningHandler {
   private final case class AgentData(
-      path: List[Id[Link]] = List.empty,
-      numberOfPathAssignments: Int = 0
+//      path: List[Id[Link]] = List.empty,
+    departureTimeOfCurrentLeg: MATSimProxy.DepartureTime,
+    numberOfPathAssignments: Int = 0,
   ) {
-    def addPath(path: List[Id[Link]]): AgentData =
-      this.copy(
-        path = path,
-        numberOfPathAssignments = numberOfPathAssignments + 1
-      )
+
+    def increment(): AgentData = this.copy(numberOfPathAssignments = this.numberOfPathAssignments + 1)
+//    def addPath(path: List[Id[Link]]): AgentData =
+//      this.copy(
+//        path = path,
+//        numberOfPathAssignments = numberOfPathAssignments + 1
+//      )
   }
 }

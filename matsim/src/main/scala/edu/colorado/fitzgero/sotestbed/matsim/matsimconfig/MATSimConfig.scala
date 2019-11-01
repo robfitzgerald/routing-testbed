@@ -32,6 +32,7 @@ object MATSimConfig {
     networkFlowCaptureBuffer: SimTime,
     k: NaturalNumber,
     batchWindow: SimTime,
+    maxPathAssignments: Int,
     reasonableReplanningLeadTime: TravelTimeSeconds,
     theta: Cost
   )
