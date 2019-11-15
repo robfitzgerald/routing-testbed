@@ -27,15 +27,23 @@ object kSPwLO_SVP_Algorithm {
     val startTime: Long = System.currentTimeMillis
 
     for {
+      // construct forward and reverse spanning trees
       fwdTree <- OptionT {
         SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.origin, request.destination, TraverseDirection.Forward)
       }
       revTree <- OptionT {
-        SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.destination, request.origin, TraverseDirection.Reverse)
+        SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.origin, request.destination, TraverseDirection.Reverse)
       }
-    } yield {
-
-      val intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
+      // construct PathSegments for the origin and destination edge which are not included in the spanning trees
+      originPathSegment <- OptionT { roadNetwork.edge(request.origin) }.map { e =>
+        PathSegment(request.origin, costFunction(e.attribute))
+      }
+      destinationPathSegment <- OptionT { roadNetwork.edge(request.destination) }.map { e =>
+        PathSegment(request.destination, costFunction(e.attribute))
+      }
+      // find intersections
+      // (pushed into for comprehension in order to test for existence of an overlap set)
+      intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
         for {
           vertexId <- fwdTree.tree.keys.toSet.intersect(revTree.tree.keys.toSet).toList
           cost = fwdTree.tree(vertexId).pathCost + revTree.tree(vertexId).pathCost
@@ -43,14 +51,24 @@ object kSPwLO_SVP_Algorithm {
           AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
         }
         }.sortBy { _.cost }
+      if intersectionVertices.nonEmpty
+    } yield {
 
+      // find all vertices that exist in the intersection of both spanning trees
+      // sort them based on the travel time cost to reach each vertex from both tree roots
+//      val intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
+//        for {
+//          vertexId <- fwdTree.tree.keys.toSet.intersect(revTree.tree.keys.toSet).toList
+//          cost = fwdTree.tree(vertexId).pathCost + revTree.tree(vertexId).pathCost
+//        } yield {
+//          AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
+//        }
+//      }.sortBy { _.cost }
       val startState: AltPathsAlgorithm.AltPathsState = AltPathsAlgorithm.AltPathsState(intersectionVertices, startTime)
 
       // for each node, store the svp distance as the fwd dist + bwd dist, and store combined path
       //  place in a heap
-
       // go through shortest -> longest, testing overlap according to written algorithm
-
       @tailrec
       def _svp(searchState: AltPathsAlgorithm.AltPathsState): AltPathsAlgorithm.AltPathsState = {
         if (terminationFunction(searchState)) searchState
@@ -112,11 +130,11 @@ object kSPwLO_SVP_Algorithm {
       val AltPathsAlgorithm.AltPathsState(_, _, pathsSeen, altsWithCosts) = _svp(startState)
 
       // sort in order discovered which should also be a sort by cost; only return the path
-      val alts: List[Path] = altsWithCosts.reverse.map { case (path, _) => path }
+      val alts: List[Path] = altsWithCosts.reverse.map { case (path, _) => originPathSegment +: path :+ destinationPathSegment }
 
       SingleSVPResult(request, alts, pathsSeen)
     }
-    }.value
+  }.value
 
   /**
     * computes the sum of Costs of overlap for two paths, one which is given to be longer than the other
@@ -139,7 +157,7 @@ object kSPwLO_SVP_Algorithm {
       } yield {
         altEdgeCost
       }
-      }.foldLeft(Cost.Zero) { _ + _ }
+    }.foldLeft(Cost.Zero) { _ + _ }
 
     thisPathOverlapCost
   }

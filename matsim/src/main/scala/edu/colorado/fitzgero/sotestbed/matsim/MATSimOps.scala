@@ -4,6 +4,24 @@ import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.Link
 
 object MATSimOps {
+
+  /**
+    * takes the agent's current path, and attaches a new path at the point where they intersect.
+    *
+    * assuming that the new path has been created based on a link in the old path.
+    *
+    * @param currentPath the path that MATSim currently has stored for this agent
+    * @param newPath the routing result
+    * @return o-[currentPath]->o-[newPath]-> concatenated
+    */
+  def coalescePath(currentPath: List[Id[Link]], newPath: List[Id[Link]]): List[Id[Link]] = {
+    newPath.headOption match {
+      case None => currentPath
+      case Some(firstLinkInNewPath) =>
+        currentPath.takeWhile(_ != firstLinkInNewPath) ++ newPath
+    }
+  }
+
   /**
     * a MATSim path does not include start or end. this safely combines everything we have
     * related to this path assignment and turns it into a MATSim path

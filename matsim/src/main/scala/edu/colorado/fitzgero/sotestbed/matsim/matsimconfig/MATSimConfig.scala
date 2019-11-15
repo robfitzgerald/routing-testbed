@@ -8,9 +8,9 @@ import scala.concurrent.duration.Duration
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber, SimTime, TravelTimeSeconds}
 
 final case class MATSimConfig(
-  fs: MATSimConfig.FileSystem,
-  run: MATSimConfig.Run,
-  routing: MATSimConfig.Routing,
+  io       : MATSimConfig.IO,
+  run      : MATSimConfig.Run,
+  routing  : MATSimConfig.Routing,
   algorithm: MATSimConfig.Algorithm
 )
 
@@ -34,15 +34,18 @@ object MATSimConfig {
     batchWindow: SimTime,
     maxPathAssignments: Int,
     reasonableReplanningLeadTime: TravelTimeSeconds,
+    minimumReplanningWaitTime: SimTime,
+    minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
     theta: Cost
   )
 
-  final case class FileSystem(
+  final case class IO(
     matsimNetworkFile: File,
     populationFile: File,
     matsimConfigFile: File,
     experimentTimestamp: Long = System.currentTimeMillis,
     workingBaseDirectory: Path = Paths.get("/tmp"),
+    matsimLogLevel: String = "INFO",
     name: String = "so-matsim"
   ) {
 

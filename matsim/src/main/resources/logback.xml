@@ -8,7 +8,11 @@
         </encoder>
     </appender>
 
-    <root level="debug">
+    <logger name="edu.colorado.fitzgero" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <root level="DEBUG">
         <appender-ref ref="STDOUT" />
     </root>
 </configuration>

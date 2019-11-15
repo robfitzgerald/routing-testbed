@@ -26,8 +26,8 @@ object MATSimExperimentApp extends App {
 
   val result = for {
     config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/default-experiment.conf").load[MATSimConfig]
-    network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.fs.matsimNetworkFile)
-    agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.fs.populationFile)
+    network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile)
+    agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.io.populationFile)
   } yield {
 
     val pop: MATSimRunConfig.Population = MATSimRunConfig.Population(
@@ -36,7 +36,7 @@ object MATSimExperimentApp extends App {
 
     val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(
       pop,
-      config.fs,
+      config.io,
       config.routing,
       config.run
     )

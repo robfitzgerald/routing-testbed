@@ -34,9 +34,9 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
         case ExperimentState(e0, r0, s0, _) =>
           for {
             e1             <- advance(e0) // should return updated simulator
+            persons        <- getActiveRequests(e1)
             edges          <- getUpdatedEdges(e1)
             r1             <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
-            persons        <- getActiveRequests(e1)
             result         <- routingAlgorithm.route(persons, r1)
             e2             <- assignRoutes(e1, result.responses) // should return updated simulator
             currentSimTime <- getCurrentSimTime(e2)

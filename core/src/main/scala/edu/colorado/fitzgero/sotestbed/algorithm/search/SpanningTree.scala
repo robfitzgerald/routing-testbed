@@ -13,19 +13,19 @@ object SpanningTree {
     * builds a Dijkstra's spanning tree rooted at a vertex, optionally with a stopping point
     * @param roadNetworkModel an instance of the RoadNetworkModel trait
     * @param costFunction a user-defined cost function from the provided edge type E
-    * @param rootEdgeId the root of the spanning tree we are building
-    * @param dstEdgeId the destination of the path
-    * @param direction traversing forward or reverse on edges
+    * @param srcEdgeId the source of the path search
+    * @param dstEdgeId the destination of the path search
+    * @param direction traversing forward or reverse on edges (determines which edge is used for the tree root)
     * @tparam V vertex type
     * @tparam E edge type
     * @return
     */
   def edgeOrientedSpanningTree[F[_]: Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E],
                                                   costFunction: E => Cost,
-                                                  rootEdgeId: EdgeId,
+                                                  srcEdgeId: EdgeId,
                                                   dstEdgeId: EdgeId,
                                                   direction: TraverseDirection): F[Option[MinSpanningTree[E]]] = {
-    if (rootEdgeId == dstEdgeId) {
+    if (srcEdgeId == dstEdgeId) {
       Monad[F].pure {
         None
       }
@@ -33,11 +33,11 @@ object SpanningTree {
 
       // pick from edge triplet depending on direction
       val rootVertexT: F[Option[VertexId]] =
-        if (direction == TraverseDirection.Forward) roadNetworkModel.source(rootEdgeId)
-        else roadNetworkModel.destination(rootEdgeId)
-      val dstVertexT: F[Option[VertexId]] =
-        if (direction == TraverseDirection.Forward) roadNetworkModel.destination(dstEdgeId)
+        if (direction == TraverseDirection.Forward) roadNetworkModel.destination(srcEdgeId)
         else roadNetworkModel.source(dstEdgeId)
+      val dstVertexT: F[Option[VertexId]] =
+        if (direction == TraverseDirection.Forward) roadNetworkModel.source(dstEdgeId)
+        else roadNetworkModel.destination(srcEdgeId)
 
       val result: F[Option[MinSpanningTree[E]]] = {
         for {

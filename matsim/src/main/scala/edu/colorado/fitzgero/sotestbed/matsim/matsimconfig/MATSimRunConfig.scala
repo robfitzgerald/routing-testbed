@@ -5,7 +5,7 @@ import org.matsim.api.core.v01.population.Person
 
 final case class MATSimRunConfig (
   pop: MATSimRunConfig.Population,
-  fs: MATSimConfig.FileSystem,
+  io : MATSimConfig.IO,
   routing: MATSimConfig.Routing,
   run: MATSimConfig.Run
 )
