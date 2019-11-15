@@ -80,14 +80,14 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     logger.debug("MATSimProxy.initializeSimulator")
 
     // MATSimProxy config
-    endOfRoutingTime = config.run.endOfRoutingTime
-    lastIteration = config.run.lastIteration
-    batchWindow = config.routing.batchWindow
-    matsimStepSize = config.run.matsimStepSize
-    maxPathAssignments = config.routing.maxPathAssignments
-    reasonableReplanningLeadTime = config.routing.reasonableReplanningLeadTime
-    minimumRemainingRouteTimeForReplanning = config.routing.reasonableReplanningLeadTime
-    simulationTailTimeout = config.run.simulationTailTimeout
+    self.endOfRoutingTime = config.run.endOfRoutingTime
+    self.lastIteration = config.run.lastIteration
+    self.batchWindow = config.routing.batchWindow
+    self.matsimStepSize = config.run.matsimStepSize
+    self.maxPathAssignments = config.routing.maxPathAssignments
+    self.reasonableReplanningLeadTime = config.routing.reasonableReplanningLeadTime
+    self.minimumRemainingRouteTimeForReplanning = config.routing.reasonableReplanningLeadTime
+    self.simulationTailTimeout = config.run.simulationTailTimeout
 
     // file system configuration
     val experimentPath: Path =
@@ -103,28 +103,28 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     matsimConfig.controler.setLastIteration(config.run.lastIteration)
 
     // start MATSim and capture object references to simulation in broader MATSimActor scope
-    controler = new Controler(matsimConfig)
+    self.controler = new Controler(matsimConfig)
 
     // initialize intermediary data structures holding data between route algorithms + simulation
-    agentsInSimulationNeedingReplanningHandler = new AgentsInSimulationNeedingReplanningHandler(
+    self.agentsInSimulationNeedingReplanningHandler = new AgentsInSimulationNeedingReplanningHandler(
       config.pop.agentsUnderControl,
       config.routing.minimumReplanningWaitTime,
       config.routing.maxPathAssignments
     )
-    roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
+    self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
 
     // track iterations in MATSimProxy
-    controler.addControlerListener(new IterationStartsListener {
+    self.controler.addControlerListener(new IterationStartsListener {
       def notifyIterationStarts(event: IterationStartsEvent): Unit = {
         logger.debug(s"beginning iteration ${event.getIteration}")
 
-        observedMATSimIteration = event.getIteration
-        observedHitMidnight = false
+        self.observedMATSimIteration = event.getIteration
+        self.observedHitMidnight = false
 
-        agentsInSimulationNeedingReplanningHandler.clear()
-        roadNetworkDeltaHandler.clear()
+        self.agentsInSimulationNeedingReplanningHandler.clear()
+        self.roadNetworkDeltaHandler.clear()
 
-        soReplanningThisIteration = if (config.run.soRoutingIterationCycle == 0) {
+        self.soReplanningThisIteration = if (config.run.soRoutingIterationCycle == 0) {
           true // prevent divide-by-zero; soRoutingIterationCycle == 0 => so-routing every iteration
         } else if (event.getIteration == 0) {
           true // always perform so-routing on first iteration (invariant for soReplanningThisIteration==false iterations)
@@ -135,7 +135,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     })
 
     // inject handlers and listeners for MATSim integration
-    controler.addOverridingModule(new AbstractModule() { module =>
+    self.controler.addOverridingModule(new AbstractModule() { module =>
       @Override def install(): Unit = {
 
         module
@@ -167,7 +167,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                     logger.debug(
                       s"[VehicleEntersTrafficEventHandler] agent ${event.getPersonId} removing stored route in prep for so replanning iteration")
                     // wipe the stored routes, they will be over-written
-                    completePathStore.remove(event.getPersonId)
+                    self.completePathStore.remove(event.getPersonId)
 
                   } else if (agentsInSimulationNeedingReplanningHandler.isUnderControl(event.getPersonId)) {
                     logger.debug(s"[VehicleEntersTrafficEventHandler] triggered for so agent ${event.getPersonId}")
@@ -258,7 +258,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
                       // get the changes to the road network observed since last sim step
                       val networkDeltas: Map[EdgeId, Int] = roadNetworkDeltaHandler.getDeltasAsEdgeIds
-                      roadNetworkDeltaHandler.clear()
+                      self.roadNetworkDeltaHandler.clear()
 
                       // find the agents who are eligible for re-planning
                       val agentsInSimulation: Map[Id[Person], MobsimAgent] = self.qSim.getAgents.asScala.toMap
