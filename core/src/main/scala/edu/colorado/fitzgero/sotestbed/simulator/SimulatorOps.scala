@@ -1,5 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.simulator
 
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchingManager
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
@@ -39,12 +40,13 @@ trait SimulatorOps[F[_]] {
   def getUpdatedEdges(simulator: Simulator): F[List[(EdgeId, Flow)]]
 
   /**
-    * produces all routing requests related to the current time of the simulator
+    * produces all routing requests which have recently become available for replanning
+    * so that they may be considered by the BatchingManager for replanning assignment.
     *
     * @param simulator the simulator state object
     * @return a list of request objects translated into the routing framework
     */
-  def getActiveRequests(simulator: Simulator): F[List[Request]]
+  def getAgentsNewlyAvailableForReplanning(simulator: Simulator): F[List[BatchingManager.AgentBatchData]]
 
   /**
     * takes routing responses and applies them to the associated agents in the simulation
@@ -53,7 +55,7 @@ trait SimulatorOps[F[_]] {
     * @param xs a list of responses
     * @return the simulator state object
     */
-  def assignRoutes(simulator: Simulator, xs: List[Response]): F[Simulator]
+  def assignReplanningRoutes(simulator: Simulator, xs: List[Response]): F[Simulator]
 
   /**
     * returns one of the discrete simulation phases that this simulation is in

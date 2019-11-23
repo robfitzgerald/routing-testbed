@@ -9,9 +9,10 @@ import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
 import cats.effect.SyncIO
-import org.apache.log4j.{Level, Logger}
 
+import org.apache.log4j.{Level, Logger}
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchingManager
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.MATSimRunConfig
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, Response, TravelMode}
 import edu.colorado.fitzgero.sotestbed.model.numeric._
@@ -46,7 +47,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
   // configuration-based variables
   var endOfRoutingTime: SimTime                                 = _
   var lastIteration: Int                                        = _
-  var batchWindow: SimTime = _
+  var batchWindow: SimTime                                      = _
   var matsimStepSize: SimTime                                   = _
   var maxPathAssignments: Int                                   = _
   var reasonableReplanningLeadTime: TravelTimeSeconds           = _
@@ -108,7 +109,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.agentsInSimulationNeedingReplanningHandler = new AgentsInSimulationNeedingReplanningHandler(
       config.pop.agentsUnderControl,
-      config.routing.minimumReplanningWaitTime,
+
       config.routing.maxPathAssignments
     )
     self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
@@ -256,8 +257,8 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
                       logger.debug(s"[MobsimBeforeSimStepListener] finding agents for routing at time ${SimTime(e.getSimulationTime)}")
 
-                      // get the changes to the road network observed since last sim step
-                      val networkDeltas: Map[EdgeId, Int] = roadNetworkDeltaHandler.getDeltasAsEdgeIds
+//                       get the changes to the road network observed since last sim step
+//                      val networkDeltas: Map[EdgeId, Int] = roadNetworkDeltaHandler.getDeltasAsEdgeIds
                       self.roadNetworkDeltaHandler.clear()
 
                       // find the agents who are eligible for re-planning
@@ -265,10 +266,10 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       val currentSimTime: SimTime                          = SimTime(self.playPauseSimulationControl.getLocalTime)
 
                       // convert eligable agents into requests
-                      val agentsForReplanning: List[Request] =
+                      val agentsForReplanning: List[BatchingManager.AgentBatchData] =
                         agentsInSimulationNeedingReplanningHandler
                           .getActiveAndEligibleForReplanning(currentSimTime)
-                          .foldLeft(List.empty[Request]) {
+                          .foldLeft(List.empty[BatchingManager.AgentBatchData]) {
                             (mobsimAgents, agentInSimulation) =>
                               agentsInSimulation.get(agentInSimulation) match {
                                 case None =>
@@ -276,6 +277,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                     s"[MobsimBeforeSimStepListener] agent $agentInSimulation that emitted a departure event was not found in QSim")
                                   mobsimAgents
                                 case Some(mobsimAgent) =>
+                                  // build Requests for this time step
                                   val agentId           = mobsimAgent.getId
                                   val leg               = WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)
                                   val fullRoute         = MATSimProxy.convertToCompleteRoute(leg)
@@ -305,9 +307,15 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                           TravelMode.Car
                                         )
 
+                                      val thisAgentBatchingData: BatchingManager.AgentBatchData =
+                                        BatchingManager.AgentBatchData(
+                                          thisRequest,
+                                          MATSimProxy.convertToRoutingPath(fullRoute)
+                                        )
+
                                       logger.debug(
                                         s"[MobsimBeforeSimStepListener] requesting route for agent $agentId, o=$sourceEdgeId, d=$destinationEdgeId")
-                                      thisRequest +: mobsimAgents
+                                      thisAgentBatchingData +: mobsimAgents
                                   }
                               }
                           }
@@ -318,8 +326,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                         val payload: MATSimProxy.RouteRequests =
                           MATSimProxy.RouteRequests(
                             e.getSimulationTime,
-                            agentsForReplanning,
-                            networkDeltas
+                            agentsForReplanning
                           )
 
                         // set aside payload of agents to route
@@ -338,13 +345,6 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           s"[MobsimBeforeSimStepListener] at time ${SimTime(e.getSimulationTime)} storing ${payload.requests.length} requests for batch route module")
                       } else {
 
-                        // do nothing
-//                          newRouteRequests match {
-//                            case None =>
-//                              newRouteRequests = None
-//                            case Some(_) =>
-//                              // noop
-//                          }
                         routingRequestsUpdatedToTimeStep = SimTime(e.getSimulationTime)
 
                         logger.debug(s"[MobsimBeforeSimStepListener] at time ${SimTime(e.getSimulationTime)} has no (new) route requests")
@@ -451,7 +451,7 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     }
   }
 
-  override def assignRoutes(simulator: Simulator, responses: List[Response]): SyncIO[Simulator] = SyncIO {
+  override def assignReplanningRoutes(simulator: Simulator, responses: List[Response]): SyncIO[Simulator] = SyncIO {
 
     if (responses.isEmpty) {
       logger.debug(s"[assignRoutes] received 0 route responses - NOOP")
@@ -498,6 +498,8 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
         // doing this now when storing the Request, above, to prevent repeated requests due to PlayPauseSimulationControl
         // taking multiple simulation steps, which leads to duplicate requests in our test runner
 //        agentsInSimulationNeedingReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
+
+        self.agentsInSimulationNeedingReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
 
         self.agentsInSimulationNeedingReplanningHandler.getReplanningCountForAgent(agentId) match {
           case None =>
@@ -568,11 +570,14 @@ trait MATSimProxy extends SimulatorOps[SyncIO] with LazyLogging { self =>
     *
     * @return a list of requests
     */
-  override def getActiveRequests(simulator: Simulator): SyncIO[List[Request]] = SyncIO {
+  override def getAgentsNewlyAvailableForReplanning(simulator: Simulator): SyncIO[List[BatchingManager.AgentBatchData]] = SyncIO {
     if (matsimState != SimulatorState.Running) {
+      List.empty
+    } else if (agentsInSimulationNeedingReplanningHandler.) {
       List.empty
     } else {
 
+      // todo: remove this?
       var i: Int = 0
       while (routingRequestsUpdatedToTimeStep < SimTime(playPauseSimulationControl.getLocalTime)) {
         Try {
@@ -613,8 +618,7 @@ object MATSimProxy {
 
   final case class RouteRequests(
     timeOfDay: Double,
-    requests: List[Request],
-    networkDeltas: Map[EdgeId, Int]
+    requests: List[BatchingManager.AgentBatchData]
   )
 
   final case class RouteResponses(
@@ -644,8 +648,8 @@ object MATSimProxy {
     startPoint: Option[Id[Link]] = None,
     pathPrefix: List[Id[Link]] = List.empty
   ) {
-    def startPointFound: Boolean = startPoint.nonEmpty
-    def startPointNotFound: Boolean = startPoint.isEmpty
+    def startPointFound: Boolean           = startPoint.nonEmpty
+    def startPointNotFound: Boolean        = startPoint.isEmpty
     def clearedReplanningLeadTime: Boolean = remainingSlack <= TravelTimeSeconds.Zero
   }
 
@@ -654,6 +658,8 @@ object MATSimProxy {
       leg.getRoute.asInstanceOf[NetworkRoute].getLinkIds.asScala.toList :+
       leg.getRoute.getEndLinkId
   }
+
+  def convertToRoutingPath(route: List[Id[Link]]): List[EdgeId] = route.map{linkId => EdgeId(linkId.toString)}
 
   def assignCompleteRouteToLeg(links: List[Id[Link]], leg: Leg): Unit = {
     val startEdge              = links.head
@@ -695,7 +701,7 @@ object MATSimProxy {
 //                  // already found - skip
 //                  acc
 //                case None =>
-              val (linkId, linkTravelTime)           = tup
+              val (linkId, linkTravelTime)              = tup
               val nextRemainingSlack: TravelTimeSeconds = acc.remainingSlack - linkTravelTime
               if (acc.clearedReplanningLeadTime && acc.startPointNotFound) {
                 // reasonable start point has been found. store it, and begin storing est. remaining travel time.
@@ -747,7 +753,7 @@ object MATSimProxy {
   }
 
   def batchEndTimesInRange(startTime: SimTime, endTime: SimTime, batchWindow: SimTime): List[SimTime] = {
-    val it = Iterator.iterate(startTime.value.toInt){_ + 1}.dropWhile{_ % batchWindow.value.toInt != 0}
+    val it = Iterator.iterate(startTime.value.toInt) { _ + 1 }.dropWhile { _ % batchWindow.value.toInt != 0 }
     if (it.isEmpty) List.empty
     else {
       {

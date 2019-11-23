@@ -36,8 +36,12 @@ object MATSimConfig {
     reasonableReplanningLeadTime: TravelTimeSeconds,
     minimumReplanningWaitTime: SimTime,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
+    requestUpdateCycle: SimTime,
     theta: Cost
-  )
+  ) {
+    require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle needs to be at least 1")
+    require(Cost.Zero <= theta || theta <= Cost(1), "matsimConfig.routing.theta must be between zero and one")
+  }
 
   final case class IO(
     matsimNetworkFile: File,

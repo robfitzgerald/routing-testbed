@@ -4,6 +4,7 @@ import scala.Numeric.Implicits._
 
 final class Cost (val value: Double) extends AnyVal {
   def < (that: Cost): Boolean = this.value < that.value
+  def <= (that: Cost): Boolean = this.value <= that.value
   def + (that: Cost): Cost = new Cost(this.value + that.value)
   def / (that: Cost): Cost = new Cost(this.value / that.value)
 }
