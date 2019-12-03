@@ -8,11 +8,11 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 case class BatchingManager (
   batchWindow     : SimTime,
-  batchingStrategy: Map[SimTime, Map[String, BatchingManager.AgentBatchData]] = Map.empty,
+  batchingStrategy: Map[SimTime, Map[String, AgentBatchData]] = Map.empty,
 ) extends LazyLogging {
 
   /**
-    * looks up any batch for this sim time and return it
+    * looks up any batch for this sim time (possibly empty) and return it
     * @param currentSimTime the current sim time
     * @return the updated BatchingManager along with any requests for this sim time
     */
@@ -36,39 +36,23 @@ case class BatchingManager (
     * @param currentTime the current sim time
     * @return the updated batching manager (or the same one)
     */
-  def updateBatchData(newBatchStrategy: Option[Map[SimTime, Map[String, BatchingManager.AgentBatchData]]], currentTime: SimTime): BatchingManager =
+  def updateBatchData(newBatchStrategy: Option[Map[SimTime, Map[String, AgentBatchData]]], currentTime: SimTime): BatchingManager =
     newBatchStrategy match {
       case None => this
       case Some(newStrat) =>
-        val nextValidBatchingTime: SimTime = BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
-        val validStrategy: Boolean = {
-          val found: Seq[Boolean] = for {
-            t   <- currentTime.value to nextValidBatchingTime.value
-            time = SimTime(t)
-            if newStrat.isDefinedAt(time)
-          } yield {
-            logger.error(s"batching strategy update at time $currentTime has invalid time $time; ignoring update at time")
-            false
-          }
-          found.forall(identity)
-        }
-        if (validStrategy) {
-          this.copy(batchingStrategy=newStrat)
-        } else {
-          this
+        BatchingManager.listInvalidStrategies(newStrat, batchWindow, currentTime) match {
+          case Nil =>
+            this.copy(batchingStrategy=newStrat)
+          case testInvalid =>
+            testInvalid.foreach{ time =>
+              logger.error(s"batching strategy update at time $currentTime has invalid time $time; ignoring update at time")
+            }
+            this
         }
     }
 }
 
 object BatchingManager {
-
-  final case class AgentBatchData(
-    request: Request,
-    currentRoute: List[EdgeId],
-    estimatedTravelTime: TravelTimeSeconds,
-    estimatedDistance: Meters,
-    lastReplanningTime: SimTime,
-  )
 
   /**
     * it is invalid to set a batch time for agents unless a complete
@@ -80,5 +64,34 @@ object BatchingManager {
     * @param currentTime the current sim time
     * @return the next valid replanning batch time that can be set
     */
-  def nextValidBatchingTime(batchWindow: SimTime, currentTime: SimTime): SimTime =  currentTime + (currentTime % batchWindow) + batchWindow
+  def nextValidBatchingTime(batchWindow: SimTime, currentTime: SimTime): SimTime = {
+    if (currentTime < SimTime.Zero) {
+      // end of the first batch window will suffice for negative time values
+      // (of which -1 should be the only one)
+      batchWindow
+    } else {
+      // find the SimTime at the end of the next batch
+      ((currentTime / batchWindow) * batchWindow) + (SimTime(2) * batchWindow)
+    }
+  }
+
+  /**
+    * if the updated strategy has invalid batch entries, list them
+    * @param newStrategy the new strategy
+    * @param batchWindow batch window for
+    * @param currentTime the current sim time
+    * @return a list of any entries found to be invalid (hopefully empty!)
+    */
+  def listInvalidStrategies(
+    newStrategy: Map[SimTime, Map[String, AgentBatchData]],
+    batchWindow: SimTime,
+    currentTime: SimTime): Seq[SimTime] = {
+    for {
+      t   <- currentTime until nextValidBatchingTime(batchWindow, currentTime)
+      time = SimTime(t)
+      if newStrategy.isDefinedAt(time)
+    } yield {
+      time
+    }
+  }
 }

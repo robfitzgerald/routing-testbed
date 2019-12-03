@@ -179,7 +179,18 @@ object LocalAdjacencyListFlowNetwork {
           (length * lanes) / VehicleSpacer
         }
       }.flatMap { cap =>
-        NaturalNumber(cap.value.toInt).toOption
+        // it is possible that capacity, when scaled, could be less than one..
+        // @todo: perhaps this isn't the best, but, we ensure that each link
+        //   has a capacity of AT LEAST one.
+        if (cap.value < 1) {
+          Some { NaturalNumber.One }
+        } else {
+          NaturalNumber(cap.value.toInt).toOption
+        }
+      }
+
+      if (freespeedOption.isEmpty || capacityOption.isEmpty || lengthOption.isEmpty) {
+        println(link.toString)
       }
 
       {
@@ -191,7 +202,7 @@ object LocalAdjacencyListFlowNetwork {
           EdgeBPR(length, freespeed, capacity)
         }
       } match {
-        case None => edgesBuilder.copy(failedEdges = edgeId.value +: edgesBuilder.failedEdges)
+        case None => edgesBuilder.copy(failedEdges = link.toString +: edgesBuilder.failedEdges)
         case Some(attr) =>
           val nextFwdAdjList =
             if (edgesBuilder.adjList.isDefinedAt(src))
@@ -216,8 +227,8 @@ object LocalAdjacencyListFlowNetwork {
     if (verticesBuilder.failedVertices.nonEmpty || edgesBuilder.failedEdges.nonEmpty) {
       Left {
         s"""
-           |vertices failed: ${verticesBuilder.failedVertices.length} - ids: ${verticesBuilder.failedVertices.mkString(", ")}\n
-           |   edges failed: ${edgesBuilder.failedEdges.length} - ids: ${edgesBuilder.failedEdges.mkString(", ")}
+           |vertices failed: ${verticesBuilder.failedVertices.length} \n${verticesBuilder.failedVertices.mkString("\n")}\n
+           |   edges failed: ${edgesBuilder.failedEdges.length} \n${edgesBuilder.failedEdges.mkString("\n")}
            |""".stripMargin
       }
     } else {

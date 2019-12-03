@@ -12,8 +12,8 @@ import pureconfig.generic.auto._
 import MATSimPopConfig.localDateConvert
 
 object MATSimPopulationApp extends App {
-  for {
-    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/default-population.conf"))).load[MATSimPopConfig]
+  val result = for {
+    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/rye/default-population.conf"))).load[MATSimPopConfig]
     popSamplingAlgorithm <- config.pop.popSampling.build(config)
     population = popSamplingAlgorithm.generate
   } yield {
@@ -45,4 +45,6 @@ object MATSimPopulationApp extends App {
       DocType("population", SystemID("matsim/src/main/resources/matsim-dtd/population_v6.dtd"), Nil)
     )
   }
+
+  println(result)
 }

@@ -76,7 +76,23 @@ class AgentsInSimulationNeedingReplanningHandler(
     * @param agent this agent
     * @return replanning count
     */
-  def getReplanningCountForAgent(agent: Id[Person]): Option[Int] = agentsInSimulation.get(agent).map { _.numberOfPathAssignments }
+  def getReplanningCountForAgent(agent: Id[Person]): Option[Int] =
+    for {
+      agentData <- agentsInSimulation.get(agent)
+    } yield agentData.numberOfPathAssignments
+
+  /**
+    * gets the most recent SimTime that this agent was re-planned, unless they have not yet
+    * been re-planned, in which case return None
+    * @param agent this agent
+    * @return an optional most recent time planned
+    */
+  def getMostRecentTimePlannedForAgent(agent: Id[Person]): Option[SimTime] =
+    for {
+      agentData <- agentsInSimulation.get(agent)
+      mostRecentTimePlanned <- agentData.mostRecentTimePlanned
+    } yield mostRecentTimePlanned
+
 
   /**
     * gets the departure time for this agent's current trip (that has just ended, so we can store it)

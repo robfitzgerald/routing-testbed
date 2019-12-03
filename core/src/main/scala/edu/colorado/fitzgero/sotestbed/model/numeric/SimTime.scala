@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.model.numeric
 
 import scala.Numeric.Implicits._
+import scala.collection.immutable.NumericRange
 
 import cats.data.Validated
 
@@ -8,11 +9,14 @@ final class SimTime(val value: Long) extends AnyVal {
   def + (that: SimTime): SimTime = SimTime(this.value + that.value)
   def - (that: SimTime): SimTime = SimTime(this.value - that.value)
   def * (that: SimTime): SimTime = SimTime(this.value * that.value)
+  def / (that: SimTime): SimTime = SimTime(this.value / that.value)
   def % (that: SimTime): SimTime = SimTime(this.value % that.value)
   def < (that: SimTime): Boolean = this.value < that.value
   def <= (that: SimTime): Boolean = this.value <= that.value
   def > (that: SimTime): Boolean = this.value > that.value
   def >= (that: SimTime): Boolean = this.value >= that.value
+  def to (that: SimTime): NumericRange.Inclusive[Long] = this.value to that.value
+  def until (that: SimTime): NumericRange.Exclusive[Long] = this.value until that.value
   def toHourOfDay: Long = this.value / 3600
   def toMinuteOfHour: Long = (this.value % 3600) / 60
 

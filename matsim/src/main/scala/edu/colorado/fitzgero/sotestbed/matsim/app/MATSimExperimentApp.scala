@@ -9,6 +9,7 @@ import cats.effect.{ContextShift, IO, SyncIO}
 import pureconfig._
 import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.{AltPathsAlgorithm, kSPwLO_SVP_Sync}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.GreedyBatching
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{RandomSamplingSelectionAlgorithm, SelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
@@ -25,7 +26,7 @@ object MATSimExperimentApp extends App {
 //  implicit val ctx: ContextShift[IO] = IO.contextShift(global)
 
   val result = for {
-    config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/default-experiment.conf").load[MATSimConfig]
+    config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/rye/default-experiment.conf").load[MATSimConfig]
     network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile)
     agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.io.populationFile)
   } yield {
@@ -60,6 +61,8 @@ object MATSimExperimentApp extends App {
       network,
       routingAlgorithm,
       EdgeBPRUpdateOps.edgeUpdateWithFlowCount, // <- comes from same source that will feed routingAlgorithm above
+      GreedyBatching(config.routing.batchWindow, config.routing.minimumReplanningWaitTime),
+      config.routing.batchWindow,
       config.run.endOfRoutingTime
     )
   }

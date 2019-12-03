@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.simulator
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchingManager
-import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
+import edu.colorado.fitzgero.sotestbed.model.agent.Response
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
@@ -46,7 +46,7 @@ trait SimulatorOps[F[_]] {
     * @param simulator the simulator state object
     * @return a list of request objects translated into the routing framework
     */
-  def getAgentsNewlyAvailableForReplanning(simulator: Simulator): F[List[BatchingManager.AgentBatchData]]
+  def getAgentsNewlyAvailableForReplanning(simulator: Simulator): F[List[AgentBatchData]]
 
   /**
     * takes routing responses and applies them to the associated agents in the simulation

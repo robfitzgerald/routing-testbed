@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.model.numeric
 class Meters (val value: Double) extends AnyVal {
   def / (that: Meters): Meters = Meters(this.value / that.value)
   def * (that: Double): Meters = new Meters(this.value * that)
+  def < (that: Meters): Boolean = this.value < that.value
 }
 
 object Meters {

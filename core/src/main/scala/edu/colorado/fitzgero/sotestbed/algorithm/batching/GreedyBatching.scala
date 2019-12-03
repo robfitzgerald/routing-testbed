@@ -1,6 +1,9 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
+import cats.Monad
+
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 case class GreedyBatching (
   batchWindow: SimTime,
@@ -15,23 +18,41 @@ case class GreedyBatching (
     * @param currentTime the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
-  def updateBatchingStrategy(currentBatchStrategy: Map[SimTime, Map[String, BatchingManager.AgentBatchData]],
-    newBatchData: List[BatchingManager.AgentBatchData],
-    currentTime: SimTime): Option[Map[SimTime, Map[String, BatchingManager.AgentBatchData]]] = {
+  def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
+    currentBatchStrategy: Map[SimTime, Map[String, AgentBatchData]],
+    newBatchData: List[AgentBatchData],
+    currentTime: SimTime): F[Option[Map[SimTime, Map[String, AgentBatchData]]]] = {
+    if (newBatchData.isEmpty) Monad[F].pure {
+      None
+    } else Monad[F].pure {
 
-    // just insert requests at the soonest possible batch time
-    val nextBatchingTime: SimTime = BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
+      // just insert requests at the soonest possible batch time
+      val nextBatchingTime: SimTime = BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
 
-    // remove agents who have exceeded the config parameter for minimum replanning wait time
-    newBatchData.filter{_.lastReplanningTime + minimumReplanningWaitTime > currentTime} match {
-      case Nil => None
-      case newRequests =>
-        // we have agents that we can replan to add to the nearest possible request time
-        val agentsToAdd = newRequests.map{agentBatchData => agentBatchData.request.agent -> agentBatchData.request}.toMap
-        val updatedGreedyBatchTime = currentBatchStrategy.getOrElse(nextBatchingTime, Map.empty) ++ agentsToAdd
-        Some {
-          currentBatchStrategy.updated(nextBatchingTime, updatedGreedyBatchTime)
-        }
+      newBatchData
+        .filter{
+          // remove agents who have met the minimum replanning wait time since their last replanning
+          _.lastReplanningTime match {
+            case None => true
+            case Some(lastReplanningTime) =>
+              lastReplanningTime + minimumReplanningWaitTime > currentTime
+          }
+        } match {
+        case Nil => None
+        case newRequests =>
+          // we have agents that we can replan to add to the nearest possible request time
+          val agentsToAdd: Map[String, AgentBatchData] =
+            newRequests
+              .map{ agentBatchData => agentBatchData.request.agent -> agentBatchData }
+              .toMap
+
+          val updatedBatchingStrategyForNextBatchingTime: Map[String, AgentBatchData] =
+            currentBatchStrategy.getOrElse(nextBatchingTime, Map.empty) ++ agentsToAdd
+
+          Some {
+            currentBatchStrategy.updated(nextBatchingTime, updatedBatchingStrategyForNextBatchingTime)
+          }
+      }
     }
   }
 }
