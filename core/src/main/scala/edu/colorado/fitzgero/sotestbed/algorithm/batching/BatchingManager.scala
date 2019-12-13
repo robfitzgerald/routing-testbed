@@ -2,8 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, SimTime, TravelTimeSeconds}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 
 case class BatchingManager (
@@ -17,6 +16,7 @@ case class BatchingManager (
     * @return the updated BatchingManager along with any requests for this sim time
     */
   def getBatchForTime(currentSimTime: SimTime): (BatchingManager, List[Request]) = {
+    logger.debug(s"requesting batch for time $currentSimTime")
     val nextBatch = batchingStrategy
       .get(currentSimTime)
       .map{_.values.map{_.request}.toList}
@@ -36,7 +36,8 @@ case class BatchingManager (
     * @param currentTime the current sim time
     * @return the updated batching manager (or the same one)
     */
-  def updateBatchData(newBatchStrategy: Option[Map[SimTime, Map[String, AgentBatchData]]], currentTime: SimTime): BatchingManager =
+  def updateBatchData(newBatchStrategy: Option[Map[SimTime, Map[String, AgentBatchData]]], currentTime: SimTime): BatchingManager = {
+    logger.debug(s"updating batch data at time $currentTime")
     newBatchStrategy match {
       case None => this
       case Some(newStrat) =>
@@ -45,11 +46,12 @@ case class BatchingManager (
             this.copy(batchingStrategy=newStrat)
           case testInvalid =>
             testInvalid.foreach{ time =>
-              logger.error(s"batching strategy update at time $currentTime has invalid time $time; ignoring update at time")
+              logger.debug(s"batching strategy update at time $currentTime has invalid time $time with ${newStrat.getOrElse(time, Map.empty).size} agents; ignoring")
             }
             this
         }
     }
+  }
 }
 
 object BatchingManager {

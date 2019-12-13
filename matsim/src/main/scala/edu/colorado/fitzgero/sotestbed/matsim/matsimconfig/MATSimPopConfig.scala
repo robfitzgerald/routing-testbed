@@ -7,6 +7,8 @@ import com.typesafe.config.ConfigFactory
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+import scala.util.Try
+
 import pureconfig._
 import pureconfig.configurable._
 import pureconfig.ConvertHelpers._
@@ -14,6 +16,7 @@ import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.population.{PopSamplingAlgorithm, UniformPopSamplingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import org.matsim.core.network.NetworkUtils
 
 case class MATSimPopConfig(
   fs: MATSimPopConfig.Fs,
@@ -60,9 +63,11 @@ object MATSimPopConfig {
       def build(matsimPopConfig: MATSimPopConfig): Either[PopSamplingFailure, PopSamplingAlgorithm] = {
         val result = for {
           roadNetwork <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimPopConfig.fs.matsimNetworkFile)
+          matsimNetwork <- Try{ NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
         } yield {
           UniformPopSamplingAlgorithm(
             roadNetwork,
+            matsimNetwork,
             matsimPopConfig.pop.size,
             matsimPopConfig.pop.adoptionRate,
             workActivityMinTime,
@@ -73,7 +78,7 @@ object MATSimPopConfig {
         }
 
         result.left.map { s =>
-          PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s)
+          PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString)
         }
       }
     }

@@ -6,6 +6,7 @@ import cats.Monad
 import cats.data.OptionT
 import cats.implicits._
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.search.{DijkstraSearch, SpanningTree}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber}
@@ -21,7 +22,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
 class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
   theta: Cost = Cost(1.0), // @TODO: percentage numeric type, or, numeric library brah
   retainSrcDstEdgesInPaths: Boolean = false
-) extends AltPathsAlgorithm[F, V, E] {
+) extends AltPathsAlgorithm[F, V, E] with LazyLogging {
 
   def generateAlts(
     requests: List[Request],
@@ -29,8 +30,10 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
     costFunction: E => Cost,
     terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean
   ): F[AltPathsAlgorithm.AltPathsResult] = {
-    if (requests.isEmpty) Monad[F].pure { AltPathsAlgorithm.AltPathsResult(Map.empty) }
-    else {
+    if (requests.isEmpty) {
+      logger.debug(s"kSPwLO no alts received")
+      Monad[F].pure { AltPathsAlgorithm.AltPathsResult(Map.empty) }
+    } else {
       for {
         result <- requests.traverse { request =>
           kSPwLO_SVP_Algorithm.generateAltsForRequest(
@@ -42,6 +45,11 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
           )
         }
       } yield {
+        val avgAlts: Double =
+          if (result.isEmpty) 0D
+          else result.flatMap{case Some(x) => Some(x.alts.size); case None => None}.sum.toDouble / result.size
+
+        logger.debug(f"kSPwLO result avg of $avgAlts%2f alts per agent")
         AltPathsAlgorithm.AltPathsResult(
           result
             .flatten

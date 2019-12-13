@@ -5,6 +5,7 @@ import scala.util.Random
 import cats.Monad
 import cats.implicits._
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionState
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
@@ -12,7 +13,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
     seed: Long
-) extends SelectionAlgorithm[F, V, E] {
+) extends SelectionAlgorithm[F, V, E] with LazyLogging {
 
   import SelectionAlgorithm._
 
@@ -28,6 +29,8 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       marginalCostFunction: E => Flow => Cost,
       terminationFunction: SelectionState => Boolean
   ): F[SelectionAlgorithm.Result] = {
+
+    logger.debug(s"selectRoutes called with ${alts.size} requests")
 
     val startTime: Long = System.currentTimeMillis
 
@@ -91,6 +94,8 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
                 Response(request, alts(idx).map { _.edgeId })
             }
             .toList
+
+        logger.debug(s"returning ${responses.length} responses after ${endState.samples} samples finding best cost ${endState.bestCost}")
 
         // final return value
         SelectionAlgorithm.Result(

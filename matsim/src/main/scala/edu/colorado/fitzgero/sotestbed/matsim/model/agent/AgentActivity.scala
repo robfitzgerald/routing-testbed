@@ -4,6 +4,7 @@ import java.time.format.DateTimeFormatter
 
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity.MATSimTextTimeFormat
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import org.matsim.api.core.v01.Coord
 
 sealed trait AgentActivity {
   def activityType: ActivityType
@@ -18,25 +19,28 @@ object AgentActivity {
   final case class FirstActivity(
     activityType: ActivityType,
     location: EdgeId,
+    coord: Coord,
     endTime: LocalTime
   ) extends AgentActivity {
-    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} end_time={endTime.format(MATSimTextTimeFormat)}/>
+    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value}  x={coord.getX.toString} y={coord.getY.toString} end_time={endTime.format(MATSimTextTimeFormat)}/>
   }
 
   final case class Activity(
     activityType: ActivityType,
     location: EdgeId,
+    coord: Coord,
     startTime: LocalTime,
     endTime: LocalTime,
   ) extends AgentActivity {
-    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} end_time={endTime.format(MATSimTextTimeFormat)}/>
+    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString} end_time={endTime.format(MATSimTextTimeFormat)}/>
   }
 
   final case class FinalActivity(
     activityType: ActivityType,
-    location: EdgeId
+    location: EdgeId,
+    coord: Coord
   ) extends AgentActivity {
-    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value}/>
+    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString}/>
   }
 }
 

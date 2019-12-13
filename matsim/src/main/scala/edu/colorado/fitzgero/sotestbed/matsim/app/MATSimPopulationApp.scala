@@ -4,12 +4,15 @@ import java.io.File
 
 import scala.xml.XML
 import scala.xml.dtd._
+import scala.collection.JavaConverters._
 
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.MATSimPopConfig
 import com.typesafe.config.ConfigFactory
 import pureconfig._
 import pureconfig.generic.auto._
 import MATSimPopConfig.localDateConvert
+import org.matsim.api.core.v01.Id
+import org.matsim.core.network.NetworkUtils
 
 object MATSimPopulationApp extends App {
   val result = for {

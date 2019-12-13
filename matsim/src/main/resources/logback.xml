@@ -8,11 +8,15 @@
         </encoder>
     </appender>
 
-    <logger name="edu.colorado.fitzgero" level="DEBUG" additivity="false">
-        <appender-ref ref="CONSOLE"/>
+    <logger name="edu.colorado.fitzgero.sotestbed" level="WARN" additivity="false">
+        <appender-ref ref="STDOUT"/>
     </logger>
 
-    <root level="DEBUG">
+    <logger name="edu.colorado.fitzgero.sotestbed.matsim" level="WARN" additivity="false">
+        <appender-ref ref="STDOUT"/>
+    </logger>
+
+    <root level="WARN">
         <appender-ref ref="STDOUT" />
     </root>
 </configuration>

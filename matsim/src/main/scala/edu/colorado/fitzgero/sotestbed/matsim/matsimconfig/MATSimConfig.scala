@@ -8,28 +8,31 @@ import scala.concurrent.duration.Duration
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber, SimTime, TravelTimeSeconds}
 
 final case class MATSimConfig(
-  io       : MATSimConfig.IO,
-  run      : MATSimConfig.Run,
-  routing  : MATSimConfig.Routing,
+  io: MATSimConfig.IO,
+  run: MATSimConfig.Run,
+  routing: MATSimConfig.Routing,
   algorithm: MATSimConfig.Algorithm
 )
 
 object MATSimConfig {
 
   final case class Run(
-    lastIteration          : Int,
+    lastIteration: Int,
     soRoutingIterationCycle: Int,
-    startOfSimTime         : SimTime,
-    endOfSimTime           : SimTime,
-    endOfRoutingTime       : SimTime,
-    matsimStepSize         : SimTime,
-    simulationTailTimeout  : Duration
+    soFirstIteration: Boolean,
+    startOfSimTime: SimTime,
+    endOfSimTime: SimTime,
+    endOfRoutingTime: SimTime,
+    matsimStepSize: SimTime,
+    matsimSemaphoreTimeoutMs: Long,
+    simulationTailTimeout: Duration
   ) {
-    require(soRoutingIterationCycle < lastIteration, "matsimConfig.run.soRoutingIterationCycle needs to be less than matsimConfig.run.lastIteration")
+    require(soRoutingIterationCycle <= lastIteration,
+            "matsimConfig.run.soRoutingIterationCycle needs to be less than or equal to matsimConfig.run.lastIteration")
+    require(matsimSemaphoreTimeoutMs > 0, "matsimConfig.run.matsimSemaphoreTimeoutMs must be positive")
   }
 
   final case class Routing(
-    networkFlowCaptureBuffer: SimTime,
     k: NaturalNumber,
     batchWindow: SimTime,
     maxPathAssignments: Int,
@@ -60,6 +63,5 @@ object MATSimConfig {
   }
 
   final case class Algorithm(
-
-  )
+    )
 }
