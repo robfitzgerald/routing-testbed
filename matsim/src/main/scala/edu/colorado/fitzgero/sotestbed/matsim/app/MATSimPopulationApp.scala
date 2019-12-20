@@ -11,12 +11,10 @@ import com.typesafe.config.ConfigFactory
 import pureconfig._
 import pureconfig.generic.auto._
 import MATSimPopConfig.localDateConvert
-import org.matsim.api.core.v01.Id
-import org.matsim.core.network.NetworkUtils
 
 object MATSimPopulationApp extends App {
   val result = for {
-    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/rye/default-population.conf"))).load[MATSimPopConfig]
+    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/louisville/default-population.conf"))).load[MATSimPopConfig]
     popSamplingAlgorithm <- config.pop.popSampling.build(config)
     population = popSamplingAlgorithm.generate
   } yield {

@@ -2,9 +2,8 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.File
 
-import scala.concurrent.ExecutionContext.global
 
-import cats.effect.{ContextShift, IO, SyncIO}
+import cats.effect.SyncIO
 
 import pureconfig._
 import pureconfig.generic.auto._
@@ -21,19 +20,18 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 
 object MATSimExperimentApp extends App {
 
-  // TODO: consider using cats.effect.IOApp which provides a ContextShift[IO] by default
-  // and possibly set the size of the thread pool via config instead of just using global here
-//  implicit val ctx: ContextShift[IO] = IO.contextShift(global)
-
   val result = for {
-    config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/rye/default-experiment.conf").load[MATSimConfig]
+    config <- ConfigSource.file("matsim/src/main/resources/matsim-conf/louisville/default-experiment.conf").load[MATSimConfig]
     network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile)
     agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.io.populationFile)
   } yield {
 
-    val pop: MATSimRunConfig.Population = MATSimRunConfig.Population(
-      agentsUnderControl
-    )
+//    val confEdit = config.copy(
+//      io = config.io.copy(name = s"${config.io.name}-maxpath=$maxPathAssignments"),
+//      routing = config.routing.copy(maxPathAssignments = maxPathAssignments)
+//    )
+
+    val pop: MATSimRunConfig.Population = MATSimRunConfig.Population(agentsUnderControl)
 
     val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(
       pop,
@@ -47,23 +45,23 @@ object MATSimExperimentApp extends App {
     // TODO: the requested functions below should be parsed from config (see population config)
     //  see https://pureconfig.github.io/docs/overriding-behavior-for-sealed-families.html
     val routingAlgorithm = new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
-      new kSPwLO_SVP_Sync[SyncIO, Coordinate, EdgeBPR](theta = config.routing.theta),
-      new RandomSamplingSelectionAlgorithm(0L),
-      RoutingOps.defaultMarginalFlow,
-      RoutingOps.defaultCombineFlows,
-      EdgeBPRCostOps.marginalCostFunction(0.15, 4.0),
-      (state: AltPathsAlgorithm.AltPathsState) => state.alts.length == config.routing.k.value,
-      (state: SelectionAlgorithm.SelectionState) => state.startTime + 5000 < System.currentTimeMillis
+      altPathsAlgorithm = new kSPwLO_SVP_Sync[SyncIO, Coordinate, EdgeBPR](theta = config.routing.theta),
+      selectionAlgorithm = new RandomSamplingSelectionAlgorithm(0L),
+      pathToMarginalFlowsFunction = RoutingOps.defaultMarginalFlow,
+      combineFlowsFunction = RoutingOps.defaultCombineFlows,
+      marginalCostFunction = EdgeBPRCostOps.marginalCostFunction(0.15, 4.0),
+      kspTerminationFunction = (state: AltPathsAlgorithm.AltPathsState) => state.alts.length == config.routing.k.value,
+      selectionTerminationFunction = (state: SelectionAlgorithm.SelectionState) => state.startTime + 5000 < System.currentTimeMillis
     )
 
     experiment.run(
-      matsimRunConfig,
-      network,
-      routingAlgorithm,
-      EdgeBPRUpdateOps.edgeUpdateWithFlowCount, // <- comes from same source that will feed routingAlgorithm above
-      GreedyBatching(config.routing.batchWindow, config.routing.minimumReplanningWaitTime),
-      config.routing.batchWindow,
-      config.run.endOfRoutingTime
+      config = matsimRunConfig,
+      roadNetwork = network,
+      routingAlgorithm = routingAlgorithm,
+      updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCount, // <- comes from same source that will feed routingAlgorithm above
+      batchingFunction = GreedyBatching(config.routing.batchWindow, config.routing.minimumReplanningWaitTime),
+      batchWindow = config.routing.batchWindow,
+      doneRoutingAtSimTime = config.run.endOfRoutingTime
     )
   }
 
@@ -71,12 +69,12 @@ object MATSimExperimentApp extends App {
     case Left(error) =>
       println("configuration failed")
       println(error)
-      System.exit(1)
+    //        System.exit(1)
     case Right(result) =>
       println("running experiment")
 
       result.unsafeRunSync()
 
-      System.exit(0)
+    //        System.exit(0)
   }
 }

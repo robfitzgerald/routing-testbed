@@ -2,30 +2,18 @@ package edu.colorado.fitzgero.sotestbed.matsim.simulator
 
 import scala.collection.JavaConverters._
 
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, MetersPerSecond, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
 import org.matsim.api.core.v01.population.{Leg, Person}
 import org.matsim.core.mobsim.qsim.QSim
 import org.matsim.core.population.routes.NetworkRoute
 
-object MATSimOps {
-
-  val RequestClassAttributeLabel: String = "requestclass"
-
-  /**
-    * inspects an agent's attributes to determine their request class
-    * @deprecated MATSim needs these attributes to be registered; instead, tracking externally
-    * @param person a MATSim Person
-    * @return their RequestClass, if it exists
-    */
-  def getRequestClass(person: Person): Option[RequestClass] = {
-    val requestClassString: String =
-      person.getAttributes.getAttribute(RequestClassAttributeLabel).asInstanceOf[String]
-    RequestClass(requestClassString)
-  }
+object MATSimRouteOps {
 
   /**
     * if a path does not include at least two links, then, there is no need to be routed
@@ -47,13 +35,38 @@ object MATSimOps {
       leg.getRoute.getEndLinkId
   }
 
+
+  final case class ConvertToRoutingPathAccumulator(
+    routingPath: List[AgentBatchData.EdgeData] = List.empty,
+    estimatedTravelTime: SimTime = SimTime.Zero
+  )
+
   /**
     * converts a complete route from a Leg into the format used by the routing testbed
     * @param route the complete MATSim route
     * @return as a List[EdgeId]
     */
-  def convertToRoutingPath(route: List[Id[Link]]): List[EdgeId] = route.map { linkId =>
-    EdgeId(linkId.toString)
+  def convertToRoutingPath(route: List[Id[Link]], qSim: QSim): List[AgentBatchData.EdgeData] = {
+    val result = route.foldLeft(ConvertToRoutingPathAccumulator()) { (acc, linkId) =>
+      val link = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+      val src = link.getFromNode.getCoord
+      val srcCoordinate = Coordinate(src.getX, src.getY)
+      val dst = link.getToNode.getCoord
+      val dstCoordinate = Coordinate(dst.getX, dst.getY)
+      val nextEstimatedTravelTime: SimTime = SimTime(link.getLength / link.getFreespeed) + acc.estimatedTravelTime
+      val edgeData = AgentBatchData.EdgeData(
+        EdgeId(linkId.toString),
+        nextEstimatedTravelTime,
+        srcCoordinate,
+        dstCoordinate
+      )
+      acc.copy(
+        routingPath = edgeData +: acc.routingPath,
+        estimatedTravelTime = nextEstimatedTravelTime
+      )
+    }
+
+    result.routingPath.reverse
   }
 
   /**
@@ -96,7 +109,8 @@ object MATSimOps {
   }
 
   /**
-    * accumulator used internally by [[MATSimOps.selectRequestOriginLink]]
+    * accumulator used internally by [[MATSimRouteOps.selectRequestOriginLink]]
+    *
     * @param remainingSlack when calculating how far into the future to start replanning, is used to capture
     *                       the distance in time remaining before we can start considering a replanned route
     * @param estimatedRemainingTravelTime the time estimated to traverse the links that we plan to replace
@@ -105,7 +119,7 @@ object MATSimOps {
     * @param pathPrefix links that we will keep which occur between the current link and the beginning of the
     *                   replanned route segment
     */
-  private[MATSimOps] final case class ReasonableStartPointFoldAccumulator(
+  private[MATSimRouteOps] final case class ReasonableStartPointFoldAccumulator(
     remainingSlack: TravelTimeSeconds,
     estimatedRemainingTravelTime: TravelTimeSeconds = TravelTimeSeconds.Zero,
     startPoint: Option[Id[Link]] = None,
@@ -156,7 +170,7 @@ object MATSimOps {
                 .getLink
               (l, Meters.toTravelTime(Meters(link.getLength), MetersPerSecond(link.getFreespeed)))
             }
-            .foldLeft(MATSimOps.ReasonableStartPointFoldAccumulator(reasonableReplanningLeadTime)) { (acc, tup) =>
+            .foldLeft(MATSimRouteOps.ReasonableStartPointFoldAccumulator(reasonableReplanningLeadTime)) { (acc, tup) =>
               val (linkId, linkTravelTime)              = tup
               val nextRemainingSlack: TravelTimeSeconds = acc.remainingSlack - linkTravelTime
               if (acc.clearedReplanningLeadTime && acc.startPointNotFound) {
@@ -304,5 +318,17 @@ object MATSimOps {
       }
 
     combined
+  }
+
+  /**
+    * inspects an agent's attributes to determine their request class
+    * @deprecated MATSim needs these attributes to be registered; instead, tracking externally
+    * @param person a MATSim Person
+    * @return their RequestClass, if it exists
+    */
+  def getRequestClass(person: Person): Option[RequestClass] = {
+    val requestClassString: String =
+      person.getAttributes.getAttribute("requestclass").asInstanceOf[String]
+    RequestClass(requestClassString)
   }
 }

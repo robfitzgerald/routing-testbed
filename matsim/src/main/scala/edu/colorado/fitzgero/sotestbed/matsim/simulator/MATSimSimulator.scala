@@ -220,11 +220,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       leg = WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)
                       completePathsForPerson <- completePathStore.get(event.getPersonId)
                       pathFromPathStore      <- completePathsForPerson.get(DepartureTime(leg.getDepartureTime.toInt))
-                      if MATSimOps
+                      if MATSimRouteOps
                         .completePathHasAtLeastTwoLinks(pathFromPathStore) // checks that there IS a path, and that it's reasonable to assign here
                     } {
                       // grab stored route and apply it
-                      MATSimOps.assignCompleteRouteToLeg(pathFromPathStore, leg)
+                      MATSimRouteOps.assignCompleteRouteToLeg(pathFromPathStore, leg)
                       val currentTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
                       logger.debug(
                         s"[VehicleEntersTrafficEventHandler] $currentTime agent ${event.getPersonId}: applying stored route with ${pathFromPathStore.length} edges")
@@ -251,7 +251,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           l.isInstanceOf[Leg] && l.asInstanceOf[Leg].getDepartureTime.toInt == departureTime.value
                         }
                         .map { _.asInstanceOf[Leg] }
-                      val agentExperiencedRoute = MATSimOps.convertToCompleteRoute(leg)
+                      val agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                     } {
 
                       logger.debug(
@@ -313,18 +313,18 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                   // build Requests for this time step
                                   val agentId           = mobsimAgent.getId
                                   val leg               = WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)
-                                  val fullRoute         = MATSimOps.convertToCompleteRoute(leg)
+                                  val fullRoute         = MATSimRouteOps.convertToCompleteRoute(leg)
                                   val currentLinkId     = mobsimAgent.getCurrentLinkId
                                   val destinationLinkId = leg.getRoute.getEndLinkId
                                   val destinationEdgeId = EdgeId(destinationLinkId.toString)
-                                  MATSimOps.selectRequestOriginLink(fullRoute,
+                                  MATSimRouteOps.selectRequestOriginLink(fullRoute,
                                                                     currentLinkId,
                                                                     destinationLinkId,
                                                                     self.qSim,
                                                                     reasonableReplanningLeadTime,
                                                                     minimumRemainingRouteTimeForReplanning) match {
                                     case None =>
-                                      val remainingTT = MATSimOps.estRemainingTravelTimeSeconds(
+                                      val remainingTT = MATSimRouteOps.estRemainingTravelTimeSeconds(
                                         fullRoute,
                                         currentLinkId,
                                         qSim
@@ -345,9 +345,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                           TravelMode.Car
                                         )
 
-                                      val routeFromCurrentLink: List[EdgeId] = MATSimOps.convertToRoutingPath(fullRoute).dropWhile {
-                                        _ != EdgeId(currentLinkId.toString)
-                                      }
+                                      val routeFromCurrentLink: List[AgentBatchData.EdgeData] =
+                                        MATSimRouteOps
+                                          .convertToRoutingPath(fullRoute, qSim)
+                                          .dropWhile { _.edgeId != EdgeId(currentLinkId.toString) }
+                                      
                                       val lastReplanningTime: Option[SimTime] =
                                         agentsInSimulationNeedingReplanningHandler.getMostRecentTimePlannedForAgent(agentId)
 
@@ -519,9 +521,9 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
       for {
         response <- responses
-        routingResultPath = MATSimOps.convertToMATSimPath(response.path)
+        routingResultPath = MATSimRouteOps.convertToMATSimPath(response.path)
         mobsimAgent <- agentsInSimulation.get(Id.createPersonId(response.request.agent))
-        if MATSimOps.confirmPathIsValid(routingResultPath, self.qSim) // todo: report invalid paths
+        if MATSimRouteOps.confirmPathIsValid(routingResultPath, self.qSim) // todo: report invalid paths
       } {
 
         val leg = WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)
@@ -533,11 +535,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
           // extract the mobsim agent data
           val departureTime                         = DepartureTime(leg.getDepartureTime.toInt)
           val agentId: Id[Person]                   = mobsimAgent.getId
-          val agentExperiencedRoute: List[Id[Link]] = MATSimOps.convertToCompleteRoute(leg)
+          val agentExperiencedRoute: List[Id[Link]] = MATSimRouteOps.convertToCompleteRoute(leg)
 
           // make sure start and end aren't part of the path, and, add the routingResult to the pathPrefix
           val updatedRoute: List[Id[Link]] =
-            MATSimOps.coalescePath(agentExperiencedRoute, routingResultPath)
+            MATSimRouteOps.coalescePath(agentExperiencedRoute, routingResultPath)
 
           logger.debug(s"[assignRoutes] updated route for agent ${agentId.toString} : ${updatedRoute.mkString("->")}")
 
