@@ -5,8 +5,9 @@ import cats._
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import cats.implicits._
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, BatchingFunction, BatchingManager}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.Edge
 import edu.colorado.fitzgero.sotestbed.reports.Reports
@@ -44,10 +45,10 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
             batchDataUpdate  <- getAgentsNewlyAvailableForReplanning(e1)
             batchStratUpdate <- batchingFunction.updateBatchingStrategy(r1, b0.batchingStrategy, batchDataUpdate, currentSimTime)
             b1                = b0.updateBatchData(batchStratUpdate, currentSimTime)
-            (b2, batch)       = b1.getBatchForTime(currentSimTime)
-            result           <- routingAlgorithm.route(batch, r1)
-            e2               <- assignReplanningRoutes(e1, result.responses) // should return updated simulator
-            _                 = updateReports(result, currentSimTime) // unit is ok here, no modifications to application state
+            (b2, batches)     = b1.getBatchesForTime(currentSimTime)
+            results          <- batches.traverse{batch => routingAlgorithm.route(batch, r1)}
+            e2               <- assignReplanningRoutes(e1, results.flatMap{_.responses}) // should return updated simulator
+            _                 = updateReports(results, currentSimTime) // unit is ok here, no modifications to application state
             simulatorState   <- getState(e2)
           } yield {
             simulatorState match {

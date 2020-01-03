@@ -19,9 +19,9 @@ abstract class AbstractMATSimRoutingExperiment[V, E] (
   val routingResultFileReport: RoutingResultFileReport = new RoutingResultFileReport(routingResultFile)
   val finalReport: MATSimFinalReport = new MATSimFinalReport(finalReportFile)
 
-  def updateReports(routingResult: RoutingAlgorithm.Result, currentSimTime: SimTime): Unit = routingResultFileReport.updateReports(routingResult, currentSimTime)
+  override def updateReports(routingResult: List[RoutingAlgorithm.Result], currentSimTime: SimTime): Unit = routingResultFileReport.updateReports(routingResult, currentSimTime)
 
   def close(): Unit = routingResultFileReport.close()
 
-  def finishReports(simulator: Simulator): SyncIO[Unit] = finalReport.finishReports(simulator)
+  override def finishReports(simulator: Simulator): SyncIO[Unit] = finalReport.finishReports(simulator)
 }

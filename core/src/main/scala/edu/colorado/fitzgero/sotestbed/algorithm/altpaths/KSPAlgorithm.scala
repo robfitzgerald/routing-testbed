@@ -5,15 +5,16 @@ import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork, VertexId}
 
-abstract class AltPathsAlgorithm[F[_]: Monad, V, E] {
+abstract class KSPAlgorithm[F[_]: Monad, V, E] {
+
+  def terminationFunction: KSPAlgorithm.AltPathsState => Boolean
 
   def generateAlts(requests: List[Request],
                    roadNetwork: RoadNetwork[F, V, E],
-                   costFunction: E => Cost,
-                   terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean): F[AltPathsAlgorithm.AltPathsResult]
+                   costFunction: E => Cost): F[KSPAlgorithm.AltPathsResult]
 }
 
-object AltPathsAlgorithm {
+object KSPAlgorithm {
 
   final case class AltPathsResult(
     alternatives: Map[Request, List[Path]]

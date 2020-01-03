@@ -18,8 +18,8 @@ trait BatchingFunction {
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
   def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-                                         currentBatchStrategy: Map[SimTime, Map[String, AgentBatchData]],
-                                         newBatchData: List[AgentBatchData],
-                                         currentTime: SimTime): F[Option[Map[SimTime, Map[String, AgentBatchData]]]]
+                                                currentBatchStrategy: Map[SimTime, List[List[AgentBatchData]]],
+                                                newBatchData: List[AgentBatchData],
+                                                currentTime: SimTime): F[Option[Map[SimTime, List[List[AgentBatchData]]]]]
 
 }

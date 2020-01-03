@@ -7,7 +7,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 case class BatchingManager (
   batchWindow     : SimTime,
-  batchingStrategy: Map[SimTime, Map[String, AgentBatchData]] = Map.empty,
+  batchingStrategy: Map[SimTime, List[List[AgentBatchData]]] = Map.empty,
 ) extends LazyLogging {
 
   /**
@@ -15,11 +15,11 @@ case class BatchingManager (
     * @param currentSimTime the current sim time
     * @return the updated BatchingManager along with any requests for this sim time
     */
-  def getBatchForTime(currentSimTime: SimTime): (BatchingManager, List[Request]) = {
+  def getBatchesForTime(currentSimTime: SimTime): (BatchingManager, List[List[Request]]) = {
     logger.debug(s"requesting batch for time $currentSimTime")
     val nextBatch = batchingStrategy
       .get(currentSimTime)
-      .map{_.values.map{_.request}.toList}
+      .map{_.map{_.map{_.request}}}
       .getOrElse(List.empty)
     val updatedBatchingManager =
       this.copy(
@@ -36,7 +36,7 @@ case class BatchingManager (
     * @param currentTime the current sim time
     * @return the updated batching manager (or the same one)
     */
-  def updateBatchData(newBatchStrategy: Option[Map[SimTime, Map[String, AgentBatchData]]], currentTime: SimTime): BatchingManager = {
+  def updateBatchData(newBatchStrategy: Option[Map[SimTime, List[List[AgentBatchData]]]], currentTime: SimTime): BatchingManager = {
     logger.debug(s"updating batch data at time $currentTime")
     newBatchStrategy match {
       case None => this
@@ -85,7 +85,7 @@ object BatchingManager {
     * @return a list of any entries found to be invalid (hopefully empty!)
     */
   def listInvalidStrategies(
-    newStrategy: Map[SimTime, Map[String, AgentBatchData]],
+    newStrategy: Map[SimTime, List[List[AgentBatchData]]],
     batchWindow: SimTime,
     currentTime: SimTime): Seq[SimTime] = {
     for {

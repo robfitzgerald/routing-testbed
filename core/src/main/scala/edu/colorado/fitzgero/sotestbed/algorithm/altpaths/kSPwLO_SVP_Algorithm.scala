@@ -14,14 +14,14 @@ object kSPwLO_SVP_Algorithm {
 
   final case class SingleSVPResult(request: Request, alts: List[Path], pathsSeen: NaturalNumber)
 
-  val ExhaustiveSearchTerminationFunction: AltPathsAlgorithm.AltPathsState => Boolean = _ => false
+  val ExhaustiveSearchTerminationFunction: KSPAlgorithm.AltPathsState => Boolean = _ => false
 
   def generateAltsForRequest[F[_]: Monad, V, E](
     request: Request,
     roadNetwork: RoadNetwork[F, V, E],
     costFunction: E => Cost,
     theta: Cost,
-    terminationFunction: AltPathsAlgorithm.AltPathsState => Boolean = ExhaustiveSearchTerminationFunction
+    terminationFunction: KSPAlgorithm.AltPathsState => Boolean = ExhaustiveSearchTerminationFunction
   ): F[Option[SingleSVPResult]] = {
 
     val startTime: Long = System.currentTimeMillis
@@ -43,12 +43,12 @@ object kSPwLO_SVP_Algorithm {
       }
       // find intersections
       // (pushed into for comprehension in order to test for existence of an overlap set)
-      intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
+      intersectionVertices: List[KSPAlgorithm.VertexWithDistance] = {
         for {
           vertexId <- fwdTree.tree.keys.toSet.intersect(revTree.tree.keys.toSet).toList
           cost = fwdTree.tree(vertexId).pathCost + revTree.tree(vertexId).pathCost
         } yield {
-          AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
+          KSPAlgorithm.VertexWithDistance(vertexId, cost)
         }
         }.sortBy { _.cost }
       if intersectionVertices.nonEmpty
@@ -64,20 +64,20 @@ object kSPwLO_SVP_Algorithm {
 //          AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
 //        }
 //      }.sortBy { _.cost }
-      val startState: AltPathsAlgorithm.AltPathsState = AltPathsAlgorithm.AltPathsState(intersectionVertices, startTime)
+      val startState: KSPAlgorithm.AltPathsState = KSPAlgorithm.AltPathsState(intersectionVertices, startTime)
 
       // for each node, store the svp distance as the fwd dist + bwd dist, and store combined path
       //  place in a heap
       // go through shortest -> longest, testing overlap according to written algorithm
       @tailrec
-      def _svp(searchState: AltPathsAlgorithm.AltPathsState): AltPathsAlgorithm.AltPathsState = {
+      def _svp(searchState: KSPAlgorithm.AltPathsState): KSPAlgorithm.AltPathsState = {
         if (terminationFunction(searchState)) searchState
         else {
           searchState.intersectionVertices.headOption match {
             case None                                                                           => searchState
-            case Some(AltPathsAlgorithm.VertexWithDistance(thisIntersectionVertexId, thisCost)) =>
+            case Some(KSPAlgorithm.VertexWithDistance(thisIntersectionVertexId, thisCost)) =>
               // construct a path from the intersection through both spanning trees
-              val possiblyUpdatedState: Option[AltPathsAlgorithm.AltPathsState] = for {
+              val possiblyUpdatedState: Option[KSPAlgorithm.AltPathsState] = for {
                 fwdPath <- DijkstraSearch.backtrack(fwdTree)(thisIntersectionVertexId)
                 revPath <- DijkstraSearch.backtrack(revTree)(thisIntersectionVertexId)
                 thisPath: Path = fwdPath ++ revPath
@@ -127,7 +127,7 @@ object kSPwLO_SVP_Algorithm {
         }
       }
 
-      val AltPathsAlgorithm.AltPathsState(_, _, pathsSeen, altsWithCosts) = _svp(startState)
+      val KSPAlgorithm.AltPathsState(_, _, pathsSeen, altsWithCosts) = _svp(startState)
 
       // sort in order discovered which should also be a sort by cost; only return the path
       val alts: List[Path] = altsWithCosts.reverse.map { case (path, _) => originPathSegment +: path :+ destinationPathSegment }
