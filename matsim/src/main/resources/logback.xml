@@ -8,11 +8,11 @@
         </encoder>
     </appender>
 
-    <logger name="edu.colorado.fitzgero.sotestbed" level="WARN" additivity="false">
+    <logger name="edu.colorado.fitzgero.sotestbed" level="INFO" additivity="false">
         <appender-ref ref="STDOUT"/>
     </logger>
 
-    <logger name="edu.colorado.fitzgero.sotestbed.matsim" level="WARN" additivity="false">
+    <logger name="edu.colorado.fitzgero.sotestbed.matsim" level="INFO" additivity="false">
         <appender-ref ref="STDOUT"/>
     </logger>
 

@@ -16,12 +16,14 @@ import cse.bdlab.fitzgero.mcts.core.{ActionSelection, BuiltInRandomGenerator, Ra
 import cse.bdlab.fitzgero.mcts.tree.MCTreePedrosoReiReward
 import cse.bdlab.fitzgero.mcts.variant.PedrosoReiMCTS
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionState
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
+import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
-class LocalMCTSSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V, E] with LazyLogging {
+class LocalMCTSSelectionAlgorithm[V, E] (
+  seed: Long
+) extends SelectionAlgorithm[SyncIO, V, E] with LazyLogging {
 
   def selectRoutes(
     alts: Map[Request, List[Path]],
@@ -30,9 +32,35 @@ class LocalMCTSSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V, E]
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost,
     terminationFunction: SelectionAlgorithm.SelectionState => Boolean
-  ): SyncIO[SelectionAlgorithm.Result] = {
+  ): SyncIO[SelectionAlgorithm.Result] = SyncIO {
 
-    ???
+    val startTime: Long = System.currentTimeMillis
+
+    val mcts = new PedrosoReiMCTSRouting(
+      alts,
+      roadNetwork,
+      pathToMarginalFlowsFunction,
+      combineFlowsFunction,
+      marginalCostFunction,
+      terminationFunction,
+      seed,
+      startTime
+    )
+
+    val tree: mcts.Tree = mcts.run()
+    val samples: NaturalNumber = NaturalNumber(tree.visits.toInt).getOrElse(NaturalNumber.Zero)
+
+    val responses = for {
+      (((request, paths), idx), cost) <- alts.zip(mcts.bestSolution).zip(mcts.bestAgentCosts)
+    } yield {
+      Response(request, paths(idx).map { _.edgeId }, cost)
+    }
+
+    SelectionAlgorithm.Result(
+      responses.toList,
+      mcts.bestCost,
+      samples
+    )
   }
 
   class PedrosoReiMCTSRouting (
@@ -56,12 +84,21 @@ class LocalMCTSSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V, E]
           )
       }
     val trueShortestPaths: Array[Int] = Array.fill(altsInternal.length)(0)
+    val trueShortestPathSelectionCost: SelectionCost = SelectionAlgorithm.evaluateCostOfSelection(
+      PedrosoReiMCTSRouting.stateToSelection(trueShortestPaths, altsInternal).toList,
+      roadNetwork,
+      pathToMarginalFlowsFunction,
+      combineFlowsFunction,
+      marginalCostFunction
+    ).unsafeRunSync()
 
     val objective: UCT_PedrosoRei.Objective = UCT_PedrosoRei.Minimize()
 
     var globalBestSimulation: BigDecimal = objective.defaultBest
     var globalWorstSimulation: BigDecimal = objective.defaultWorst
     var bestSolution: Array[Int] = trueShortestPaths
+    var bestCost: Cost = trueShortestPathSelectionCost.overallCost
+    var bestAgentCosts: List[Cost] = trueShortestPathSelectionCost.agentPathCosts
 
     def getSearchCoefficients(tree: MCTreePedrosoReiReward[Array[Int], Int]): UCTScalarPedrosoReiReward.Coefficients =
       UCTScalarPedrosoReiReward.Coefficients(1.0 / math.sqrt(2), globalBestSimulation, globalWorstSimulation)
@@ -85,37 +122,23 @@ class LocalMCTSSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V, E]
       PedrosoReiMCTSRouting.addToState(state, action)
 
     def evaluateTerminal(state: Array[Int]): BigDecimal = {
-      val marginalFlowsF: SyncIO[List[List[(EdgeId, Flow)]]] =
-        PedrosoReiMCTSRouting
-          .stateToSelection(state, altsInternal)
-          .toList
-          .traverse{pathToMarginalFlowsFunction(roadNetwork, _)}
 
+      val selectionCost: SelectionCost =
+        SelectionAlgorithm.evaluateCostOfSelection(
+          PedrosoReiMCTSRouting.stateToSelection(state, altsInternal).toList,
+          roadNetwork,
+          pathToMarginalFlowsFunction,
+          combineFlowsFunction,
+          marginalCostFunction
+        ).unsafeRunSync()
 
-      val costIO: SyncIO[Cost] =
-        marginalFlowsF
-          .flatMap{ marginalFlows =>
-            marginalFlows
-              .flatten
-              .groupBy{_._1}
-              .toList
-              .traverse{ case (edgeId, flows) =>
-                for {
-                  edgeAndAttribute <- roadNetwork.edge(edgeId)
-                } yield {
-                  edgeAndAttribute match {
-                    case None => Cost.Zero
-                    case Some(RoadNetwork.EdgeIdAndAttribute(_, edge)) =>
-                      val combinedFlows: Flow = combineFlowsFunction(flows.map{_._2})
-                      marginalCostFunction(edge)(combinedFlows)
-                  }
-                }
-              }.map{
-                _.foldLeft(Cost.Zero){_ + _}
-              }
-          }
+      // underlying MCTS library will set the bestCost itself, but,
+      // we must track the agent path costs ourselves
+      if (selectionCost.overallCost < pedrosoRei.bestCost) {
+        this.bestAgentCosts = selectionCost.agentPathCosts
+      }
 
-      BigDecimal(costIO.unsafeRunSync().value)
+      BigDecimal(selectionCost.overallCost.value)
     }
 
     def stateIsNonTerminal(state: Array[Int]): Boolean = state.length < altsInternal.length
@@ -138,6 +161,7 @@ class LocalMCTSSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V, E]
               val selectionState = SelectionState(
                 bestSolution.toList,
                 Cost(globalBestSimulation.toDouble),
+                pedrosoRei.bestAgentCosts,
                 nat,
                 startTime
               )

@@ -18,7 +18,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 object MATSimExperimentApp extends App {
 
   val result = for {
-    fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/louisville/default-experiment.conf").load[MATSimConfig]
+    fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/rye/default-experiment.conf").load[MATSimConfig]
     network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(fileConfig.io.matsimNetworkFile)
     agentsUnderControl <- PopulationOps.loadAgentsUnderControl(fileConfig.io.populationFile)
   } yield {
@@ -56,10 +56,12 @@ object MATSimExperimentApp extends App {
       println("configuration failed")
       println(error)
     //        System.exit(1)
-    case Right(result) =>
+    case Right(experiment) =>
       println("running experiment")
 
-      result.unsafeRunSync()
+      val result = experiment.unsafeRunSync()
+      result.simulator
+
 
     //        System.exit(0)
   }

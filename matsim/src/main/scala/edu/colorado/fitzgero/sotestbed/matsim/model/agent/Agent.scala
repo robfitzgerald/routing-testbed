@@ -22,7 +22,7 @@ final case class Agent(
     for {
       firstActivityPair <- activities.headOption
       act1 <- firstActivityPair.act1 match {
-        case AgentActivity.FirstActivity(_, _, endTime) =>
+        case AgentActivity.FirstActivity(_, _, _, endTime) =>
           Some { endTime }
         case _ =>
           None

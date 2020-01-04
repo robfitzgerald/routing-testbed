@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.matsim.simulator
 
 import scala.collection.JavaConverters._
+import scala.util.Try
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
@@ -9,8 +10,10 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
-import org.matsim.api.core.v01.population.{Leg, Person}
+import org.matsim.api.core.v01.population.{Leg, Person, Plan}
+import org.matsim.core.mobsim.framework.MobsimAgent
 import org.matsim.core.mobsim.qsim.QSim
+import org.matsim.core.mobsim.qsim.agents.WithinDayAgentUtils
 import org.matsim.core.population.routes.NetworkRoute
 
 object MATSimRouteOps {
@@ -330,5 +333,11 @@ object MATSimRouteOps {
     val requestClassString: String =
       person.getAttributes.getAttribute("requestclass").asInstanceOf[String]
     RequestClass(requestClassString)
+  }
+
+  def safeGetModifiablePlan(mobsimAgent: MobsimAgent): Option[Plan] = {
+    Try {
+      WithinDayAgentUtils.getModifiablePlan(mobsimAgent)
+    }.toOption
   }
 }

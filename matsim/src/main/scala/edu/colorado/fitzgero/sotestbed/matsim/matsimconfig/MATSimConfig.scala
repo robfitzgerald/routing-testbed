@@ -5,8 +5,8 @@ import java.nio.file.{Path, Paths}
 
 import scala.concurrent.duration.Duration
 
-import edu.colorado.fitzgero.sotestbed.config.algorithm.{BatchingFunction, CombineFlowsFunction, KSPAlgorithm, KSPTerminationFunction, MarginalCostFunction, PathToMarginalFlowsFunction, SelectionAlgorithm, SelectionTerminationFunction}
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber, SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.config.algorithm.{BatchingFunction, CombineFlowsFunction, KSPAlgorithm, MarginalCostFunction, PathToMarginalFlowsFunction, SelectionAlgorithm}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{SimTime, TravelTimeSeconds}
 
 final case class MATSimConfig(
   io: MATSimConfig.IO,

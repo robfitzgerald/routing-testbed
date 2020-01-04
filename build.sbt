@@ -47,7 +47,7 @@ lazy val coreDependencies = List(
   "com.monovore" %% "decline" % "1.0.0",
 
   // CONFIG
-  "com.github.pureconfig" %% "pureconfig" % "0.12.1",
+  "com.github.pureconfig" %% "pureconfig" % "0.12.2",
 //  "com.typesafe" % "config" % "1.3.4",
 
   // XML

@@ -47,7 +47,8 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
             b1                = b0.updateBatchData(batchStratUpdate, currentSimTime)
             (b2, batches)     = b1.getBatchesForTime(currentSimTime)
             results          <- batches.traverse{batch => routingAlgorithm.route(batch, r1)}
-            e2               <- assignReplanningRoutes(e1, results.flatMap{_.responses}) // should return updated simulator
+            resolvedResults   = b2.resolveRoutingResultBatches(results)
+            e2               <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
             _                 = updateReports(results, currentSimTime) // unit is ok here, no modifications to application state
             simulatorState   <- getState(e2)
           } yield {

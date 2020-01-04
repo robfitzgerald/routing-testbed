@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.model.numeric
 class NaturalNumber (val value: Int) extends AnyVal {
   def + (that: NaturalNumber): NaturalNumber = new NaturalNumber(this.value + that.value)
   def < (that: NaturalNumber): Boolean = this.value < that.value
+  override def toString: String = this.value.toString
 }
 
 object NaturalNumber {

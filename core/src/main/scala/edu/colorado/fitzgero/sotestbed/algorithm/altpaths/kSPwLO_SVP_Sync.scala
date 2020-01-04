@@ -46,7 +46,7 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
           if (result.isEmpty) 0D
           else result.flatMap{case Some(x) => Some(x.alts.size); case None => None}.sum.toDouble / result.size
 
-        logger.debug(f"kSPwLO result avg of $avgAlts%2f alts per agent")
+        logger.info(f"AVG $avgAlts%2f alts per agent")
         KSPAlgorithm.AltPathsResult(
           result
             .flatten
