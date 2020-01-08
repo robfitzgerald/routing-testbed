@@ -5,7 +5,7 @@ import java.nio.file.{Path, Paths}
 
 import scala.concurrent.duration.Duration
 
-import edu.colorado.fitzgero.sotestbed.config.algorithm.{BatchingFunction, CombineFlowsFunction, KSPAlgorithm, MarginalCostFunction, PathToMarginalFlowsFunction, SelectionAlgorithm}
+import edu.colorado.fitzgero.sotestbed.config.algorithm.{BatchingFunctionConfig, CombineFlowsFunctionConfig, KSPAlgorithmConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, SelectionAlgorithmConfig}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{SimTime, TravelTimeSeconds}
 
 final case class MATSimConfig(
@@ -61,11 +61,11 @@ object MATSimConfig {
   }
 
   final case class Algorithm(
-    kspAlgorithm: KSPAlgorithm,
-    selectionAlgorithm: SelectionAlgorithm,
-    pathToMarginalFlowsFunction: PathToMarginalFlowsFunction,
-    combineFlowsFunction: CombineFlowsFunction,
-    marginalCostFunction: MarginalCostFunction,
-    batchingFunction: BatchingFunction
+    kspAlgorithm: KSPAlgorithmConfig,
+    selectionAlgorithm: SelectionAlgorithmConfig,
+    pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
+    combineFlowsFunction: CombineFlowsFunctionConfig,
+    marginalCostFunction: MarginalCostFunctionConfig,
+    batchingFunction: BatchingFunctionConfig
   )
 }

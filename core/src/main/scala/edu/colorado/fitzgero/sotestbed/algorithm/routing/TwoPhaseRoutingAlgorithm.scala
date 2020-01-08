@@ -15,7 +15,6 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
   pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[F, V, E],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: E => Flow => Cost,
-  selectionTerminationFunction: SelectionAlgorithm.SelectionState => Boolean,
   timeLimit: RunTime = RunTime(31536000), // one year.
   limitAltsRuntime: Boolean = true,
   limitSelectionRuntime: Boolean = true
@@ -37,8 +36,7 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
           roadNetwork,
           pathToMarginalFlowsFunction,
           combineFlowsFunction,
-          marginalCostFunction,
-          selectionTerminationFunction)
+          marginalCostFunction)
         selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
       } yield {
         RoutingAlgorithm.Result(

@@ -18,8 +18,7 @@ abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
     roadNetwork: RoadNetwork[F, V, E],
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost,
-    terminationFunction: SelectionAlgorithm.SelectionState => Boolean
+    marginalCostFunction: E => Flow => Cost
   ): F[SelectionAlgorithm.Result]
 }
 

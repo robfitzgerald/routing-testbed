@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.simulator
 import scala.collection.JavaConverters._
 import scala.util.Try
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
@@ -16,7 +17,44 @@ import org.matsim.core.mobsim.qsim.QSim
 import org.matsim.core.mobsim.qsim.agents.WithinDayAgentUtils
 import org.matsim.core.population.routes.NetworkRoute
 
-object MATSimRouteOps {
+object MATSimRouteOps extends LazyLogging {
+
+  /**
+    * MATSim's getModifiableCurrentLeg can throw an exception when the agent's current link
+    * pointer is set to -1. Legs can also be null.
+    * @param mobsimAgent the agent whos current Leg we are interested in
+    * @return the Optional Leg
+    */
+  def safeGetModifiableLeg(mobsimAgent: MobsimAgent): Option[Leg] = {
+    Try{
+      WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)
+    } match {
+      case util.Success(nullableLeg) =>
+        if (nullableLeg == null) {
+          logger.warn(s"attempted to retrieve modifiable leg for agent ${mobsimAgent.getId} but got null")
+          None
+        } else {
+          Some { nullableLeg }
+        }
+      case util.Failure(e) =>
+        logger.warn(s"failed to retrieve modifiable leg for agent ${mobsimAgent.getId} due to: ${e.getMessage}")
+        None
+    }
+  }
+
+  /**
+    * steps through an agent's [[Plan]] to find a [[Leg]] with a matching [[DepartureTime]]
+    * @param plan the agent's plan
+    * @param departureTime the time that we expect to match a Leg's departure time
+    * @return [[Some]] expected [[Leg]], or [[None]]
+    */
+  def getLegFromPlanByDepartureTime(plan: Plan, departureTime: DepartureTime): Option[Leg] = {
+    plan.getPlanElements.asScala.toList
+      .find { l =>
+        l.isInstanceOf[Leg] && l.asInstanceOf[Leg].getDepartureTime.toInt == departureTime.value
+      }
+      .map { _.asInstanceOf[Leg] }
+  }
 
   /**
     * if a path does not include at least two links, then, there is no need to be routed

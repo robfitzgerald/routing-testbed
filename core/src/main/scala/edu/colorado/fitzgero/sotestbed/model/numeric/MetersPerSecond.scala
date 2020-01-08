@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.model.numeric
 
 class MetersPerSecond (val value: Double) extends AnyVal {
-
+  override def toString: String = f"${this.value}%.2f"
 }
 
 object MetersPerSecond {

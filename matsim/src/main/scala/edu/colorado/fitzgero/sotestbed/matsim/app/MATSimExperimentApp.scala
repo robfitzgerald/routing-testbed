@@ -2,12 +2,12 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.File
 
-
 import cats.effect.SyncIO
 
 import pureconfig._
 import pureconfig.generic.auto._
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.LocalMCTSSelection
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
@@ -31,20 +31,32 @@ object MATSimExperimentApp extends App {
     val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, fileConfig)
     val experiment = new LocalMATSimRoutingExperiment(new File("route.csv"), new File("final.log"))
 
-    val routingAlgorithm = new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
-      altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
-      selectionAlgorithm = matsimRunConfig.algorithm.selectionAlgorithm.build(),
-      pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
-      combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
-      marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build(),
-      selectionTerminationFunction = matsimRunConfig.algorithm.selectionAlgorithm.selectionTerminationFunction.build()
-    )
+    val routingAlgorithm = matsimRunConfig.algorithm.selectionAlgorithm match {
+      case local: LocalMCTSSelection =>
+        // special effect handling for MCTS library
+        new TwoPhaseLocalMCTSRoutingAlgorithm[Coordinate, EdgeBPR](
+          altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
+          selectionAlgorithm = local.build(),
+          pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
+          combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
+          marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
+        )
+      case otherAlgorithm =>
+        // other libraries play well
+        new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
+          altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
+          selectionAlgorithm = otherAlgorithm.build(),
+          pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
+          combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
+          marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
+        )
+    }
 
     experiment.run(
       config = matsimRunConfig,
       roadNetwork = network,
       routingAlgorithm = routingAlgorithm,
-      updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCount, // <- comes from same source that will feed routingAlgorithm above
+      updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
       batchingFunction = matsimRunConfig.algorithm.batchingFunction.build(),
       batchWindow = matsimRunConfig.routing.batchWindow,
       doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime

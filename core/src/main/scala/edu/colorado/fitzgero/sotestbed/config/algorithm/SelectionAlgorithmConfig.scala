@@ -1,29 +1,29 @@
 package edu.colorado.fitzgero.sotestbed.config.algorithm
 
 import cats.Monad
+import pureconfig.generic.auto._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.RandomSamplingSelectionAlgorithm
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts.LocalMCTSSelectionAlgorithm
 
-sealed trait SelectionAlgorithm {
+sealed trait SelectionAlgorithmConfig {
   def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E]
-  def selectionTerminationFunction: SelectionTerminationFunction,
+  def selectionTerminationFunction: SelectionTerminationFunctionConfig
 }
-object SelectionAlgorithm {
+object SelectionAlgorithmConfig {
+
   final case class RandomSamplingSelection(
     seed: Long,
-    selectionTerminationFunction: SelectionTerminationFunction,
-  ) extends SelectionAlgorithm {
+    selectionTerminationFunction: SelectionTerminationFunctionConfig,
+  ) extends SelectionAlgorithmConfig {
     override def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
-      new RandomSamplingSelectionAlgorithm(seed)
+      new selection.RandomSamplingSelectionAlgorithm[F, V, E](seed, selectionTerminationFunction.build())
     }
   }
   final case class LocalMCTSSelection(
     seed: Long,
-    selectionTerminationFunction: SelectionTerminationFunction,
-  ) extends SelectionAlgorithm {
-    override def build[F[_] : Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
+    selectionTerminationFunction: SelectionTerminationFunctionConfig,
+  ) extends SelectionAlgorithmConfig {
+    override def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
       // todo:
       //  the LocalMCTS selection does mutable ops that need to run in an IO; just calling F a Monad here
       //  doesn't tell us that the F is a typeclass with unsafeRunSync or anything like that.

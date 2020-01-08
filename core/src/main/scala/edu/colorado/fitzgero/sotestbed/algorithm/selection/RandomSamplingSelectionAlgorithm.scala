@@ -12,7 +12,8 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
-    seed: Long
+    seed: Long,
+    terminationFunction: SelectionState => Boolean
 ) extends SelectionAlgorithm[F, V, E] with LazyLogging {
 
   import SelectionAlgorithm._
@@ -26,8 +27,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       roadNetwork: RoadNetwork[F, V, E],
       pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
       combineFlowsFunction: Iterable[Flow] => Flow,
-      marginalCostFunction: E => Flow => Cost,
-      terminationFunction: SelectionState => Boolean
+      marginalCostFunction: E => Flow => Cost
   ): F[SelectionAlgorithm.Result] = {
 
     logger.debug(s"selectRoutes called with ${alts.size} requests")

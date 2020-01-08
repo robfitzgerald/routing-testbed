@@ -5,18 +5,18 @@ import cats.Monad
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingOps
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingOps.PathToMarginalFlows
 
-sealed trait PathToMarginalFlowsFunction {
+sealed trait PathToMarginalFlowsFunctionConfig {
   def build[F[_]: Monad, V, E](): RoutingOps.PathToMarginalFlows[F, V, E]
 }
-object PathToMarginalFlowsFunction {
-  final case object Default extends PathToMarginalFlowsFunction {
+object PathToMarginalFlowsFunctionConfig {
+  final case object Default extends PathToMarginalFlowsFunctionConfig {
     def build[F[_] : Monad, V, E](): PathToMarginalFlows[F, V, E] = RoutingOps.defaultMarginalFlow
   }
 
   // ...
   final case class LinkDecay(
     rate: Double
-  ) extends PathToMarginalFlowsFunction {
+  ) extends PathToMarginalFlowsFunctionConfig {
     def build[F[_] : Monad, V, E](): PathToMarginalFlows[F, V, E] = ???
   }
 }

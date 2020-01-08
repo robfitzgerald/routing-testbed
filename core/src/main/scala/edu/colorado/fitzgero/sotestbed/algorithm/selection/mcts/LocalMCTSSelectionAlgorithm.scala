@@ -22,7 +22,8 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 class LocalMCTSSelectionAlgorithm[V, E] (
-  seed: Long
+  seed: Long,
+  terminationFunction: SelectionState => Boolean
 ) extends SelectionAlgorithm[SyncIO, V, E] with LazyLogging {
 
   def selectRoutes(
@@ -30,8 +31,7 @@ class LocalMCTSSelectionAlgorithm[V, E] (
     roadNetwork: RoadNetwork[SyncIO, V, E],
     pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost,
-    terminationFunction: SelectionAlgorithm.SelectionState => Boolean
+    marginalCostFunction: E => Flow => Cost
   ): SyncIO[SelectionAlgorithm.Result] = SyncIO {
 
     val startTime: Long = System.currentTimeMillis

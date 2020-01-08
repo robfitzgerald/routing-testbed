@@ -3,15 +3,15 @@ package edu.colorado.fitzgero.sotestbed.config.algorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.batching
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
-sealed trait BatchingFunction {
+sealed trait BatchingFunctionConfig {
   def build(): batching.BatchingFunction
 }
-object BatchingFunction {
+object BatchingFunctionConfig {
   final case class Greedy(
     batchWindow: SimTime,
     minimumReplanningWaitTime: SimTime,
     maxBatchSize: Int
-  ) extends BatchingFunction {
+  ) extends BatchingFunctionConfig {
     def build(): batching.BatchingFunction = batching.GreedyBatching(batchWindow, minimumReplanningWaitTime, maxBatchSize)
   }
 
@@ -25,7 +25,7 @@ object BatchingFunction {
     maxY: Double,
     splitFactor: Int,
     batchPathTimeDelay: SimTime
-  ) extends BatchingFunction {
+  ) extends BatchingFunctionConfig {
     require(splitFactor > 0, "split factor must be positive")
     def build(): batching.BatchingFunction =
       new batching.GreedyCoordinateGridBatching(

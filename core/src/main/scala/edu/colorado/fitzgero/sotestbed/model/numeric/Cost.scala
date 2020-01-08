@@ -8,7 +8,6 @@ final class Cost (val value: Double) extends AnyVal {
   def + (that: Cost): Cost = Cost(this.value + that.value)
   def - (that: Cost): Cost = Cost(this.value - that.value)
   def / (that: Cost): Cost = Cost(this.value / that.value)
-
   override def toString: String = f"${this.value}%.2f"
 }
 

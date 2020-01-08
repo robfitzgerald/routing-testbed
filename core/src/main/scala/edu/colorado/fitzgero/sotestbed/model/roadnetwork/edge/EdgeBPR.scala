@@ -20,5 +20,6 @@ case class EdgeBPR (
   flowHistoryLength: Int = 1
 ) {
   lazy val freeFlowTravelTime: TravelTimeSeconds = Meters.toTravelTime(distance, freeFlowSpeed)
+  override def toString: String = s"EdgeBPR(flow=$flow)"
 }
 

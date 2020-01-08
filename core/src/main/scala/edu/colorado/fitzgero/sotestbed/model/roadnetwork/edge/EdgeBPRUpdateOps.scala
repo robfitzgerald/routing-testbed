@@ -12,9 +12,10 @@ object EdgeBPRUpdateOps {
     * @return the updated link
     */
   def edgeUpdateWithFlowCount(e: EdgeBPR, flow: Flow): EdgeBPR = {
+    val flowUpdate: Flow = Flow(math.max(0, flow.value)) // protect against negatives
     e.copy(
-      flow = flow,
-      flowHistory = List(flow),
+      flow = flowUpdate,
+      flowHistory = List(flowUpdate),
       flowHistoryLength = 1
     )
   }
@@ -27,10 +28,11 @@ object EdgeBPRUpdateOps {
     * @return the updated link
     */
   def edgeUpdateWithFlowCountDelta(e: EdgeBPR, flow: Flow): EdgeBPR = {
+    val flowUpdate: Flow = Flow(math.max(0, e.flow.value + flow.value)) // protect against negatives
     e.copy(
-      flow = e.flow + flow,
-      flowHistory = List(e.flow + flow),
-      flowHistoryLength = 1
+      flow = flowUpdate,
+      flowHistory = List.empty,
+      flowHistoryLength = 0
     )
   }
 
