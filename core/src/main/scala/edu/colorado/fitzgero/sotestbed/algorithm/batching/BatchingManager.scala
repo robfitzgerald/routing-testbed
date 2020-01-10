@@ -1,13 +1,14 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
+import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 
 case class BatchingManager (
   batchWindow     : SimTime,
-  batchingStrategy: Map[SimTime, Map[String, AgentBatchData]] = Map.empty,
+  batchingStrategy: Map[SimTime, List[List[AgentBatchData]]] = Map.empty,
 ) extends LazyLogging {
 
   /**
@@ -15,17 +16,21 @@ case class BatchingManager (
     * @param currentSimTime the current sim time
     * @return the updated BatchingManager along with any requests for this sim time
     */
-  def getBatchForTime(currentSimTime: SimTime): (BatchingManager, List[Request]) = {
-    logger.debug(s"requesting batch for time $currentSimTime")
+  def getBatchesForTime(currentSimTime: SimTime): (BatchingManager, List[List[Request]]) = {
     val nextBatch = batchingStrategy
       .get(currentSimTime)
-      .map{_.values.map{_.request}.toList}
+      .map{_.map{_.map{_.request}}}
       .getOrElse(List.empty)
-    val updatedBatchingManager =
-      this.copy(
-        batchingStrategy = batchingStrategy - currentSimTime
-      )
-    (updatedBatchingManager, nextBatch)
+    if (nextBatch.isEmpty) {
+      (this, List.empty)
+    } else {
+      logger.info(s"got ${nextBatch.size} requests for time $currentSimTime")
+      val updatedBatchingManager =
+        this.copy(
+          batchingStrategy = batchingStrategy - currentSimTime
+        )
+      (updatedBatchingManager, nextBatch)
+    }
   }
 
   /**
@@ -36,21 +41,33 @@ case class BatchingManager (
     * @param currentTime the current sim time
     * @return the updated batching manager (or the same one)
     */
-  def updateBatchData(newBatchStrategy: Option[Map[SimTime, Map[String, AgentBatchData]]], currentTime: SimTime): BatchingManager = {
-    logger.debug(s"updating batch data at time $currentTime")
+  def updateBatchData(newBatchStrategy: Option[Map[SimTime, List[List[AgentBatchData]]]], currentTime: SimTime): BatchingManager = {
     newBatchStrategy match {
       case None => this
       case Some(newStrat) =>
-        BatchingManager.listInvalidStrategies(newStrat, batchWindow, currentTime) match {
-          case Nil =>
-            this.copy(batchingStrategy=newStrat)
-          case testInvalid =>
-            testInvalid.foreach{ time =>
-              logger.debug(s"batching strategy update at time $currentTime has invalid time $time with ${newStrat.getOrElse(time, Map.empty).size} agents; ignoring")
-            }
-            this
+        if (newStrat.isEmpty) {
+          this
+        } else {
+          logger.debug(s"updating batch data at time $currentTime")
+          BatchingManager.listInvalidStrategies(newStrat, batchWindow, currentTime) match {
+            case Nil =>
+              this.copy(batchingStrategy=newStrat)
+            case testInvalid =>
+              testInvalid.foreach{ time =>
+                logger.debug(s"batching strategy update at time $currentTime has invalid time $time with ${newStrat.getOrElse(time, Map.empty).size} agents; ignoring")
+              }
+              this
+          }
         }
     }
+  }
+
+  def resolveRoutingResultBatches(routingResult: List[RoutingAlgorithm.Result]): List[Response] = {
+    routingResult
+      .flatMap{_.responses}
+      .groupBy{_.request.agent}
+      .map{ case (_, solutionsForAgent: List[Response]) => solutionsForAgent.minBy{_.costEstimate} }
+      .toList
   }
 }
 
@@ -85,15 +102,55 @@ object BatchingManager {
     * @return a list of any entries found to be invalid (hopefully empty!)
     */
   def listInvalidStrategies(
-    newStrategy: Map[SimTime, Map[String, AgentBatchData]],
+    newStrategy: Map[SimTime, List[List[AgentBatchData]]],
     batchWindow: SimTime,
     currentTime: SimTime): Seq[SimTime] = {
     for {
-      t   <- currentTime until nextValidBatchingTime(batchWindow, currentTime)
+      t <- currentTime until nextValidBatchingTime(batchWindow, currentTime)
       time = SimTime(t)
       if newStrategy.isDefinedAt(time)
     } yield {
       time
     }
   }
+
+  /**
+    * filter predicate which remove agents who have met the
+    * minimum replanning wait time since their last replanning
+    * @param currentTime
+    * @param minimumReplanningWaitTime
+    * @return
+    */
+  def filterNewDataByMinReplanningWaitTime(
+    currentTime: SimTime,
+    minimumReplanningWaitTime: SimTime
+  ): AgentBatchData => Boolean = {
+    data =>
+      data.lastReplanningTime match {
+        case None => true
+        case Some(lastReplanningTime) =>
+          lastReplanningTime + minimumReplanningWaitTime > currentTime
+      }
+  }
+
+  /**
+    * when we get an update, we may want to toss any old data for any agent
+    * @param oldData
+    * @param newData
+    * @return
+    */
+  def keepLatestAgentBatchData(
+    oldData: List[AgentBatchData],
+    newData: List[AgentBatchData]
+  ): List[AgentBatchData] = {
+    for {
+      (_, agentData) <- (oldData ++ newData).groupBy{_.request.agent}
+    } yield {
+      if (agentData.lengthCompare(0) > 0) {
+        agentData.maxBy{_.timeOfRequest}(Ordering.by{_.value})
+      } else {
+        agentData.head
+      }
+    }
+  }.toList
 }

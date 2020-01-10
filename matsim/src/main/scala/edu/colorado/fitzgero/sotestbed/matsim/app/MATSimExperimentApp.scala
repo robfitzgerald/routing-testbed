@@ -2,68 +2,65 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.File
 
-import scala.concurrent.ExecutionContext.global
-
-import cats.effect.{ContextShift, IO, SyncIO}
+import cats.effect.SyncIO
 
 import pureconfig._
 import pureconfig.generic.auto._
-import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.{AltPathsAlgorithm, kSPwLO_SVP_Sync}
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.GreedyBatching
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseRoutingAlgorithm}
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.{RandomSamplingSelectionAlgorithm, SelectionAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.RandomSamplingSelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRCostOps, EdgeBPRUpdateOps}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRUpdateOps}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 object MATSimExperimentApp extends App {
 
-  // TODO: consider using cats.effect.IOApp which provides a ContextShift[IO] by default
-  // and possibly set the size of the thread pool via config instead of just using global here
-//  implicit val ctx: ContextShift[IO] = IO.contextShift(global)
-
   val result = for {
-    config  <- ConfigSource.file("matsim/src/main/resources/matsim-conf/rye/default-experiment.conf").load[MATSimConfig]
-    network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile)
-    agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.io.populationFile)
+    fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/rye/default-experiment.conf").load[MATSimConfig]
+    network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(fileConfig.io.matsimNetworkFile)
+    agentsUnderControl <- PopulationOps.loadAgentsUnderControl(fileConfig.io.populationFile)
   } yield {
 
-    val pop: MATSimRunConfig.Population = MATSimRunConfig.Population(
-      agentsUnderControl
-    )
+//    val confEdit = config.copy(
+//      io = config.io.copy(name = s"${config.io.name}-maxpath=$maxPathAssignments"),
+//      routing = config.routing.copy(maxPathAssignments = maxPathAssignments)
+//    )
 
-    val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(
-      pop,
-      config.io,
-      config.routing,
-      config.run
-    )
-
+    val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, fileConfig)
     val experiment = new LocalMATSimRoutingExperiment(new File("route.csv"), new File("final.log"))
 
-    // TODO: the requested functions below should be parsed from config (see population config)
-    //  see https://pureconfig.github.io/docs/overriding-behavior-for-sealed-families.html
-    val routingAlgorithm = new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
-      new kSPwLO_SVP_Sync[SyncIO, Coordinate, EdgeBPR](theta = config.routing.theta),
-      new RandomSamplingSelectionAlgorithm(0L),
-      RoutingOps.defaultMarginalFlow,
-      RoutingOps.defaultCombineFlows,
-      EdgeBPRCostOps.marginalCostFunction(0.15, 4.0),
-      (state: AltPathsAlgorithm.AltPathsState) => state.alts.length == config.routing.k.value,
-      (state: SelectionAlgorithm.SelectionState) => state.startTime + 5000 < System.currentTimeMillis
-    )
+    val routingAlgorithm = matsimRunConfig.algorithm.selectionAlgorithm match {
+      case local: LocalMCTSSelection =>
+        // special effect handling for MCTS library
+        new TwoPhaseLocalMCTSRoutingAlgorithm[Coordinate, EdgeBPR](
+          altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
+          selectionAlgorithm = local.build(),
+          pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
+          combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
+          marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
+        )
+      case rand: RandomSamplingSelection =>
+        // other libraries play well
+        new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
+          altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
+          selectionAlgorithm = rand.build(),
+          pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
+          combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
+          marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
+        )
+    }
 
     experiment.run(
-      matsimRunConfig,
-      network,
-      routingAlgorithm,
-      EdgeBPRUpdateOps.edgeUpdateWithFlowCount, // <- comes from same source that will feed routingAlgorithm above
-      GreedyBatching(config.routing.batchWindow, config.routing.minimumReplanningWaitTime),
-      config.routing.batchWindow,
-      config.run.endOfRoutingTime
+      config = matsimRunConfig,
+      roadNetwork = network,
+      routingAlgorithm = routingAlgorithm,
+      updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
+      batchingFunction = matsimRunConfig.algorithm.batchingFunction.build(),
+      batchWindow = matsimRunConfig.routing.batchWindow,
+      doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime
     )
   }
 
@@ -71,12 +68,14 @@ object MATSimExperimentApp extends App {
     case Left(error) =>
       println("configuration failed")
       println(error)
-      System.exit(1)
-    case Right(result) =>
+    //        System.exit(1)
+    case Right(experiment) =>
       println("running experiment")
 
-      result.unsafeRunSync()
+      val result = experiment.unsafeRunSync()
+      result.simulator
 
-      System.exit(0)
+
+    //        System.exit(0)
   }
 }

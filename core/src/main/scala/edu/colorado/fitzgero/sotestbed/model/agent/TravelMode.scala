@@ -7,8 +7,8 @@ object TravelMode {
   }
 
   def fromString(string: String): Option[TravelMode] =
-    string match {
-      case car => Some{Car}
+    string.toLowerCase match {
+      case "car" => Some{Car}
       case _ => None
     }
 }

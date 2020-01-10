@@ -8,7 +8,7 @@ import scala.xml.XML
 import cats.effect.SyncIO
 
 import cse.bdlab.fitzgero.sorouting.common.util.XMLParserIgnoresDTD
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, MetersPerSecond, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, MetersPerSecond, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}
 
@@ -171,7 +171,7 @@ object LocalAdjacencyListFlowNetwork {
       val lanesOption: Option[Double]              = linkData.get("permlanes").map(toDoubleWithMinimum(_, DefaultLanes)) // default of 1 lane
       val lengthOption: Option[Meters]             = linkData.get("length").map(safeDistance(_))
 
-      val capacityOption: Option[NaturalNumber] = {
+      val capacityOption: Option[NonNegativeNumber] = {
         for {
           lanes  <- lanesOption
           length <- lengthOption
@@ -183,9 +183,9 @@ object LocalAdjacencyListFlowNetwork {
         // @todo: perhaps this isn't the best, but, we ensure that each link
         //   has a capacity of AT LEAST one.
         if (cap.value < 1) {
-          Some { NaturalNumber.One }
+          Some { NonNegativeNumber.One }
         } else {
-          NaturalNumber(cap.value.toInt).toOption
+          NonNegativeNumber(cap.value.toInt).toOption
         }
       }
 

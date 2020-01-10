@@ -5,7 +5,8 @@ import java.nio.file.{Path, Paths}
 
 import scala.concurrent.duration.Duration
 
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber, SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.config.algorithm.{BatchingFunctionConfig, CombineFlowsFunctionConfig, KSPAlgorithmConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, SelectionAlgorithmConfig}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{SimTime, TravelTimeSeconds}
 
 final case class MATSimConfig(
   io: MATSimConfig.IO,
@@ -33,17 +34,14 @@ object MATSimConfig {
   }
 
   final case class Routing(
-    k: NaturalNumber,
     batchWindow: SimTime,
     maxPathAssignments: Int,
     reasonableReplanningLeadTime: TravelTimeSeconds,
     minimumReplanningWaitTime: SimTime,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
     requestUpdateCycle: SimTime,
-    theta: Cost
   ) {
     require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle needs to be at least 1")
-    require(Cost.Zero <= theta || theta <= Cost(1), "matsimConfig.routing.theta must be between zero and one")
   }
 
   final case class IO(
@@ -63,5 +61,11 @@ object MATSimConfig {
   }
 
   final case class Algorithm(
-    )
+    kspAlgorithm: KSPAlgorithmConfig,
+    selectionAlgorithm: SelectionAlgorithmConfig,
+    pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
+    combineFlowsFunction: CombineFlowsFunctionConfig,
+    marginalCostFunction: MarginalCostFunctionConfig,
+    batchingFunction: BatchingFunctionConfig
+  )
 }

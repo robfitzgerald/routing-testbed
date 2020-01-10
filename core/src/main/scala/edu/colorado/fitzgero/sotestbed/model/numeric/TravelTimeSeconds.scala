@@ -6,6 +6,7 @@ class TravelTimeSeconds (val value: Double) extends AnyVal {
   def + (that: TravelTimeSeconds): TravelTimeSeconds = TravelTimeSeconds(this.value + that.value)
   def <= (that: TravelTimeSeconds): Boolean = this.value <= that.value
   def < (that: TravelTimeSeconds): Boolean = this.value < that.value
+  override def toString: String = this.value.toString
 }
 
 object TravelTimeSeconds {

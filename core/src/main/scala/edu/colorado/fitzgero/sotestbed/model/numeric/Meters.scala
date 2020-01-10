@@ -4,6 +4,7 @@ class Meters (val value: Double) extends AnyVal {
   def / (that: Meters): Meters = Meters(this.value / that.value)
   def * (that: Double): Meters = new Meters(this.value * that)
   def < (that: Meters): Boolean = this.value < that.value
+  override def toString: String = f"${this.value}%.2f"
 }
 
 object Meters {

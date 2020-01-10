@@ -14,11 +14,12 @@ import edu.colorado.fitzgero.sotestbed.model.numeric._
 case class EdgeBPR (
   distance: Meters,
   freeFlowSpeed: MetersPerSecond,
-  capacity: NaturalNumber,
+  capacity: NonNegativeNumber,
   flow: Flow = Flow.Zero,
   flowHistory: List[Flow] = List(Flow.Zero),
   flowHistoryLength: Int = 1
 ) {
   lazy val freeFlowTravelTime: TravelTimeSeconds = Meters.toTravelTime(distance, freeFlowSpeed)
+  override def toString: String = s"EdgeBPR(flow=$flow)"
 }
 

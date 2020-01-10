@@ -10,18 +10,22 @@ class RoutingResultFileReport(routingResultFile: File) extends RoutingReports {
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
   printWriter.write(RoutingResultFileReport.Header + "\n")
 
-  override def updateReports(routingResult: RoutingAlgorithm.Result, currentSimTime: SimTime): Unit = {
+  override def updateReports(routingResults: List[RoutingAlgorithm.Result], currentSimTime: SimTime): Unit = {
 
-    val output = List(
-      currentSimTime.value.toString,
-      currentSimTime.toString,
-      routingResult.kspRuntime.value.toString,
-      routingResult.selectionRuntime.value.toString,
-      routingResult.alternatives.keys.size.toString,
-      routingResult.responses.length
-    )
+    for {
+      routingResult <- routingResults
+    } {
+      val output = List(
+        currentSimTime.value.toString,
+        currentSimTime.toString,
+        routingResult.kspRuntime.value.toString,
+        routingResult.selectionRuntime.value.toString,
+        routingResult.alternatives.keys.size.toString,
+        routingResult.responses.length
+      )
 
-    printWriter.write(output.mkString("", ",", "\n"))
+      printWriter.write(output.mkString("", ",", "\n"))
+    }
   }
 
   def close(): Unit = {

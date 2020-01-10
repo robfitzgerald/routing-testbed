@@ -3,20 +3,18 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 import cats.Monad
 import cats.implicits._
 
-import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
-  altPathsAlgorithm: AltPathsAlgorithm[F, V, E],
+  altPathsAlgorithm: KSPAlgorithm[F, V, E],
   selectionAlgorithm: SelectionAlgorithm[F, V, E],
   pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[F, V, E],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: E => Flow => Cost,
-  kspTerminationFunction: AltPathsAlgorithm.AltPathsState => Boolean,
-  selectionTerminationFunction: SelectionAlgorithm.SelectionState => Boolean,
   timeLimit: RunTime = RunTime(31536000), // one year.
   limitAltsRuntime: Boolean = true,
   limitSelectionRuntime: Boolean = true
@@ -32,17 +30,13 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
       Monad[F].pure(RoutingAlgorithm.Result())
     } else {
       for {
-        altsResult <- altPathsAlgorithm.generateAlts(reqs,
-          roadNetwork,
-          costFunction,
-          kspTerminationFunction)
+        altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         kspRuntime = RunTime(System.currentTimeMillis) - startTime
         selectionResult <- selectionAlgorithm.selectRoutes(altsResult.alternatives,
           roadNetwork,
           pathToMarginalFlowsFunction,
           combineFlowsFunction,
-          marginalCostFunction,
-          selectionTerminationFunction)
+          marginalCostFunction)
         selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
       } yield {
         RoutingAlgorithm.Result(

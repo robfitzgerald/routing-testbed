@@ -2,9 +2,10 @@ package edu.colorado.fitzgero.sotestbed.model.agent
 import cats.Monad
 import cats.implicits._
 
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork}
 
-case class Response(request: Request, path: List[EdgeId])
+case class Response(request: Request, path: List[EdgeId], costEstimate: Cost)
 
 object Response {
   /**

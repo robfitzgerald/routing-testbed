@@ -77,11 +77,13 @@ trait SimulatorOps[F[_]] {
 object SimulatorOps {
 
   sealed trait SimulatorState
+
   object SimulatorState {
-    final case object Uninitialized extends SimulatorState
-    final case object Initialized   extends SimulatorState
-    final case object Running       extends SimulatorState
-    final case object Finishing     extends SimulatorState
-    final case object Finished      extends SimulatorState
+    final case object Uninitialized     extends SimulatorState
+    final case object Initialized       extends SimulatorState
+    final case object Running           extends SimulatorState
+    final case object Finishing         extends SimulatorState
+    final case object Finished          extends SimulatorState
+    final case class Error(msg: String) extends SimulatorState
   }
 }

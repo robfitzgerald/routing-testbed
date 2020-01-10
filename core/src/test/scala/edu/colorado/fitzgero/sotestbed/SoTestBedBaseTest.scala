@@ -10,5 +10,7 @@ abstract class SoTestBedBaseTest extends WordSpec with Matchers {
     def fiveByFiveNetworkFile: File        = new File("matsim/src/main/resources/matsim/network/test-network/five-by-five-network.xml")
     def fiveByFiveUnidirectionalFile: File = new File("matsim/src/main/resources/matsim/network/test-network/five-by-five-unidirectional-network.xml")
     def threeAltPathsFile: File            = new File("matsim/src/main/resources/matsim/network/test-network/three-alt-paths-network.xml")
+    def rye: File                          = new File("matsim/src/main/resources/matsim/network/rye-network.xml")
+    def louisville: File                   = new File("matsim/src/main/resources/matsim/network/louisville-network.xml")
   }
 }

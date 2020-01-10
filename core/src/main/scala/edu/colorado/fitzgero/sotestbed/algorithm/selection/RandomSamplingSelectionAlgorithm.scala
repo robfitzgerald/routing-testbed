@@ -6,13 +6,14 @@ import cats.Monad
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionState
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
-    seed: Long
+    seed: Long,
+    terminationFunction: SelectionState => Boolean
 ) extends SelectionAlgorithm[F, V, E] with LazyLogging {
 
   import SelectionAlgorithm._
@@ -26,8 +27,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       roadNetwork: RoadNetwork[F, V, E],
       pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
       combineFlowsFunction: Iterable[Flow] => Flow,
-      marginalCostFunction: E => Flow => Cost,
-      terminationFunction: SelectionState => Boolean
+      marginalCostFunction: E => Flow => Cost
   ): F[SelectionAlgorithm.Result] = {
 
     logger.debug(s"selectRoutes called with ${alts.size} requests")
@@ -39,7 +39,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
         SelectionAlgorithm.Result(
           List.empty,
           Cost.Zero,
-          NaturalNumber.Zero
+          NonNegativeNumber.Zero
         )
       }
     } else {
@@ -55,7 +55,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       }
 
       // evaluate selfish assignment cost
-      val selfishAssignmentCostF: F[Cost] =
+      val selfishAssignmentCostF: F[SelectionCost] =
         SelectionAlgorithm.evaluateCostOfSelection(
           alts.values.flatMap { _.headOption }.toList,
           roadNetwork,
@@ -66,11 +66,13 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
 
       // run iterative sampling using selfish as the start state
       for {
-        selfishCost <- selfishAssignmentCostF
+        selfishCostPayload <- selfishAssignmentCostF
+        selfishCost = selfishCostPayload.overallCost
         startState = SelectionState(
           bestSelectionIndices = selfishAssignmentSelection,
-          bestCost = selfishCost,
-          samples = NaturalNumber.One,
+          bestOverallCost = selfishCost,
+          agentPathCosts = selfishCostPayload.agentPathCosts,
+          samples = NonNegativeNumber.One,
           startTime = startTime
         )
         endState <- RandomSamplingSelectionAlgorithm.performRandomSampling(
@@ -89,18 +91,20 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
         val responses: List[Response] =
           indexedAlts
             .zip(endState.bestSelectionIndices)
+            .zip(endState.agentPathCosts)
             .map {
-              case ((request, alts), idx) =>
-                Response(request, alts(idx).map { _.edgeId })
+              case (((request, alts), idx), cost) =>
+                Response(request, alts(idx).map { _.edgeId }, cost)
             }
             .toList
-
-        logger.debug(s"returning ${responses.length} responses after ${endState.samples} samples finding best cost ${endState.bestCost}")
+//        val bestCostStr: String = endState.bestOverallCost.toString.padTo(10, ' ')
+        logger.info(s"AGENTS: ${responses.length} SAMPLES: ${endState.samples}")
+        logger.info(s"COST_EST: BEST ${endState.bestOverallCost}, SELFISH $selfishCost, DIFF ${selfishCost - endState.bestOverallCost}")
 
         // final return value
         SelectionAlgorithm.Result(
           responses,
-          endState.bestCost,
+          endState.bestOverallCost,
           endState.samples
         )
       }
@@ -157,7 +161,7 @@ object RandomSamplingSelectionAlgorithm {
             .unzip
 
         // get cost of this selection
-        val costF: F[Cost] = SelectionAlgorithm.evaluateCostOfSelection(
+        val costF: F[SelectionCost] = SelectionAlgorithm.evaluateCostOfSelection(
           thisRandomSelectionPaths,
           roadNetwork,
           pathToMarginalFlowsFunction,
@@ -167,15 +171,17 @@ object RandomSamplingSelectionAlgorithm {
 
         // recurse with the best-seen selection
         for {
-          thisCost <- costF
+          thisCostPayload <- costF
+          thisCost = thisCostPayload.overallCost
         } yield {
-          if (state.bestCost < thisCost) {
-            state.copy(samples = state.samples + NaturalNumber.One)
+          if (state.bestOverallCost < thisCost) {
+            state.copy(samples = state.samples + NonNegativeNumber.One)
           } else {
             SelectionAlgorithm.SelectionState(
               bestSelectionIndices = thisRandomSelectionIndices,
-              bestCost = thisCost,
-              samples = state.samples + NaturalNumber.One,
+              bestOverallCost = thisCost,
+              agentPathCosts = thisCostPayload.agentPathCosts,
+              samples = state.samples + NonNegativeNumber.One,
               state.startTime
             )
           }

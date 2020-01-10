@@ -14,9 +14,9 @@ final case class AgentActivityPair(
 
   def homeLocation: Option[EdgeId] = {
     act1 match {
-      case AgentActivity.FirstActivity(_, location, _) =>
+      case AgentActivity.FirstActivity(_, edgeId, _, _) =>
         Some{
-          location
+          edgeId
         }
       case _ => None
     }

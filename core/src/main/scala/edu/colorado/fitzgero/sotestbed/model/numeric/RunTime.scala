@@ -7,6 +7,7 @@ final class RunTime(val value: Double) extends AnyVal {
   def <= (that: Double): Boolean = this.value < that
   def > (that: Double): Boolean = this.value > that
   def >= (that: Double): Boolean = this.value >= that
+  override def toString: String = this.value.toString
 }
 
 object RunTime {

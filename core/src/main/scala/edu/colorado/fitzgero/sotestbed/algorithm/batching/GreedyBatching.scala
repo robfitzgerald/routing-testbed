@@ -7,7 +7,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 case class GreedyBatching (
   batchWindow: SimTime,
-  minimumReplanningWaitTime: SimTime
+  minimumReplanningWaitTime: SimTime,
+  maxBatchSize: Int
 ) extends BatchingFunction {
 
   /**
@@ -19,9 +20,9 @@ case class GreedyBatching (
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
   def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-    currentBatchStrategy: Map[SimTime, Map[String, AgentBatchData]],
+    currentBatchStrategy: Map[SimTime, List[List[AgentBatchData]]],
     newBatchData: List[AgentBatchData],
-    currentTime: SimTime): F[Option[Map[SimTime, Map[String, AgentBatchData]]]] = {
+    currentTime: SimTime): F[Option[Map[SimTime, List[List[AgentBatchData]]]]] = {
     if (newBatchData.isEmpty) Monad[F].pure {
       None
     } else Monad[F].pure {
@@ -41,13 +42,10 @@ case class GreedyBatching (
         case Nil => None
         case newRequests =>
           // we have agents that we can replan to add to the nearest possible request time
-          val agentsToAdd: Map[String, AgentBatchData] =
-            newRequests
-              .map{ agentBatchData => agentBatchData.request.agent -> agentBatchData }
-              .toMap
+          val agentsToAdd: List[List[AgentBatchData]] = newRequests.sliding(maxBatchSize, maxBatchSize).toList
 
-          val updatedBatchingStrategyForNextBatchingTime: Map[String, AgentBatchData] =
-            currentBatchStrategy.getOrElse(nextBatchingTime, Map.empty) ++ agentsToAdd
+          val updatedBatchingStrategyForNextBatchingTime: List[List[AgentBatchData]] =
+            currentBatchStrategy.getOrElse(nextBatchingTime, List.empty) ++ agentsToAdd
 
           Some {
             currentBatchStrategy.updated(nextBatchingTime, updatedBatchingStrategyForNextBatchingTime)
