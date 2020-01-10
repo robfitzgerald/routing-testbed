@@ -57,7 +57,10 @@ class GreedyCoordinateGridBatching(
         val (replannableOldData, fixed) = currentBatchStrategy.partition { case (time, _) => time >= nextValidBatchTime }
 
         // combine old agend data with new
-        val merged = BatchingManager.keepLatestAgentBatchData(replannableOldData.values.flatten.flatten.toList, newBatchData)
+        val merged: List[AgentBatchData] = BatchingManager.keepLatestAgentBatchData(
+          oldData=replannableOldData.values.flatten.flatten.toList,
+          newData=newBatchData
+        )
 
         // find all agent's estimated location at batchPathTimeDelay time into future and find their coordinate.
         // find which grid cell the coordinate sits within, and use that cell id to group this agent for batching
@@ -87,16 +90,12 @@ class GreedyCoordinateGridBatching(
         if (toAdd.isEmpty) {
           None
         } else {
-//          val groupingLog: Iterable[String] = grouped.map{ case (groupId, group) =>
-//            val groupCoord = grid.getGridCoord(groupId)
-//            s"$groupId $groupCoord: ${group.size} agents"
-//          }
-//          logger.debug(groupingLog.mkString("spatial cell groupings: ", ", ", ""))
+
           logger.info("SPATIAL BATCH SPLIT:\n" + grid.printGrid(grouped))
 
           // we can update our plan based on this grouping
           Some {
-            val updatedAtTime = fixed.getOrElse(nextValidBatchTime, List.empty) ++ toAdd
+            val updatedAtTime: List[List[AgentBatchData]] = fixed.getOrElse(nextValidBatchTime, List.empty) ++ toAdd
             fixed.updated(nextValidBatchTime, updatedAtTime)
           }
         }
@@ -107,6 +106,15 @@ class GreedyCoordinateGridBatching(
 
 object GreedyCoordinateGridBatching {
 
+  /**
+    * creates a simple grid from a bounding box. given an arbirary point within the box, provides a unique grouping
+    * id related to the cell which contains the point, allowing for agent grouping by cell.
+    * @param minX the bounding box's minimum x position
+    * @param maxX the bounding box's maximum x position
+    * @param minY the bounding box's minimum y position
+    * @param maxY the bounding box's maximum y position
+    * @param splitFactor how many cell to split the space in each dimension; i.e., splitFactor == 3 -> 9 cells
+    */
   class CoordinateGrid(
     minX: Double,
     maxX: Double,
@@ -115,7 +123,7 @@ object GreedyCoordinateGridBatching {
     splitFactor: Int,
   ) {
 
-    // step size between cells
+    // step size between cells in the underlying coordinate space
     val xStep: Double = (maxX - minX) / splitFactor
     val yStep: Double = (maxY - minY) / splitFactor
 
@@ -151,6 +159,9 @@ object GreedyCoordinateGridBatching {
       case _ => None
     }
 
+    /**
+      * Ordering used for pretty printing a grid based on the stringified grid indices
+      */
     val GroupIdOrdering: Ordering[String] = Ordering.by {
       case CoordinateGrid.GridIdRegex(xStr, yStr) =>
         Try {
@@ -163,6 +174,11 @@ object GreedyCoordinateGridBatching {
       case _ => Int.MaxValue
     }
 
+    /**
+      * presents a spatial grid and grid counts as a string
+      * @param grouped the current batch grouping
+      * @return a pretty-printed representation of the batch grouping
+      */
     def printGrid(grouped: Map[String, List[(String, AgentBatchData)]]): String = {
       grouped
         .map{ case (gridId, agents) => (gridId, agents.size) }
@@ -197,8 +213,8 @@ object GreedyCoordinateGridBatching {
       path.headOption.map { _.linkSourceCoordinate }
     } else {
       // find point in future
-      val timeInFuture = currentTime + batchPathTimeDelay
-      val pointInFuture = path
+      val timeInFuture: SimTime = currentTime + batchPathTimeDelay
+      val pointInFuture: Option[Coordinate] = path
         .takeWhile { _.estimatedTimeAtEdge < timeInFuture }
         .lastOption
         .map { _.linkSourceCoordinate }

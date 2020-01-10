@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.matsim.matsimconfig
+package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig
 
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person

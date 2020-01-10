@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.matsim.matsimconfig
+package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig
 
 import java.io.File
 import java.nio.file.{Path, Paths}

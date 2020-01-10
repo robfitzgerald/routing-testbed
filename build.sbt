@@ -1,13 +1,13 @@
 
 name := "so-testbed"
 version := "0.1"
-scalaVersion := "2.12.9"
+scalaVersion := "2.12.10"
 
 lazy val core = project
   .in(file("core")).
   settings(
     name := "so-testbed-core",
-    scalaVersion := "2.12.9",
+    scalaVersion := "2.12.10",
     scalacOptions ++= scalac,
     libraryDependencies ++= coreDependencies
   )
@@ -17,7 +17,7 @@ lazy val matsim = project
   .in(file("matsim")).
   settings(
     name := "so-testbed-matsim",
-    scalaVersion := "2.12.9",
+    scalaVersion := "2.12.10",
     scalacOptions ++= scalac,
     libraryDependencies ++= coreDependencies // ++ matsimDependencies
   )

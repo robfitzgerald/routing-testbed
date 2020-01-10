@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.matsim.matsimconfig
+package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig
 
 import java.io.File
 import java.time.LocalTime
@@ -13,7 +13,7 @@ import pureconfig._
 import pureconfig.configurable._
 import pureconfig.ConvertHelpers._
 import pureconfig.generic.auto._
-import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.population.{PopSamplingAlgorithm, UniformPopSamplingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.{PopSamplingAlgorithm, UniformPopSamplingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import org.matsim.core.network.NetworkUtils

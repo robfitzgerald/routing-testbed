@@ -14,7 +14,7 @@ import cats.effect.SyncIO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
-import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.MATSimRunConfig
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, Response, TravelMode}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId

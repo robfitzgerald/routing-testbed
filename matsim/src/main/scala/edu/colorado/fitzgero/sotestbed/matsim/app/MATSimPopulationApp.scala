@@ -6,7 +6,7 @@ import scala.xml.XML
 import scala.xml.dtd._
 import scala.collection.JavaConverters._
 
-import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.MATSimPopConfig
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimPopConfig
 import com.typesafe.config.ConfigFactory
 import pureconfig._
 import pureconfig.generic.auto._

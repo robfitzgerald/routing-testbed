@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.population
+package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population
 import java.io.File
 import java.time.LocalTime
 

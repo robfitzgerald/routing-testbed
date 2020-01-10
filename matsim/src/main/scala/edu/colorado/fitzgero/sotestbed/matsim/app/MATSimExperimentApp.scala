@@ -6,11 +6,10 @@ import cats.effect.SyncIO
 
 import pureconfig._
 import pureconfig.generic.auto._
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.RandomSamplingSelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
-import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.{MATSimConfig, MATSimRunConfig}
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRUpdateOps}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
@@ -19,7 +18,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 object MATSimExperimentApp extends App {
 
   val result = for {
-    fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/rye/default-experiment.conf").load[MATSimConfig]
+    fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/louisville/default-experiment.conf").load[MATSimConfig]
     network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(fileConfig.io.matsimNetworkFile)
     agentsUnderControl <- PopulationOps.loadAgentsUnderControl(fileConfig.io.populationFile)
   } yield {

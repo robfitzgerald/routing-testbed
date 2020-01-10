@@ -6,7 +6,7 @@ import cats.effect.{IO, SyncIO}
 
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
-import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.MATSimConfig
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
 import edu.colorado.fitzgero.sotestbed.matsim.simulator.MATSimSimulator
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.reports.RoutingResultFileReport
