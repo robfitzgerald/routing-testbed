@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 import cats.{Monad, Parallel}
 
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork, VertexId}
 
 abstract class KSPAlgorithm[F[_]: Monad, V, E] {
@@ -25,7 +25,7 @@ object KSPAlgorithm {
   final case class AltPathsState(
     intersectionVertices: List[VertexWithDistance],
     startTime: Long,
-    pathsSeen: NaturalNumber = NaturalNumber.Zero,
+    pathsSeen: NonNegativeNumber = NonNegativeNumber.Zero,
     alts: List[(Path, Cost)] = List.empty,
   )
 }

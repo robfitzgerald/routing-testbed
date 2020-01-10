@@ -5,7 +5,7 @@ import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost._
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
 
 abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
@@ -30,14 +30,14 @@ object SelectionAlgorithm {
   final case class Result(
     selectedRoutes: List[Response],
     estimatedCost: Cost,
-    samples: NaturalNumber
+    samples: NonNegativeNumber
   )
 
   final case class SelectionState(
     bestSelectionIndices: Seq[Int],
     bestOverallCost: Cost,
     agentPathCosts: List[Cost],
-    samples: NaturalNumber,
+    samples: NonNegativeNumber,
     startTime: Long
   )
 

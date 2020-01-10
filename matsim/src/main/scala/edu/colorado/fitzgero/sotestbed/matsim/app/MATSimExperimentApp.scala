@@ -7,7 +7,8 @@ import cats.effect.SyncIO
 import pureconfig._
 import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
-import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.LocalMCTSSelection
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.RandomSamplingSelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
@@ -41,11 +42,11 @@ object MATSimExperimentApp extends App {
           combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
           marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
         )
-      case otherAlgorithm =>
+      case rand: RandomSamplingSelection =>
         // other libraries play well
         new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
           altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
-          selectionAlgorithm = otherAlgorithm.build(),
+          selectionAlgorithm = rand.build(),
           pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
           combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
           marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()

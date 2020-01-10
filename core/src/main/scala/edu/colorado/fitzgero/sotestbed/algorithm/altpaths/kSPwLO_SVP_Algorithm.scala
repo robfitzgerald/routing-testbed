@@ -7,12 +7,12 @@ import cats.data.OptionT
 
 import edu.colorado.fitzgero.sotestbed.algorithm.search.{DijkstraSearch, SpanningTree}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, PathSegment, RoadNetwork, TraverseDirection}
 
 object kSPwLO_SVP_Algorithm {
 
-  final case class SingleSVPResult(request: Request, alts: List[Path], pathsSeen: NaturalNumber)
+  final case class SingleSVPResult(request: Request, alts: List[Path], pathsSeen: NonNegativeNumber)
 
   val ExhaustiveSearchTerminationFunction: KSPAlgorithm.AltPathsState => Boolean = _ => false
 
@@ -100,12 +100,12 @@ object kSPwLO_SVP_Algorithm {
                   searchState.copy(
                     intersectionVertices = searchState.intersectionVertices.tail,
                     alts = addToAlts +: searchState.alts,
-                    pathsSeen = searchState.pathsSeen + NaturalNumber.One
+                    pathsSeen = searchState.pathsSeen + NonNegativeNumber.One
                   )
                 } else {
                   searchState.copy(
                     intersectionVertices = searchState.intersectionVertices.tail,
-                    pathsSeen = searchState.pathsSeen + NaturalNumber.One
+                    pathsSeen = searchState.pathsSeen + NonNegativeNumber.One
                   )
                 }
               }
@@ -117,7 +117,7 @@ object kSPwLO_SVP_Algorithm {
                   //  2. the constructed single-via path had a cycle
                   val nextState = searchState.copy(
                     intersectionVertices = searchState.intersectionVertices.tail,
-                    pathsSeen = searchState.pathsSeen + NaturalNumber.One
+                    pathsSeen = searchState.pathsSeen + NonNegativeNumber.One
                   )
                   _svp(nextState)
                 case Some(updatedState) =>

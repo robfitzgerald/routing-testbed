@@ -8,7 +8,7 @@ import cats.implicits._
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NaturalNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
@@ -39,7 +39,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
         SelectionAlgorithm.Result(
           List.empty,
           Cost.Zero,
-          NaturalNumber.Zero
+          NonNegativeNumber.Zero
         )
       }
     } else {
@@ -72,7 +72,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
           bestSelectionIndices = selfishAssignmentSelection,
           bestOverallCost = selfishCost,
           agentPathCosts = selfishCostPayload.agentPathCosts,
-          samples = NaturalNumber.One,
+          samples = NonNegativeNumber.One,
           startTime = startTime
         )
         endState <- RandomSamplingSelectionAlgorithm.performRandomSampling(
@@ -175,13 +175,13 @@ object RandomSamplingSelectionAlgorithm {
           thisCost = thisCostPayload.overallCost
         } yield {
           if (state.bestOverallCost < thisCost) {
-            state.copy(samples = state.samples + NaturalNumber.One)
+            state.copy(samples = state.samples + NonNegativeNumber.One)
           } else {
             SelectionAlgorithm.SelectionState(
               bestSelectionIndices = thisRandomSelectionIndices,
               bestOverallCost = thisCost,
               agentPathCosts = thisCostPayload.agentPathCosts,
-              samples = state.samples + NaturalNumber.One,
+              samples = state.samples + NonNegativeNumber.One,
               state.startTime
             )
           }
