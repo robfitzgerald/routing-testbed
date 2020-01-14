@@ -80,13 +80,3 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
     }
   }
 }
-
-object RoutingExperiment {
-//  final case class ExperimentState[F[_]: Monad, V, E, S](
-//    simulator: S,
-//    roadNetwork: RoadNetwork[F, V, E],
-//    batchingManager: BatchingManager,
-//    simulatorState: SimulatorOps.SimulatorState = SimulatorOps.SimulatorState.Uninitialized,
-//    error: Option[String] = None
-//  )
-}

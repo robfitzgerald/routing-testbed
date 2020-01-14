@@ -52,6 +52,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var endOfRoutingTime: SimTime                                 = _
   var lastIteration: Int                                        = _
   var soFirstIteration: Boolean                                 = _
+  var useMATSimRoutingEngineForSelfishAgents: Boolean           = _
   var batchWindow: SimTime                                      = _
   var matsimStepSize: SimTime                                   = _
   var matsimSemaphoreTimeoutMs: Long                            = _
@@ -98,6 +99,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.endOfRoutingTime = config.run.endOfRoutingTime
     self.lastIteration = config.run.lastIteration
     self.soFirstIteration = config.run.soFirstIteration
+    self.useMATSimRoutingEngineForSelfishAgents = config.run.useMATSimRoutingEngineForSelfishAgents
     self.batchWindow = config.routing.batchWindow
     self.matsimStepSize = config.run.matsimStepSize
     self.matsimSemaphoreTimeoutMs = config.run.matsimSemaphoreTimeoutMs
@@ -258,7 +260,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
                         val currentTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
                         logger.debug(
-                          s"[LinkEnterEventHandler] $currentTime agent ${personId}: applying stored route with ${pathFromPathStore.length} edges")
+                          s"[LinkEnterEventHandler] $currentTime agent $personId: applying stored route with ${pathFromPathStore.length} edges")
 
                         self.markForPathOverwrite.remove(event.getVehicleId)
                       }
