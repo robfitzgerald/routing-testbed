@@ -20,20 +20,13 @@ final case class MATSimConfig(
     * converts this scenario to a selfish experiment (no system optimal agents)
     * @return updated Run configuration
     */
-  def toSelfishExperiment: MATSimConfig =
-    this.copy(
-      run = this.run.copy(soRoutingIterationCycle = 0, soFirstIteration = false)
-    )
+  def toSelfishExperiment: MATSimConfig = ???
 
 }
 
 object MATSimConfig {
 
   final case class Run(
-    lastIteration: Int,
-    soRoutingIterationCycle: Int,
-    soFirstIteration: Boolean, // overrides the iteration cycle for so-routing and simply has it run on iteration 0
-    useMATSimRoutingEngineForSelfishAgents: Boolean,
     startOfSimTime: SimTime,
     endOfSimTime: SimTime,
     endOfRoutingTime: SimTime,
@@ -41,8 +34,6 @@ object MATSimConfig {
     matsimSemaphoreTimeoutMs: Long,
     simulationTailTimeout: Duration
   ) {
-    require(soRoutingIterationCycle <= lastIteration,
-            "matsimConfig.run.soRoutingIterationCycle needs to be less than or equal to matsimConfig.run.lastIteration")
     require(matsimSemaphoreTimeoutMs > 0, "matsimConfig.run.matsimSemaphoreTimeoutMs must be positive")
   }
 
@@ -53,8 +44,32 @@ object MATSimConfig {
     minimumReplanningWaitTime: SimTime,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
     requestUpdateCycle: SimTime,
+    selfish: Routing.Selfish
   ) {
     require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle needs to be at least 1")
+  }
+
+  object Routing {
+    sealed trait Selfish {
+      def lastIteration: Int
+    }
+    object Selfish {
+      final case class MATSim(
+        lastIteration: Int,
+        soRoutingIterationCycle: Int,
+        soFirstIteration: Boolean, // overrides the iteration cycle for so-routing and simply has it run on iteration 0
+      ) extends Selfish {
+        require(soRoutingIterationCycle <= lastIteration,
+          "matsimConfig.routing.selfish.matsim.soRoutingIterationCycle needs to be less than or equal to lastIteration")
+      }
+      final case class Dijkstra(
+        pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
+        combineFlowsFunction: CombineFlowsFunctionConfig,
+        marginalCostFunction: MarginalCostFunctionConfig,
+      ) extends Selfish {
+        def lastIteration: Int = 0
+      }
+    }
   }
 
   final case class IO(

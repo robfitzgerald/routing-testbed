@@ -91,7 +91,7 @@ class GreedyCoordinateGridBatching(
           None
         } else {
 
-          logger.info("SPATIAL BATCH SPLIT:\n" + grid.printGrid(grouped))
+          logger.info(s"SPATIAL BATCH SPLIT at $currentTime:\n" + grid.printGrid(grouped))
 
           // we can update our plan based on this grouping
           Some {

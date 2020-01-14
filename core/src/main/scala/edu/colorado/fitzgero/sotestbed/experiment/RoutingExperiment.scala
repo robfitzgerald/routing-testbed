@@ -7,7 +7,7 @@ import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, BatchingFunction, BatchingManager}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.Edge
 import edu.colorado.fitzgero.sotestbed.reports.Reports
@@ -26,7 +26,8 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
   final def run(
     config: SimulatorConfiguration,
     roadNetwork: RoadNetwork[F, V, E],
-    routingAlgorithm: RoutingAlgorithm[F, V, E],
+    ueRoutingAlgorithm: Option[RoutingAlgorithm[F, V, E]],
+    soRoutingAlgorithm: RoutingAlgorithm[F, V, E],
     updateFunction: Edge.UpdateFunction[E],
     batchingFunction: BatchingFunction,
     batchWindow: SimTime,
@@ -38,19 +39,21 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
       val experiment: F[ExperimentState] = startState.iterateUntilM {
         case ExperimentState(e0, r0, b0, s0, _) =>
           for {
-            e1               <- advance(e0) // should return updated simulator
-            currentSimTime   <- getCurrentSimTime(e1)
-            edges            <- getUpdatedEdges(e1)
-            r1               <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
-            batchDataUpdate  <- getAgentsNewlyAvailableForReplanning(e1)
-            batchStratUpdate <- batchingFunction.updateBatchingStrategy(r1, b0.batchingStrategy, batchDataUpdate, currentSimTime)
-            b1                = b0.updateBatchData(batchStratUpdate, currentSimTime)
-            (b2, batches)     = b1.getBatchesForTime(currentSimTime)
-            results          <- batches.traverse{batch => routingAlgorithm.route(batch, r1)}
-            resolvedResults   = b2.resolveRoutingResultBatches(results)
-            e2               <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
-            _                 = updateReports(results, currentSimTime) // unit is ok here, no modifications to application state
-            simulatorState   <- getState(e2)
+            e1                  <- advance(e0) // should return updated simulator
+            currentSimTime      <- getCurrentSimTime(e1)
+            edges               <- getUpdatedEdges(e1)
+            r1                  <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
+            batchDataUpdate     <- getAgentsNewlyAvailableForReplanning(e1)
+            (ueUpdate, soUpdate) = batchDataUpdate.partition { _.request.requestClass == RequestClass.UE }
+            ueResults           <- ueRoutingAlgorithm.map{_.route(ueUpdate.map{_.request}, r1)}.getOrElse(Monad[F].pure{RoutingAlgorithm.Result()})
+            batchStratUpdate    <- batchingFunction.updateBatchingStrategy(r1, b0.batchingStrategy, soUpdate, currentSimTime)
+            b1                   = b0.updateBatchData(batchStratUpdate, currentSimTime)
+            (b2, batches)        = b1.getBatchesForTime(currentSimTime)
+            soResults           <- batches.traverse { batch => soRoutingAlgorithm.route(batch, r1) }
+            resolvedResults      = b2.resolveRoutingResultBatches(ueResults +: soResults)
+            e2                  <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
+            _                    = updateReports(soResults, currentSimTime) // unit is ok here, no modifications to application state
+            simulatorState      <- getState(e2)
           } yield {
             simulatorState match {
               case Right(newState) => ExperimentState(e2, r1, b2, newState)

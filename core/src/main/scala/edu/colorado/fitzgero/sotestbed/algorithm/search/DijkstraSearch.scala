@@ -88,7 +88,7 @@ object DijkstraSearch {
           result <- OptionT {
             vertexOrientedShortestPath(roadNetworkModel, costFunction)(dstVertexOfSrcEdge, srcVertexOfDstEdge, direction)
           }
-        } yield result
+        } yield PathSegment(srcEdgeId, Cost.Zero) +: result :+ PathSegment(dstEdgeId, Cost.Zero)
       }.value
 
       result

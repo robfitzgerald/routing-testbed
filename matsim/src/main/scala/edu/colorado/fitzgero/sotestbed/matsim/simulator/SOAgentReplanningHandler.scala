@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.matsim.simulator
 
-import edu.colorado.fitzgero.sotestbed.matsim.simulator.AgentsInSimulationNeedingReplanningHandler.AgentData
+import edu.colorado.fitzgero.sotestbed.matsim.simulator.SOAgentReplanningHandler.AgentData
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.events.handler.{PersonEntersVehicleEventHandler, PersonLeavesVehicleEventHandler, PersonStuckEventHandler}
@@ -8,7 +8,7 @@ import org.matsim.api.core.v01.events.{PersonEntersVehicleEvent, PersonLeavesVeh
 import org.matsim.api.core.v01.population.Person
 
 
-class AgentsInSimulationNeedingReplanningHandler(
+class SOAgentReplanningHandler(
   val agentsUnderControl: Set[Id[Person]],
   val requestUpdateCycle: SimTime,
   val maxPathAssignments: Int,
@@ -141,7 +141,7 @@ class AgentsInSimulationNeedingReplanningHandler(
       case Some(agentData) =>
 
         // update our average paths assigned per SO agent
-        avgPathsAssigned = AgentsInSimulationNeedingReplanningHandler.addToRollingAverage(
+        avgPathsAssigned = SOAgentReplanningHandler.addToRollingAverage(
           observation = agentData.numberOfPathAssignments,
           rollingAverage = avgPathsAssigned,
           n = cntPathsAssigned
@@ -149,7 +149,7 @@ class AgentsInSimulationNeedingReplanningHandler(
         cntPathsAssigned += 1
 
         // update failed routing attempts
-        avgFailedRoutingAttempts = AgentsInSimulationNeedingReplanningHandler.addToRollingAverage(
+        avgFailedRoutingAttempts = SOAgentReplanningHandler.addToRollingAverage(
           observation = agentData.numberFailedRoutingAttempts,
           rollingAverage = avgFailedRoutingAttempts,
           n = cntFailedRoutingAttempts
@@ -198,7 +198,7 @@ class AgentsInSimulationNeedingReplanningHandler(
   }
 }
 
-object AgentsInSimulationNeedingReplanningHandler {
+object SOAgentReplanningHandler {
 
   /**
     * data class containing information about this agent's current trip

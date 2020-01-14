@@ -7,13 +7,13 @@ import cats.effect.SyncIO
 
 import pureconfig._
 import pureconfig.generic.auto._
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingOps, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRUpdateOps}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRCostOps, EdgeBPRUpdateOps}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
@@ -33,7 +33,20 @@ object MATSimExperimentApp extends App {
     val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, fileConfig)
     val experiment = new LocalMATSimRoutingExperiment(new File("route.csv"), new File("final.log"))
 
-    val routingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
+    val ueRoutingAlgorithm: Option[RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR]] =
+      matsimRunConfig.routing.selfish match {
+        case _: MATSimConfig.Routing.Selfish.MATSim => None
+        case MATSimConfig.Routing.Selfish.Dijkstra(pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction) =>
+          Some {
+            SelfishSyncRoutingBPR(
+              marginalCostFunction.build(),
+              pathToMarginalFlowsFunction.build(),
+              combineFlowsFunction.build()
+            )
+          }
+      }
+
+    val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
       case MATSimConfig.Algorithm.Selfish =>
         // need a no-phase dijkstra's algorithm here?
         ???
@@ -71,7 +84,8 @@ object MATSimExperimentApp extends App {
           experiment.run(
             config = matsimRunConfig,
             roadNetwork = network,
-            routingAlgorithm = routingAlgorithm,
+            ueRoutingAlgorithm = ueRoutingAlgorithm,
+            soRoutingAlgorithm = soRoutingAlgorithm,
             updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
             batchingFunction = systemOptimal.batchingFunction.build(),
             batchWindow = matsimRunConfig.routing.batchWindow,

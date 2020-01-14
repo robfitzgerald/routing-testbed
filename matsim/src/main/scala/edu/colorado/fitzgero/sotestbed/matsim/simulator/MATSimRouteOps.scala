@@ -5,14 +5,14 @@ import scala.util.Try
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
-import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
+import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, TravelMode}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
 import org.matsim.api.core.v01.population.{Leg, Person, Plan}
-import org.matsim.core.mobsim.framework.MobsimAgent
+import org.matsim.core.mobsim.framework.{MobsimAgent, PlayPauseSimulationControl}
 import org.matsim.core.mobsim.qsim.QSim
 import org.matsim.core.mobsim.qsim.agents.WithinDayAgentUtils
 import org.matsim.core.population.routes.NetworkRoute
@@ -26,7 +26,7 @@ object MATSimRouteOps extends LazyLogging {
     * @return the Optional Leg
     */
   def safeGetModifiableLeg(mobsimAgent: MobsimAgent): Option[Leg] = {
-    Try{
+    Try {
       WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)
     } match {
       case util.Success(nullableLeg) =>
@@ -76,7 +76,6 @@ object MATSimRouteOps extends LazyLogging {
       leg.getRoute.getEndLinkId
   }
 
-
   final case class ConvertToRoutingPathAccumulator(
     routingPath: List[AgentBatchData.EdgeData] = List.empty,
     estimatedTravelTime: SimTime = SimTime.Zero
@@ -89,11 +88,11 @@ object MATSimRouteOps extends LazyLogging {
     */
   def convertToRoutingPath(route: List[Id[Link]], qSim: QSim): List[AgentBatchData.EdgeData] = {
     val result = route.foldLeft(ConvertToRoutingPathAccumulator()) { (acc, linkId) =>
-      val link = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
-      val src = link.getFromNode.getCoord
-      val srcCoordinate = Coordinate(src.getX, src.getY)
-      val dst = link.getToNode.getCoord
-      val dstCoordinate = Coordinate(dst.getX, dst.getY)
+      val link                             = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+      val src                              = link.getFromNode.getCoord
+      val srcCoordinate                    = Coordinate(src.getX, src.getY)
+      val dst                              = link.getToNode.getCoord
+      val dstCoordinate                    = Coordinate(dst.getX, dst.getY)
       val nextEstimatedTravelTime: SimTime = SimTime(link.getLength / link.getFreespeed) + acc.estimatedTravelTime
       val edgeData = AgentBatchData.EdgeData(
         EdgeId(linkId.toString),
@@ -300,6 +299,35 @@ object MATSimRouteOps extends LazyLogging {
 
   /**
     * takes the agent's current path, and attaches a new path at the point where they intersect.
+    * does not modify path segments which occur before the agent's current link in the currentPath.
+    *
+    * assuming that the new path has been created based on a link in the old path.
+    *
+    * @param currentPath the path that MATSim currently has stored for this agent
+    * @param newPath     the routing result
+    * @param currentLink the agent's current link
+    * @return o-[currentPath]->o-[newPath]-> concatenated;
+    *         if newPath doesn't contain currentLink, return None
+    */
+  def safeCoalescePath(currentPath: List[Id[Link]], newPath: List[Id[Link]], currentLink: Id[Link]): Option[List[Id[Link]]] =
+    newPath.dropWhile(_ != currentLink) match {
+      case Nil =>
+        // maybe it starts after the current link?
+        newPath.headOption match {
+          case None =>
+            // nope, it didn't - invalid new path
+            None
+          case Some(startOfNewPath) =>
+            // ok, find where this path picks up and add it there
+            Some { currentPath.takeWhile(_ != startOfNewPath) ++ newPath }
+        }
+      case newPathFromCurrentLink =>
+        // looks like it contains the current link, which we can safely use as a connection point
+        Some { currentPath.takeWhile(_ != currentLink) ++ newPathFromCurrentLink }
+    }
+
+  /**
+    * takes the agent's current path, and attaches a new path at the point where they intersect.
     *
     * assuming that the new path has been created based on a link in the old path.
     *
@@ -307,11 +335,20 @@ object MATSimRouteOps extends LazyLogging {
     * @param newPath     the routing result
     * @return o-[currentPath]->o-[newPath]-> concatenated
     */
-  def coalescePath(currentPath: List[Id[Link]], newPath: List[Id[Link]]): List[Id[Link]] = {
+  def coalescePath(currentPath: List[Id[Link]], newPath: List[Id[Link]]): Option[List[Id[Link]]] = {
     newPath.headOption match {
-      case None => currentPath
+      case None =>
+        // new path is empty
+        None
       case Some(firstLinkInNewPath) =>
-        currentPath.takeWhile(_ != firstLinkInNewPath) ++ newPath
+        val updatedPathPrefix: List[Id[Link]] = currentPath.takeWhile(_ != firstLinkInNewPath)
+        if (updatedPathPrefix.lengthCompare(currentPath.length) == 0) {
+          // never found first link in new path; paths do not intersect; return currentPath, unmodified
+          None
+        } else {
+          // combine paths
+          Some{ updatedPathPrefix ++ newPath }
+        }
     }
   }
 

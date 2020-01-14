@@ -15,13 +15,17 @@ class RoutingResultFileReport(routingResultFile: File) extends RoutingReports {
     for {
       routingResult <- routingResults
     } {
+      val avgAltsPerAgent: Double =
+        if (routingResult.alternatives.isEmpty) 0
+        else routingResult.alternatives.map{_._2.length}.sum.toDouble / routingResult.alternatives.size
       val output = List(
         currentSimTime.value.toString,
         currentSimTime.toString,
-        routingResult.kspRuntime.value.toString,
-        routingResult.selectionRuntime.value.toString,
+        f"${routingResult.kspRuntime.value}%.2f",
+        f"${routingResult.selectionRuntime.value}%.2f",
         routingResult.alternatives.keys.size.toString,
-        routingResult.responses.length
+        routingResult.responses.length,
+        f"$avgAltsPerAgent%.2f"
       )
 
       printWriter.write(output.mkString("", ",", "\n"))
@@ -35,5 +39,5 @@ class RoutingResultFileReport(routingResultFile: File) extends RoutingReports {
 
 
 object RoutingResultFileReport {
-  val Header: String = "simTimeValue,simTime,kspRuntime,selectRuntime,numRequests,numResponses"
+  val Header: String = "simTimeValue,simTime,kspRuntime,selectRuntime,numRequests,numResponses,avgAlts"
 }

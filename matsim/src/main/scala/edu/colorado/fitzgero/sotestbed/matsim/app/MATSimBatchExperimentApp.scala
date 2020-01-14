@@ -62,7 +62,10 @@ object MATSimBatchExperimentApp extends CommandApp(
               .getOrElse(Paths.get("/tmp"))}
               .getOrElse(Paths.get("/tmp"))
 
-          if (Files.notExists(batchLoggerPath)) {
+          if (Files.exists(batchLoggerPath)) {
+            println(s"path $batchLoggerPath already exists. please re-run with a new batchName")
+            System.exit(1)
+          } else {
             Files.createDirectories(batchLoggerPath)
           }
 

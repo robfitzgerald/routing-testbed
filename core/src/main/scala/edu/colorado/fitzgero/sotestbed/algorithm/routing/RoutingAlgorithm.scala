@@ -1,7 +1,5 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
-import cats.Monad
-
 import edu.colorado.fitzgero.sotestbed.model.agent._
 import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
