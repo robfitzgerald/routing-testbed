@@ -107,8 +107,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.simulationTailTimeout = config.run.simulationTailTimeout
 
     // file system configuration
-    val experimentPath: Path =
-      config.io.workingDirectory.resolve(config.io.experimentSubdirectoryName)
+    val experimentPath: Path = config.io.experimentDirectory
     Files.createDirectories(experimentPath)
 
     // matsim configuration
@@ -123,9 +122,9 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.controler = new Controler(matsimConfig)
 
     // needs to happen after the controler checks the experiment directory
-    val outputFilePath = s"${config.io.workingDirectory}/so-stats"
+    val outputFilePath: String = config.io.experimentLoggingDirectory.resolve("so-stats.txt").toString
     pw = new PrintWriter(outputFilePath)
-    pw.write(s"experiment ${config.io.name}\n\n")
+    pw.write(s"experiment ${config.io.experimentDirectory}\n\n")
 
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.agentsInSimulationNeedingReplanningHandler = new AgentsInSimulationNeedingReplanningHandler(
@@ -146,12 +145,12 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         self.agentsInSimulationNeedingReplanningHandler.clear()
         self.roadNetworkDeltaHandler.clear()
 
-        self.soReplanningThisIteration = if (config.run.soRoutingIterationCycle == 0) {
-          // prevent divide-by-zero; soRoutingIterationCycle == 0 => no routing
-          false
-        } else if (event.getIteration == 0) {
+        self.soReplanningThisIteration = if (event.getIteration == 0) {
           // user determines first iteration so routing behavior
           self.soFirstIteration
+        } else if (config.run.soRoutingIterationCycle == 0) {
+          // prevent divide-by-zero; soRoutingIterationCycle == 0 => no routing
+          false
         } else {
           event.getIteration % config.run.soRoutingIterationCycle == 0
         }

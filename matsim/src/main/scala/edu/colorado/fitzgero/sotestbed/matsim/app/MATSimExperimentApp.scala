@@ -1,13 +1,15 @@
 package edu.colorado.fitzgero.sotestbed.matsim.app
 
+import java.io
 import java.io.File
 
 import cats.effect.SyncIO
 
 import pureconfig._
 import pureconfig.generic.auto._
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
+import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
@@ -17,7 +19,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 
 object MATSimExperimentApp extends App {
 
-  val result = for {
+  val result: Either[io.Serializable, Any] = for {
     fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/louisville/default-experiment.conf").load[MATSimConfig]
     network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(fileConfig.io.matsimNetworkFile)
     agentsUnderControl <- PopulationOps.loadAgentsUnderControl(fileConfig.io.populationFile)
@@ -31,49 +33,63 @@ object MATSimExperimentApp extends App {
     val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, fileConfig)
     val experiment = new LocalMATSimRoutingExperiment(new File("route.csv"), new File("final.log"))
 
-    val routingAlgorithm = matsimRunConfig.algorithm.selectionAlgorithm match {
-      case local: LocalMCTSSelection =>
-        // special effect handling for MCTS library
-        new TwoPhaseLocalMCTSRoutingAlgorithm[Coordinate, EdgeBPR](
-          altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
-          selectionAlgorithm = local.build(),
-          pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
-          combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
-          marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
-        )
-      case rand: RandomSamplingSelection =>
-        // other libraries play well
-        new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
-          altPathsAlgorithm = matsimRunConfig.algorithm.kspAlgorithm.build(),
-          selectionAlgorithm = rand.build(),
-          pathToMarginalFlowsFunction = matsimRunConfig.algorithm.pathToMarginalFlowsFunction.build(),
-          combineFlowsFunction = matsimRunConfig.algorithm.combineFlowsFunction.build(),
-          marginalCostFunction = matsimRunConfig.algorithm.marginalCostFunction.build()
-        )
+    val routingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
+      case MATSimConfig.Algorithm.Selfish =>
+        // need a no-phase dijkstra's algorithm here?
+        ???
+      case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
+        systemOptimal.selectionAlgorithm match {
+          case local: LocalMCTSSelection =>
+            // special effect handling for MCTS library
+            new TwoPhaseLocalMCTSRoutingAlgorithm[Coordinate, EdgeBPR](
+              altPathsAlgorithm = systemOptimal.kspAlgorithm.build(),
+              selectionAlgorithm = local.build(),
+              pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
+              combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
+              marginalCostFunction = systemOptimal.marginalCostFunction.build()
+            )
+          case rand: RandomSamplingSelection =>
+            // other libraries play well
+            new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
+              altPathsAlgorithm = systemOptimal.kspAlgorithm.build(),
+              selectionAlgorithm = rand.build(),
+              pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
+              combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
+              marginalCostFunction = systemOptimal.marginalCostFunction.build()
+            )
+        }
     }
 
-    experiment.run(
-      config = matsimRunConfig,
-      roadNetwork = network,
-      routingAlgorithm = routingAlgorithm,
-      updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
-      batchingFunction = matsimRunConfig.algorithm.batchingFunction.build(),
-      batchWindow = matsimRunConfig.routing.batchWindow,
-      doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime
-    )
+
+
+    val experimentSyncIO: SyncIO[experiment.ExperimentState] =
+      matsimRunConfig.algorithm match {
+        case MATSimConfig.Algorithm.Selfish =>
+          // need a no-batching manager version here? or, a dummy for now?
+          ???
+        case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
+          experiment.run(
+            config = matsimRunConfig,
+            roadNetwork = network,
+            routingAlgorithm = routingAlgorithm,
+            updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
+            batchingFunction = systemOptimal.batchingFunction.build(),
+            batchWindow = matsimRunConfig.routing.batchWindow,
+            doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime
+          )
+
+      }
+
+    experimentSyncIO.unsafeRunSync()
   }
 
   result match {
     case Left(error) =>
-      println("configuration failed")
+      println("run failure")
       println(error)
     //        System.exit(1)
-    case Right(experiment) =>
-      println("running experiment")
-
-      val result = experiment.unsafeRunSync()
-      result.simulator
-
+    case Right(_) =>
+      println("run success")
 
     //        System.exit(0)
   }
