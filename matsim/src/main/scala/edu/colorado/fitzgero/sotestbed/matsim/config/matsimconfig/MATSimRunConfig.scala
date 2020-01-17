@@ -25,5 +25,4 @@ object MATSimRunConfig {
   final case class Population(
     agentsUnderControl: Set[Id[Person]],
   )
-
 }

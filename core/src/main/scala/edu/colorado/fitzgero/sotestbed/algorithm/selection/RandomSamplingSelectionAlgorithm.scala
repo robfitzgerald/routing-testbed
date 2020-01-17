@@ -13,6 +13,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
     seed: Long,
+    exhaustiveSearchSampleLimit: Int,
     terminationFunction: SelectionState => Boolean
 ) extends SelectionAlgorithm[F, V, E] with LazyLogging {
 
@@ -56,6 +57,16 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
             NonNegativeNumber.Zero
           )
         }
+    } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
+      // problem small enough for an exhaustive search
+      logger.info(s"performing exhaustive search for ${alts.size} agents")
+      SelectionAlgorithm.performExhaustiveSearch(
+        alts,
+        roadNetwork,
+        pathToMarginalFlowsFunction,
+        combineFlowsFunction,
+        marginalCostFunction
+      )
     } else {
       // turn path alternatives into vector for faster indexing performance
       val indexedAlts: Map[Request, Vector[Path]] =

@@ -8,6 +8,7 @@ import cats.implicits._
 import com.monovore.decline._
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
+import pureconfig.ConfigSource
 
 object MATSimBatchExperimentApp extends CommandApp(
   name = "so-testbed-batch-experiment-app",
@@ -41,7 +42,7 @@ object MATSimBatchExperimentApp extends CommandApp(
         case Right(confs) =>
 
           // write any batch config generation errors to the console; count confs that are ok
-          val goodConfsCount: Int = confs.count { case (conf, _) =>
+          val goodConfsCount: Int = confs.count { case MATSimBatchConfig.Variation(conf, _, _) =>
             conf match {
               case Left(e) =>
                 println(e.prettyPrint())
@@ -59,7 +60,7 @@ object MATSimBatchExperimentApp extends CommandApp(
             // set up batch logger to report any failures
             val batchLoggerPath: Path =
               confs
-                .headOption.map{_._1.map{ firstConf =>
+                .headOption.map{_.configReaderResult.map{ firstConf =>
                 // screwy way to inject the batch name here, so we can construct the correct batchLoggingDirectory
                 firstConf.copy(io=firstConf.io.copy(batchName = batchName)).io.batchLoggingDirectory
               }
@@ -82,26 +83,64 @@ object MATSimBatchExperimentApp extends CommandApp(
 
             // load and run each config variation
             for {
-              ((confReaderResult, variationHint), variationNumber) <- confs.zipWithIndex
+              (MATSimBatchConfig.Variation(confReaderResult, variationHint, popSize), experimentNumber) <- confs.zipWithIndex
               conf <- confReaderResult
               confWithBatchName = conf.copy(io=conf.io.copy(batchName = batchName))
-              trial <- (0 until trials).map{t => (variationNumber * trials) + t}
+              trial <- 0 until trials
               scenarioData = MATSimConfig.IO.ScenarioData(
                 algorithm = confWithBatchName.algorithm.name,
                 variation = MATSimBatchConfig.createVariationName(variationHint),
                 trialNumber = trial)
-              confWithScenario = confWithBatchName.copy(io=confWithBatchName.io.copy(scenarioData = Some{scenarioData}))
+              confWithScenarioData = confWithBatchName.copy(io=confWithBatchName.io.copy(scenarioData = Some{scenarioData}))
+              popFileName: String = s"population-$popSize-$trial.xml"
+              variationPopFile: File = confWithScenarioData.io.batchLoggingDirectory.resolve(popFileName).toFile
+              matsimConfig = confWithScenarioData.copy(io=confWithScenarioData.io.copy(populationFile = variationPopFile))
             } {
 
-              val experiment: MATSimExperimentRunner = MATSimExperimentRunner(confWithScenario)
+              Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
+              val variationOutput: String = variationHint.mkString("\n")
+              val variationOutputFile: File = matsimConfig.io.experimentLoggingDirectory.resolve("variation.txt").toFile
+              val variationPrintWriter: PrintWriter = new PrintWriter(variationOutputFile.toString)
+              variationPrintWriter.write(variationOutput)
+              variationPrintWriter.close()
 
-              experiment.run() match {
-                case Left(e) =>
-                  println(s"trial $trial exit with experiment run failure")
-                  batchLogger.write(s"$trial,${e.toString}\n")
-                case Right(e) =>
-                  println(s"trial $trial exited normally")
-                  batchLogger.write(s"$trial,${confWithScenario.io.experimentDirectory}\n")
+              // test if population has been generated or if we need to create it
+              if (variationPopFile.isFile) {
+
+                // population already exists. run experiment
+                val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig)
+
+                experiment.run() match {
+                  case Left(e) =>
+                    println(s"trial $trial exit with experiment run failure")
+                    batchLogger.write(s"$trial,${e.toString}\n")
+                  case Right(e) =>
+                    println(s"trial $trial exited normally")
+                    batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                }
+              } else {
+
+                // generate population before starting the experiment
+                MATSimPopulationRunner.generateUniformPopulation(
+                  matsimConfig.io.matsimNetworkFile,
+                  variationPopFile,
+                  popSize,
+                  0.2,
+                  seed = Some { experimentNumber }
+                ) match {
+                  case Left(e) => println(e)
+                  case Right(_) =>
+                    val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig)
+
+                    experiment.run() match {
+                      case Left(e) =>
+                        println(s"trial $trial exit with experiment run failure")
+                        batchLogger.write(s"$trial,${e.toString}\n")
+                      case Right(e) =>
+                        println(s"trial $trial exited normally")
+                        batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                    }
+                }
               }
             }
             // close logger after finishing all batches

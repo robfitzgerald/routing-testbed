@@ -73,10 +73,10 @@ class GreedyCoordinateGridBatching(
           .groupBy { case (groupId, _) => groupId }
 
         val toAdd: List[List[AgentBatchData]] = grouped
-          .flatMap { case (_, groupedData) =>
-            groupedData
-              .map { _._2 }
-              .sliding(this.maxBatchSize, this.maxBatchSize)
+          .flatMap { case (_, tuples) =>
+            // this group may exceed our maxBatchSize, so, break them up based on a batch splitting function
+            val agentBatchData: List[AgentBatchData] = tuples.map { case (_, group) => group }
+            BatchSplittingFunction.bySlidingWindow(agentBatchData, this.maxBatchSize)
           }
           .toList
 

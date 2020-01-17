@@ -23,6 +23,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 
 class LocalMCTSSelectionAlgorithm[V, E] (
   seed: Long,
+  exhaustiveSearchSampleLimit: Int,
   terminationFunction: SelectionState => Boolean
 ) extends SelectionAlgorithm[SyncIO, V, E] with LazyLogging {
 
@@ -34,11 +35,11 @@ class LocalMCTSSelectionAlgorithm[V, E] (
     pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): SyncIO[SelectionAlgorithm.Result] = SyncIO {
+  ): SyncIO[SelectionAlgorithm.Result] = {
 
-    if (alts.isEmpty) {
+    if (alts.isEmpty) SyncIO {
       SelectionAlgorithm.Result(List.empty, Cost.Zero, NonNegativeNumber.Zero)
-    } else if (alts.size == 1) {
+    } else if (alts.size == 1) SyncIO {
 
       // select the true shortest path for this agent
       val request: Request = alts.keys.head
@@ -66,7 +67,17 @@ class LocalMCTSSelectionAlgorithm[V, E] (
             samples = NonNegativeNumber.One
           )
       }
-    } else {
+    } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
+      // problem small enough for an exhaustive search
+      logger.info(s"performing exhaustive search for ${alts.size} agents")
+      SelectionAlgorithm.performExhaustiveSearch(
+        alts,
+        roadNetwork,
+        pathToMarginalFlowsFunction,
+        combineFlowsFunction,
+        marginalCostFunction
+      )
+    } else SyncIO {
 
       // set up MCTS-based route selection solver
       val startTime: Long = System.currentTimeMillis

@@ -3,10 +3,6 @@ package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig
 import java.io.File
 import java.time.LocalTime
 
-import com.typesafe.config.ConfigFactory
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-
 import scala.util.Try
 
 import pureconfig._
@@ -21,7 +17,18 @@ import org.matsim.core.network.NetworkUtils
 case class MATSimPopConfig(
   fs: MATSimPopConfig.Fs,
   pop: MATSimPopConfig.Pop
-)
+) {
+  def updateSeed(newSeed: Long): MATSimPopConfig = {
+    pop.popSampling match {
+      case u: MATSimPopConfig.PopSampling.UniformPopSampling =>
+        val updatedPopSampling: MATSimPopConfig.PopSampling = u.copy(seed = Some{newSeed})
+        val newPop: MATSimPopConfig.Pop = this.pop.copy(
+          popSampling = updatedPopSampling
+        )
+        this.copy(pop= newPop)
+    }
+  }
+}
 
 object MATSimPopConfig {
 

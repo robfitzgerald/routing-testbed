@@ -80,7 +80,7 @@ class GreedyCoordinateGridODBatching(
           .flatMap { case (_, tuples) =>
             // this group may exceed our maxBatchSize, so, break them up based on a batch splitting function
             val agentBatchData: List[AgentBatchData] = tuples.map { case (_, _, _, group) => group }
-            BatchSplittingFunction.splitUntilValid(agentBatchData, this.maxBatchSize)
+            BatchSplittingFunction.bySlidingWindow(agentBatchData, this.maxBatchSize)
           }
           .toList
 

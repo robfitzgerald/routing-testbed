@@ -39,7 +39,7 @@ case class BatchingManager (
         )
 
       logger.info(s"got ${nextBatch.size} batches for time $currentSimTime")
-
+      logger.info(s"batch groupings:\n ${nextBatch.map{ _.size }.mkString("[", ",", "]")}")
       (updatedBatchingManager, nextBatch)
     }
   }

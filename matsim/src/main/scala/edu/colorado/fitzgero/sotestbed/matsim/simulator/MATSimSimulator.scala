@@ -287,36 +287,47 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       currentLinkId  = mobsimAgent.getCurrentLinkId
                       leg           <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
                       fullRoute      = MATSimRouteOps.convertToCompleteRoute(leg)
-                      originLinkId  <- fullRoute.dropWhile(_ != currentLinkId).tail.headOption
+                      originLinkId  <- fullRoute.dropWhile(_ != currentLinkId).tail.headOption // confirms MATSim currentLinkId is correct
                       endLinkId      = leg.getRoute.getEndLinkId
                     } {
 
                       // construct an AgentBatchData payload to request selfish routing
                       // starts at the link after the current link in the current path
                       // if there is no link after the current link, then originLinkId fails fast
-                      val thisRequest: Request =
-                        Request(
-                          agent = personId.toString,
-                          origin = EdgeId(originLinkId.toString),
-                          destination = EdgeId(endLinkId.toString),
-                          requestClass = RequestClass.UE,
-                          travelMode = TravelMode.Car
-                        )
-                      val routeFromCurrentLink: List[AgentBatchData.EdgeData] = MATSimRouteOps.convertToRoutingPath(fullRoute, qSim)
-                      val currentSimTime: SimTime                             = SimTime(self.playPauseSimulationControl.getLocalTime)
 
-                      logger.debug(s"ue agent $personId's matsim-set route: ${fullRoute.mkString("->")}")
+                      MATSimRouteOps.selectRequestOriginLink(fullRoute,
+                        originLinkId,
+                        endLinkId,
+                        self.qSim,
+                        reasonableReplanningLeadTime,
+                        minimumRemainingRouteTimeForReplanning
+                      ) match {
+                        case None => ()
+                        case Some(reasonableStartEdgeId) =>
+                          val thisRequest: Request =
+                            Request(
+                              agent = personId.toString,
+                              origin = EdgeId(reasonableStartEdgeId.toString),
+                              destination = EdgeId(endLinkId.toString),
+                              requestClass = RequestClass.UE,
+                              travelMode = TravelMode.Car
+                            )
+                          val routeFromCurrentLink: List[AgentBatchData.EdgeData] = MATSimRouteOps.convertToRoutingPath(fullRoute, qSim)
+                          val currentSimTime: SimTime                             = SimTime(self.playPauseSimulationControl.getLocalTime)
 
-                      val thisAgentBatchingData: AgentBatchData =
-                        AgentBatchData(
-                          request = thisRequest,
-                          timeOfRequest = currentSimTime,
-                          currentEdgeRoute = routeFromCurrentLink,
-                          lastReplanningTime = None
-                        )
+                          logger.debug(s"ue agent $personId's matsim-set route: ${fullRoute.mkString("->")}")
 
-                      self.newUERouteRequests.prepend(thisAgentBatchingData)
-                      logger.debug(s"added selfish routing request for UE agent $personId")
+                          val thisAgentBatchingData: AgentBatchData =
+                            AgentBatchData(
+                              request = thisRequest,
+                              timeOfRequest = currentSimTime,
+                              currentEdgeRoute = routeFromCurrentLink,
+                              lastReplanningTime = None
+                            )
+
+                          self.newUERouteRequests.prepend(thisAgentBatchingData)
+                          logger.debug(s"added selfish routing request for UE agent $personId")
+                      }
 
                       self.markForUEPathOverwrite.remove(event.getVehicleId)
                     }

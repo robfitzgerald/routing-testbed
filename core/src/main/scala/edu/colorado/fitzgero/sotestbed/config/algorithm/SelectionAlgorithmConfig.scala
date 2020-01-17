@@ -15,14 +15,20 @@ object SelectionAlgorithmConfig {
 
   final case class RandomSamplingSelection(
     seed: Long,
+    exhaustiveSearchSampleLimit: Int,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
   ) extends SelectionAlgorithmConfig {
     def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
-      new selection.RandomSamplingSelectionAlgorithm[F, V, E](seed, selectionTerminationFunction.build())
+      new selection.RandomSamplingSelectionAlgorithm[F, V, E](
+        seed,
+        exhaustiveSearchSampleLimit,
+        selectionTerminationFunction.build()
+      )
     }
   }
   final case class LocalMCTSSelection(
     seed: Long,
+    exhaustiveSearchSampleLimit: Int,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
   ) extends SelectionAlgorithmConfig {
     def build[V, E](): selection.SelectionAlgorithm[SyncIO, V, E] = {
@@ -31,7 +37,11 @@ object SelectionAlgorithmConfig {
       //  doesn't tell us that the F is a typeclass with unsafeRunSync or anything like that.
       // it's an unfortunate design choice. perhaps we change up the effect context here somehow? or,
       // could the operations it depends on drop the effect typeclass?
-      new selection.mcts.LocalMCTSSelectionAlgorithm[V, E](seed, selectionTerminationFunction.build())
+      new selection.mcts.LocalMCTSSelectionAlgorithm[V, E](
+        seed,
+        exhaustiveSearchSampleLimit,
+        selectionTerminationFunction.build()
+      )
     }
   }
 }
