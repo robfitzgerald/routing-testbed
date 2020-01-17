@@ -32,4 +32,22 @@ object BatchingFunctionConfig {
         batchWindow, minimumReplanningWaitTime, maxBatchSize, minX, maxX, minY, maxY, splitFactor, batchPathTimeDelay
       )
   }
+
+  final case class GreedyCoordinateOriginDestinationGrouping (
+    batchWindow: SimTime,
+    minimumReplanningWaitTime: SimTime,
+    maxBatchSize: Int,
+    minX: Double,
+    maxX: Double,
+    minY: Double,
+    maxY: Double,
+    splitFactor: Int,
+    batchPathTimeDelay: SimTime
+  ) extends BatchingFunctionConfig {
+    require(splitFactor > 0, "split factor must be positive")
+    def build(): batching.BatchingFunction =
+      new batching.GreedyCoordinateGridODBatching(
+        batchWindow, minimumReplanningWaitTime, maxBatchSize, minX, maxX, minY, maxY, splitFactor, batchPathTimeDelay
+      )
+  }
 }

@@ -1,12 +1,9 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
-import cats.Monad
 import cats.effect.SyncIO
-import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts.LocalMCTSSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
@@ -50,7 +47,7 @@ class TwoPhaseLocalMCTSRoutingAlgorithm[V, E](
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         kspRuntime = RunTime(System.currentTimeMillis) - startTime
       } yield {
-        val selectionResult = selectionAlgorithm.selectRoutes(altsResult.alternatives,
+        val selectionResult: SelectionAlgorithm.Result = selectionAlgorithm.selectRoutes(altsResult.alternatives,
           roadNetwork,
           pathToMarginalFlowsFunction,
           combineFlowsFunction,

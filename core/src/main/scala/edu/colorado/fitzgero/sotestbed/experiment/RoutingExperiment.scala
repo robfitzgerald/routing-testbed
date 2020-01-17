@@ -24,14 +24,16 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
   )
 
   final def run(
-    config: SimulatorConfiguration,
-    roadNetwork: RoadNetwork[F, V, E],
-    ueRoutingAlgorithm: Option[RoutingAlgorithm[F, V, E]],
-    soRoutingAlgorithm: RoutingAlgorithm[F, V, E],
-    updateFunction: Edge.UpdateFunction[E],
-    batchingFunction: BatchingFunction,
-    batchWindow: SimTime,
-    doneRoutingAtSimTime: SimTime
+    config              : SimulatorConfiguration,
+    roadNetwork         : RoadNetwork[F, V, E],
+    ueRoutingAlgorithm  : Option[RoutingAlgorithm[F, V, E]],
+    soRoutingAlgorithm  : RoutingAlgorithm[F, V, E],
+    updateFunction      : Edge.UpdateFunction[E],
+    batchingFunction    : BatchingFunction,
+    batchWindow         : SimTime,
+    minBatchSize        : Int,
+    doneRoutingAtSimTime: SimTime,
+    selfishOnly         : Boolean
   ): F[ExperimentState] = {
 
     def _run(startState: ExperimentState): F[ExperimentState] = {
@@ -44,7 +46,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
             edges               <- getUpdatedEdges(e1)
             r1                  <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
             batchDataUpdate     <- getAgentsNewlyAvailableForReplanning(e1)
-            (ueUpdate, soUpdate) = batchDataUpdate.partition { _.request.requestClass == RequestClass.UE }
+            (ueUpdate, soUpdate) = batchDataUpdate.partition { payload => selfishOnly || payload.request.requestClass == RequestClass.UE }
             ueResults           <- ueRoutingAlgorithm.map{_.route(ueUpdate.map{_.request}, r1)}.getOrElse(Monad[F].pure{RoutingAlgorithm.Result()})
             batchStratUpdate    <- batchingFunction.updateBatchingStrategy(r1, b0.batchingStrategy, soUpdate, currentSimTime)
             b1                   = b0.updateBatchData(batchStratUpdate, currentSimTime)
@@ -76,7 +78,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
 
     for {
       initialSimulatorState <- initializeSimulator(config)
-      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow))
+      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, minBatchSize))
       result <- _run(initialExperimentState)
     } yield {
       result

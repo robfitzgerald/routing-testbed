@@ -56,14 +56,6 @@ object kSPwLO_SVP_Algorithm {
 
       // find all vertices that exist in the intersection of both spanning trees
       // sort them based on the travel time cost to reach each vertex from both tree roots
-//      val intersectionVertices: List[AltPathsAlgorithm.VertexWithDistance] = {
-//        for {
-//          vertexId <- fwdTree.tree.keys.toSet.intersect(revTree.tree.keys.toSet).toList
-//          cost = fwdTree.tree(vertexId).pathCost + revTree.tree(vertexId).pathCost
-//        } yield {
-//          AltPathsAlgorithm.VertexWithDistance(vertexId, cost)
-//        }
-//      }.sortBy { _.cost }
       val startState: KSPAlgorithm.AltPathsState = KSPAlgorithm.AltPathsState(intersectionVertices, startTime)
 
       // for each node, store the svp distance as the fwd dist + bwd dist, and store combined path

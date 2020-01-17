@@ -14,7 +14,7 @@ import MATSimPopConfig.localDateConvert
 
 object MATSimPopulationApp extends App {
   val result = for {
-    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/5x5/default-population.conf"))).load[MATSimPopConfig]
+    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/rye/default-population.conf"))).load[MATSimPopConfig]
     popSamplingAlgorithm <- config.pop.popSampling.build(config)
     population = popSamplingAlgorithm.generate
   } yield {

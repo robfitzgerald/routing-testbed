@@ -7,7 +7,7 @@ class GreedyCoordinateGridBatchingTest extends SoTestBedBaseTest {
     "CoordinateGrid" when {
       "called with a set of integer-rounded test values" should {
         "produce the correct ids" in {
-          val grid = new GreedyCoordinateGridBatching.CoordinateGrid(
+          val grid = new CoordinateGrid(
             minX = 500.0, maxX = 800.0, minY = 200, maxY = 350, splitFactor = 3
           )
           grid.xStep should equal (100.0)
@@ -19,7 +19,7 @@ class GreedyCoordinateGridBatchingTest extends SoTestBedBaseTest {
       }
       "called with a set of non-rounded test values" should {
         "produce the correct ids" in {
-          val grid = new GreedyCoordinateGridBatching.CoordinateGrid(
+          val grid = new CoordinateGrid(
             minX = 500.12, maxX = 799.192, minY = 200.01928, maxY = 349.1343, splitFactor = 3
           )
 
@@ -30,7 +30,7 @@ class GreedyCoordinateGridBatchingTest extends SoTestBedBaseTest {
       }
       "after producing a label" should {
         "be able to produce a coordinate from the label" in {
-          val grid = new GreedyCoordinateGridBatching.CoordinateGrid(
+          val grid = new CoordinateGrid(
             minX = 400.0, maxX = 800.0, minY = 200, maxY = 600, splitFactor = 16
           )
           val id1 = grid.getGridId(x=599.0, y=451.0)

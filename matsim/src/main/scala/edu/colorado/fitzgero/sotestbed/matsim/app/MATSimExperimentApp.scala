@@ -49,7 +49,7 @@ object MATSimExperimentApp extends App {
     val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
       case MATSimConfig.Algorithm.Selfish =>
         // need a no-phase dijkstra's algorithm here?
-        ???
+        MATSimConfig.Algorithm.Selfish.build()
       case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
         systemOptimal.selectionAlgorithm match {
           case local: LocalMCTSSelection =>
@@ -79,7 +79,18 @@ object MATSimExperimentApp extends App {
       matsimRunConfig.algorithm match {
         case MATSimConfig.Algorithm.Selfish =>
           // need a no-batching manager version here? or, a dummy for now?
-          ???
+          experiment.run(
+            config = matsimRunConfig,
+            roadNetwork = network,
+            ueRoutingAlgorithm = ueRoutingAlgorithm,
+            soRoutingAlgorithm = soRoutingAlgorithm,
+            updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
+            batchingFunction = MATSimConfig.Algorithm.Selfish.batchingStub,
+            batchWindow = matsimRunConfig.routing.batchWindow,
+            minBatchSize = matsimRunConfig.routing.minBatchSize,
+            doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
+            selfishOnly = matsimRunConfig.algorithm.selfishOnly
+          )
         case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
           experiment.run(
             config = matsimRunConfig,
@@ -89,7 +100,9 @@ object MATSimExperimentApp extends App {
             updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
             batchingFunction = systemOptimal.batchingFunction.build(),
             batchWindow = matsimRunConfig.routing.batchWindow,
-            doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime
+            minBatchSize = matsimRunConfig.routing.minBatchSize,
+            doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
+            selfishOnly = matsimRunConfig.algorithm.selfishOnly
           )
 
       }

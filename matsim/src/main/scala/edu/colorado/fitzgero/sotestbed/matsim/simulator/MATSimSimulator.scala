@@ -69,6 +69,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var observedHitMidnight: Boolean              = false
   var routingRequestsUpdatedToTimeStep: SimTime = SimTime.Zero
   var soReplanningThisIteration: Boolean        = false
+  var reachedDestination: Int                     = 0
 
   // simulation state containers and handlers
   var roadNetworkDeltaHandler: RoadNetworkDeltaHandler                                          = _
@@ -140,7 +141,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.controler = new Controler(matsimConfig)
 
     // needs to happen after the controler checks the experiment directory
-    val outputFilePath: String = config.io.experimentLoggingDirectory.resolve("so-stats.txt").toString
+    val outputFilePath: String = config.io.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
     pw = new PrintWriter(outputFilePath)
     pw.write(s"experiment ${config.io.experimentDirectory}\n\n")
 
@@ -159,6 +160,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
         self.observedMATSimIteration = event.getIteration
         self.observedHitMidnight = false
+        self.reachedDestination = 0
 
         if (self.markForSOPathOverwrite.nonEmpty) {
           logger.warn(s"found ${markForSOPathOverwrite.size} agents marked for SO path overwrite which were never transformed into requests")
@@ -198,6 +200,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         pw.append(s"$iterationPrefix.avg.paths.assigned = $avgPaths\n")
         pw.append(s"$iterationPrefix.avg.failed.routing.attempts = $avgFailed\n")
         pw.append(s"$iterationPrefix.sum.failed.routing.attempts = $sumFailed\n")
+        pw.append(s"$iterationPrefix.sum.reached_destination = ${self.reachedDestination}\n")
       }
 
       def notifyShutdown(shutdownEvent: ShutdownEvent): Unit = {
@@ -345,6 +348,9 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
               self.qSim.getEventsManager.addHandler(new VehicleLeavesTrafficEventHandler {
                 def handleEvent(event: VehicleLeavesTrafficEvent): Unit = {
+
+                  self.reachedDestination += 1
+
                   val agentId: Id[Person] = event.getPersonId
                   if (soReplanningThisIteration && soAgentReplanningHandler.isUnderControl(agentId)) {
 

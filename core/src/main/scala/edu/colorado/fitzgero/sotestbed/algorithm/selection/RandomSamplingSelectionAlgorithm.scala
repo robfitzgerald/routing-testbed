@@ -42,6 +42,20 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
           NonNegativeNumber.Zero
         )
       }
+    } else if (alts.toList.lengthCompare(1) == 0 && alts.values.head.nonEmpty) {
+        SelectionAlgorithm.evaluateCostOfSelection(
+          alts.values.flatMap { _.headOption }.toList,
+          roadNetwork,
+          pathToMarginalFlowsFunction,
+          combineFlowsFunction,
+          marginalCostFunction
+        ) map { selectionCost =>
+          SelectionAlgorithm.Result(
+            alts.map{ case (req, paths) => Response(req, paths.head.map{_.edgeId}, selectionCost.overallCost)}.toList,
+            selectionCost.overallCost,
+            NonNegativeNumber.Zero
+          )
+        }
     } else {
       // turn path alternatives into vector for faster indexing performance
       val indexedAlts: Map[Request, Vector[Path]] =

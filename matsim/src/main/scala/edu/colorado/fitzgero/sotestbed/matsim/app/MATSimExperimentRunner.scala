@@ -40,14 +40,14 @@ case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[
 
       Files.createDirectories(config.io.experimentDirectory)
       val experiment = new LocalMATSimRoutingExperiment(
-        new File(config.io.experimentLoggingDirectory.resolve("route.csv").toString),
-        new File(config.io.experimentLoggingDirectory.resolve("final.log").toString)
+        new File(config.io.experimentLoggingDirectory.resolve(s"route-${config.algorithm.name}.csv").toString),
+        new File(config.io.experimentLoggingDirectory.resolve(s"final-${config.algorithm.name}.log").toString)
       )
 
       val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
         case MATSimConfig.Algorithm.Selfish =>
           // need a no-phase dijkstra's algorithm here?
-          ???
+          MATSimConfig.Algorithm.Selfish.build()
         case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
           systemOptimal.selectionAlgorithm match {
             case local: LocalMCTSSelection =>
@@ -88,7 +88,18 @@ case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[
         matsimRunConfig.algorithm match {
           case MATSimConfig.Algorithm.Selfish =>
             // need a no-batching manager version here? or, a dummy for now?
-            ???
+            experiment.run(
+              config = matsimRunConfig,
+              roadNetwork = network,
+              ueRoutingAlgorithm = ueRoutingAlgorithm,
+              soRoutingAlgorithm = MATSimConfig.Algorithm.Selfish.build(),
+              updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta,
+              batchingFunction = MATSimConfig.Algorithm.Selfish.batchingStub,
+              batchWindow = matsimRunConfig.routing.batchWindow,
+              minBatchSize = matsimRunConfig.routing.minBatchSize,
+              doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
+              selfishOnly = MATSimConfig.Algorithm.Selfish.selfishOnly
+            )
           case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
             experiment.run(
               config = matsimRunConfig,
@@ -98,7 +109,9 @@ case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[
               updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
               batchingFunction = systemOptimal.batchingFunction.build(),
               batchWindow = matsimRunConfig.routing.batchWindow,
-              doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime
+              minBatchSize = matsimRunConfig.routing.minBatchSize,
+              doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
+              selfishOnly = systemOptimal.selfishOnly
             )
 
         }

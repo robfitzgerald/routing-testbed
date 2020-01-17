@@ -25,5 +25,4 @@ object RoutingAlgorithm {
     kspRuntime: RunTime = RunTime.Zero,
     selectionRuntime: RunTime = RunTime.Zero
   )
-
 }

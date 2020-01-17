@@ -6,7 +6,7 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
-class GreedyCoordinateGridBatching(
+class GreedyCoordinateGridODBatching(
   batchWindow: SimTime,
   minimumReplanningWaitTime: SimTime,
   maxBatchSize: Int,
@@ -56,35 +56,41 @@ class GreedyCoordinateGridBatching(
         )
 
         // find all agent's estimated location at batchPathTimeDelay time into future and find their coordinate.
-        // find which grid cell the coordinate sits within, and use that cell id to group this agent for batching
-        val grouped: Map[String, List[(String, AgentBatchData)]] = merged
-          .flatMap { agentBatchData =>
-            BatchingOps.findCoordinateInFuture(
+        // create a tag from this src coordinate and the agent's final destination as a coordinate
+        // map the coordinates to string ids and concatenate them into a grouping tag
+        val tagged: List[(String, String, String, AgentBatchData)] = {
+          for {
+            agentBatchData <- merged
+            src <- BatchingOps.findCoordinateInFuture(
               agentBatchData.currentEdgeRoute,
               currentTime,
               this.batchPathTimeDelay
-            ) match {
-              case None =>
-                List.empty
-              case Some(coord) =>
-                List((grid.getGridId(coord.x, coord.y), agentBatchData))
-            }
+            )
+            dst <- agentBatchData.currentEdgeRoute.lastOption.map{_.linkSourceCoordinate}
+          } yield {
+            val originTag: String = grid.getGridId(src.x, src.y)
+            val destinationTag: String = grid.getGridId(dst.x, dst.y)
+            (s"$originTag#$destinationTag", originTag, destinationTag, agentBatchData)
           }
-          .groupBy { case (groupId, _) => groupId }
+        }
+
+        val grouped: Map[String, List[(String, String, String, AgentBatchData)]] = tagged.groupBy { case (odTag, _, _, _) => odTag }
 
         val toAdd: List[List[AgentBatchData]] = grouped
-          .flatMap { case (_, groupedData) =>
-            groupedData
-              .map { _._2 }
-              .sliding(this.maxBatchSize, this.maxBatchSize)
+          .flatMap { case (_, tuples) =>
+            // this group may exceed our maxBatchSize, so, break them up based on a batch splitting function
+            val agentBatchData: List[AgentBatchData] = tuples.map { case (_, _, _, group) => group }
+            BatchSplittingFunction.splitUntilValid(agentBatchData, this.maxBatchSize)
           }
           .toList
 
         if (toAdd.isEmpty) {
           None
         } else {
-
-          logger.info(s"SPATIAL BATCH SPLIT at $currentTime:\n" + grid.printGrid(grouped))
+          val prettyPrintMe: Map[String, List[(String, AgentBatchData)]] =
+            grouped.map{ case (k, l) => k -> l.map{ case (_, o, _, data) => (o, data)} }
+          logger.info(s"so batched agent locations at $currentTime:\n" + grid.printGrid(prettyPrintMe))
+          logger.info(s"batch groupings:\n ${grouped.map{ case (_, v) => v.size }.mkString("[", ",", "]")}")
 
           // we can update our plan based on this grouping
           Some {
@@ -96,3 +102,5 @@ class GreedyCoordinateGridBatching(
     }
   }
 }
+
+

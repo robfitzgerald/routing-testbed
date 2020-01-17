@@ -5,9 +5,15 @@ import java.nio.file.{Path, Paths}
 
 import scala.concurrent.duration.Duration
 
-import edu.colorado.fitzgero.sotestbed.config.algorithm.{BatchingFunctionConfig, CombineFlowsFunctionConfig, KSPAlgorithmConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, SelectionAlgorithmConfig}
+import cats.Monad
+
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, BatchingFunction}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR}
+import edu.colorado.fitzgero.sotestbed.config.algorithm._
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 final case class MATSimConfig(
   io: MATSimConfig.IO,
@@ -21,7 +27,6 @@ final case class MATSimConfig(
     * @return updated Run configuration
     */
   def toSelfishExperiment: MATSimConfig = ???
-
 }
 
 object MATSimConfig {
@@ -44,12 +49,14 @@ object MATSimConfig {
     minimumReplanningWaitTime: SimTime,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
     requestUpdateCycle: SimTime,
-    selfish: Routing.Selfish
+    minBatchSize: Int,
+    selfish    : Routing.Selfish
   ) {
     require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle needs to be at least 1")
   }
 
   object Routing {
+    // how will selfish agents be routed
     sealed trait Selfish {
       def lastIteration: Int
     }
@@ -129,10 +136,25 @@ object MATSimConfig {
       * @return
       */
     def name: String
+    def selfishOnly: Boolean
   }
   object Algorithm {
     final case object Selfish extends Algorithm {
-      def name: String = "selfish"
+      override def name: String = "selfish"
+      override def selfishOnly: Boolean = true
+
+      def build[F[_]: Monad, V, E](): RoutingAlgorithm[F, V, E] = new RoutingAlgorithm[F, V, E] {
+        def route(requests: List[Request], roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] =
+          throw new IllegalStateException("algorithm.type is selfish, so we shouldn't be doing any routing.")
+      }
+      def batchingStub: BatchingFunction = new BatchingFunction {
+        def updateBatchingStrategy[F[_] : Monad, V, E](
+          roadNetwork  : RoadNetwork[F, V, E],
+          currentBatchStrategy: Map[SimTime, List[List[AgentBatchData]]],
+          newBatchData: List[AgentBatchData],
+          currentTime: SimTime): F[Option[Map[SimTime, List[List[AgentBatchData]]]]] =
+          Monad[F].pure{ None }
+      }
     }
 
     final case class SystemOptimal(
@@ -143,7 +165,9 @@ object MATSimConfig {
       combineFlowsFunction: CombineFlowsFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
       batchingFunction: BatchingFunctionConfig
-    ) extends Algorithm
+    ) extends Algorithm {
+      override def selfishOnly: Boolean = false
+    }
   }
 
 }

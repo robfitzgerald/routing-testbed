@@ -8,6 +8,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 case class BatchingManager (
   batchWindow     : SimTime,
+  minBatchSize: Int,
   batchingStrategy: Map[SimTime, List[List[AgentBatchData]]] = Map.empty,
 ) extends LazyLogging {
 
@@ -17,18 +18,28 @@ case class BatchingManager (
     * @return the updated BatchingManager along with any requests for this sim time
     */
   def getBatchesForTime(currentSimTime: SimTime): (BatchingManager, List[List[Request]]) = {
-    val nextBatch = batchingStrategy
-      .get(currentSimTime)
-      .map{_.map{_.map{_.request}}}
-      .getOrElse(List.empty)
-    if (nextBatch.isEmpty) {
+    val thisTimeBatch: List[List[Request]] =
+      batchingStrategy
+        .get(currentSimTime)
+        .map{_.map{_.map{_.request}}}
+        .getOrElse(List.empty)
+
+    if (thisTimeBatch.isEmpty) {
       (this, List.empty)
     } else {
-      logger.info(s"got ${nextBatch.size} requests for time $currentSimTime")
+
+      // if a batch is smaller than the minBatchSize, then break it up into singleton lists
+      // so that they are handled as selfish route requests
+      val (smallBatches, largeBatches) = thisTimeBatch.partition(_.size < minBatchSize)
+      val nextBatch: List[List[Request]] = largeBatches ++ smallBatches.flatMap{reqs => reqs.map{req => List(req)}}
+
       val updatedBatchingManager =
         this.copy(
           batchingStrategy = batchingStrategy - currentSimTime
         )
+
+      logger.info(s"got ${nextBatch.size} batches for time $currentSimTime")
+
       (updatedBatchingManager, nextBatch)
     }
   }

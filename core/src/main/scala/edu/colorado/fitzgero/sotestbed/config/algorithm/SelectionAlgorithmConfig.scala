@@ -3,8 +3,10 @@ package edu.colorado.fitzgero.sotestbed.config.algorithm
 import cats.Monad
 import cats.effect.SyncIO
 
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.SelfishSyncRoutingBPR
 import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
+import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionTerminationFunctionConfig.ComputeBudget
 
 sealed trait SelectionAlgorithmConfig {
   def selectionTerminationFunction: SelectionTerminationFunctionConfig
