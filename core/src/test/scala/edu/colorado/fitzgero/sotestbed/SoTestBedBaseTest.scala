@@ -12,5 +12,8 @@ abstract class SoTestBedBaseTest extends WordSpec with Matchers {
     def threeAltPathsFile: File            = new File("matsim/src/main/resources/matsim/network/test-network/three-alt-paths-network.xml")
     def rye: File                          = new File("matsim/src/main/resources/matsim/network/rye-network.xml")
     def louisville: File                   = new File("matsim/src/main/resources/matsim/network/louisville-network.xml")
+    def loveland: File                     = new File("matsim/src/main/resources/matsim/network/loveland-network.xml")
+    def boulder: File                      = new File("matsim/src/main/resources/matsim/network/boulder-network.xml")
+    def denver: File                      = new File("matsim/src/main/resources/matsim/network/denver-downtown-network.xml")
   }
 }

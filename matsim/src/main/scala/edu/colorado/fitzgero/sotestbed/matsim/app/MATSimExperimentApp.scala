@@ -88,6 +88,7 @@ object MATSimExperimentApp extends App {
             batchingFunction = MATSimConfig.Algorithm.Selfish.batchingStub,
             batchWindow = matsimRunConfig.routing.batchWindow,
             minBatchSize = matsimRunConfig.routing.minBatchSize,
+            requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
             doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
             selfishOnly = matsimRunConfig.algorithm.selfishOnly
           )
@@ -101,6 +102,7 @@ object MATSimExperimentApp extends App {
             batchingFunction = systemOptimal.batchingFunction.build(),
             batchWindow = matsimRunConfig.routing.batchWindow,
             minBatchSize = matsimRunConfig.routing.minBatchSize,
+            requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
             doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
             selfishOnly = matsimRunConfig.algorithm.selfishOnly
           )

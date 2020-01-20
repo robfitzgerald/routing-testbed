@@ -150,7 +150,7 @@ object SelectionAlgorithm {
     * @tparam F
     * @tparam V
     * @tparam E
-    * @return
+    * @return the best selection and the cost of the true shortest paths combination
     */
   def performExhaustiveSearch[F[_]: Monad, V, E](
     paths: Map[Request, List[Path]],
@@ -158,8 +158,8 @@ object SelectionAlgorithm {
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): F[Result] = {
-    if (paths.isEmpty) Monad[F].pure { Result() }
+  ): F[(Result, Cost)] = {
+    if (paths.isEmpty) Monad[F].pure { (Result(), Cost.Zero) }
     else {
       val startTime: Long = System.currentTimeMillis
 
@@ -223,11 +223,13 @@ object SelectionAlgorithm {
               }
               .toList
 
-          Result(
+          val searchResult: Result = Result(
             selectedRoutes = responses,
             estimatedCost = finalState.bestOverallCost,
             samples = finalState.samples
           )
+
+          (searchResult, selfishCost.overallCost)
         }
       }
     }.flatten

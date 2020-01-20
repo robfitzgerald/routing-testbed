@@ -41,7 +41,7 @@ class LocalAdjacencyListFlowNetworkTest extends SoTestBedBaseTest {
     }
     "util" in {
       for {
-        network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(TestNetwork.rye)
+        network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(TestNetwork.denver)
       } {
         val minX = network.vertices.map{_._2.x}.min
         val minY = network.vertices.map{_._2.y}.min
@@ -49,6 +49,7 @@ class LocalAdjacencyListFlowNetworkTest extends SoTestBedBaseTest {
         val maxY = network.vertices.map{_._2.y}.max
         println(f"min x,y: $minX%.4f $minY%.4f")
         println(f"max x,y: $maxX%.4f $maxY%.4f")
+        println(f"x range ${maxX - minX}%.4f y range ${maxY - minY}%.4f")
       }
     }
   }

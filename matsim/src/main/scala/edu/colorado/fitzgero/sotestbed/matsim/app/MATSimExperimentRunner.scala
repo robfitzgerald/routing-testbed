@@ -97,6 +97,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[
               batchingFunction = MATSimConfig.Algorithm.Selfish.batchingStub,
               batchWindow = matsimRunConfig.routing.batchWindow,
               minBatchSize = matsimRunConfig.routing.minBatchSize,
+              requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
               doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
               selfishOnly = MATSimConfig.Algorithm.Selfish.selfishOnly
             )
@@ -110,6 +111,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[
               batchingFunction = systemOptimal.batchingFunction.build(),
               batchWindow = matsimRunConfig.routing.batchWindow,
               minBatchSize = matsimRunConfig.routing.minBatchSize,
+              requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
               doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
               selfishOnly = systemOptimal.selfishOnly
             )

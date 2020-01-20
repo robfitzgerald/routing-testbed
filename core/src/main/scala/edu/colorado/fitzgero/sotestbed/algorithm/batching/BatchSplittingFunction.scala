@@ -1,7 +1,5 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching
-
 object BatchSplittingFunction {
   /**
     * uses a sliding window to split groups which are too large
@@ -38,4 +36,7 @@ object BatchSplittingFunction {
     }
     _split(List(batch))
   }
+
+  def takeOnlyOne(batch: List[AgentBatchData], maxBatchSize: Int): List[List[AgentBatchData]] =
+    List(batch.take(maxBatchSize))
 }

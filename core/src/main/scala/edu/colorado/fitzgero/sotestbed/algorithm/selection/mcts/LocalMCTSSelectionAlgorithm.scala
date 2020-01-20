@@ -69,14 +69,18 @@ class LocalMCTSSelectionAlgorithm[V, E] (
       }
     } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
       // problem small enough for an exhaustive search
-      logger.info(s"performing exhaustive search for ${alts.size} agents")
       SelectionAlgorithm.performExhaustiveSearch(
         alts,
         roadNetwork,
         pathToMarginalFlowsFunction,
         combineFlowsFunction,
         marginalCostFunction
-      )
+      ).map{ case (result, tspCost) =>
+        val avgAlts: Double = if (alts.isEmpty) 0D else alts.map{case (_, alts) => alts.size}.sum.toDouble / alts.size
+        logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
+        logger.info(s"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost}")
+        result
+      }
     } else SyncIO {
 
       // set up MCTS-based route selection solver

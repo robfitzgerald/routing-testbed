@@ -61,6 +61,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var reasonableReplanningLeadTime: TravelTimeSeconds           = _
   var minimumRemainingRouteTimeForReplanning: TravelTimeSeconds = _
   var simulationTailTimeout: Duration                           = _
+  var onlySelfishAgents: Boolean                                = _
 
   // simulation state variables
   var matsimState: SimulatorOps.SimulatorState  = SimulatorOps.SimulatorState.Uninitialized
@@ -70,6 +71,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var routingRequestsUpdatedToTimeStep: SimTime = SimTime.Zero
   var soReplanningThisIteration: Boolean        = false
   var reachedDestination: Int                     = 0
+  var selfishAgentRoutesAssigned: Int = 0
 
   // simulation state containers and handlers
   var roadNetworkDeltaHandler: RoadNetworkDeltaHandler                                          = _
@@ -108,6 +110,10 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.reasonableReplanningLeadTime = config.routing.reasonableReplanningLeadTime
     self.minimumRemainingRouteTimeForReplanning = config.routing.reasonableReplanningLeadTime
     self.simulationTailTimeout = config.run.simulationTailTimeout
+    self.onlySelfishAgents = config.algorithm match {
+      case MATSimConfig.Algorithm.Selfish => true
+      case _ => false
+    }
 
     // MATSimProxy Selfish Routing Mode
     config.routing.selfish match {
@@ -162,6 +168,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         self.observedHitMidnight = false
         self.reachedDestination = 0
 
+        self.selfishAgentRoutesAssigned = 0
+
         if (self.markForSOPathOverwrite.nonEmpty) {
           logger.warn(s"found ${markForSOPathOverwrite.size} agents marked for SO path overwrite which were never transformed into requests")
         }
@@ -197,6 +205,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         val avgFailed: Double       = soAgentReplanningHandler.getAvgFailedRoutingAttempts
         val sumFailed: Int          = soAgentReplanningHandler.getSumFailedRoutingAttempts
 
+        pw.append(s"$iterationPrefix.sum.selfish.assignments = $selfishAgentRoutesAssigned\n")
         pw.append(s"$iterationPrefix.avg.paths.assigned = $avgPaths\n")
         pw.append(s"$iterationPrefix.avg.failed.routing.attempts = $avgFailed\n")
         pw.append(s"$iterationPrefix.sum.failed.routing.attempts = $sumFailed\n")
@@ -326,6 +335,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                             )
 
                           self.newUERouteRequests.prepend(thisAgentBatchingData)
+                          self.selfishAgentRoutesAssigned += 1
                           logger.debug(s"added selfish routing request for UE agent $personId")
                       }
 
@@ -363,7 +373,9 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                   self.reachedDestination += 1
 
                   val agentId: Id[Person] = event.getPersonId
-                  if (soReplanningThisIteration && soAgentReplanningHandler.isUnderControl(agentId)) {
+                  if (!self.onlySelfishAgents &&
+                    soReplanningThisIteration &&
+                    soAgentReplanningHandler.isUnderControl(agentId)) {
 
                     // FINALIZE THIS AGENT'S ROUTE FOR NON-PLANNING ITERATIONS
 
@@ -402,7 +414,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
               self.qSim.addQueueSimulationListeners(new MobsimBeforeSimStepListener {
                 override def notifyMobsimBeforeSimStep(e: MobsimBeforeSimStepEvent[_ <: Mobsim]): Unit = {
 
-                  if (soReplanningThisIteration) {
+                  if (!self.onlySelfishAgents && soReplanningThisIteration) {
 
                     // FIND AGENTS FOR REPLANNING AND STORE REQUESTS FOR THEIR ROUTING
 
@@ -686,6 +698,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         response <- responses
         routingResultPath = MATSimRouteOps.convertToMATSimPath(response.path)
         mobsimAgent <- agentsInSimulation.get(Id.createPersonId(response.request.agent))
+        mobsimAgentCurrentRouteLinkIdIndex = WithinDayAgentUtils.getCurrentRouteLinkIdIndex(mobsimAgent)
         leg         <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
         if MATSimRouteOps.confirmPathIsValid(routingResultPath, self.qSim) // todo: report invalid paths
       } {
@@ -693,44 +706,62 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         // extract the mobsim agent data
         val departureTime                         = DepartureTime(leg.getDepartureTime.toInt)
         val agentId: Id[Person]                   = mobsimAgent.getId
+        val currentLinkId: Id[Link]               = mobsimAgent.getCurrentLinkId
         val agentExperiencedRoute: List[Id[Link]] = MATSimRouteOps.convertToCompleteRoute(leg)
 //        val currentLinkId: Id[Link] = mobsimAgent.getCurrentLinkId
 
         // combine the old path with the new path
-        MATSimRouteOps.coalescePath(agentExperiencedRoute, routingResultPath) match {
-          case None =>
+        MATSimRouteOps.coalescePath(agentExperiencedRoute, routingResultPath, currentLinkId) match {
+          case Left(reason) =>
             // noop
-            logger.warn(s"[assignRoutes] failed - ${response.request.requestClass} agent ${agentId.toString}'s new route is invalid/empty")
-          case Some(updatedRoute) =>
-            logger.debug(s"[assignRoutes] updating route for ${response.request.requestClass} agent ${agentId.toString}")
+            logger.warn(s"[assignRoutes] failed - ${response.request.requestClass} agent ${agentId.toString}'s new route not applied due to: $reason")
 
-            // update the mobsim (takes a complete route, not just the "inner")
-            val route = RouteUtils.createNetworkRoute(updatedRoute.asJava, qSim.getNetsimNetwork.getNetwork)
+          case Right(updatedRoute) =>
 
-            leg.setRoute(route)
-            WithinDayAgentUtils.resetCaches(mobsimAgent)
+            // test that the updatedRoute has the currentLinkId at the currentLinkIndex
+            // otherwise it would cause this agent to have a bad turn logic error.
+            Try { updatedRoute(mobsimAgentCurrentRouteLinkIdIndex) }.toEither match {
+              case Left(e) =>
+                logger.warn(s"[assignRoutes] tried to check that currentLinkIndex contains currentLink in updatedRoute but failed: $e")
+              case Right(updatedRouteLinkAtCurrentLinkIndex) =>
 
-            response.request.requestClass match {
-              case RequestClass.SO(_) =>
+                if (updatedRouteLinkAtCurrentLinkIndex != currentLinkId) {
+                  logger.warn(s"[assignRoutes] composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId")
 
-                // continue to record the experienced agent route associated with this departure time
-                completePathStore.get(agentId) match {
-                  case None =>
-                    completePathStore.update(agentId, Map(departureTime -> updatedRoute)) // in-place
-                  case Some(agentAlreadyRecordedInStore) =>
-                    completePathStore.update(agentId, agentAlreadyRecordedInStore.updated(departureTime, updatedRoute)) // in-place
+                } else {
+                  logger.debug(s"[assignRoutes] updating route for ${response.request.requestClass} agent ${agentId.toString}")
+
+                  // update the mobsim (takes a complete route, not just the "inner")
+                  val route = RouteUtils.createNetworkRoute(updatedRoute.asJava, qSim.getNetsimNetwork.getNetwork)
+
+                  leg.setRoute(route)
+                  WithinDayAgentUtils.resetCaches(mobsimAgent)
+
+                  logger.info(s"replanned route for ${response.request.requestClass} agent $agentId")
+
+                  response.request.requestClass match {
+                    case RequestClass.SO(_) =>
+
+                      // continue to record the experienced agent route associated with this departure time
+                      completePathStore.get(agentId) match {
+                        case None =>
+                          completePathStore.update(agentId, Map(departureTime -> updatedRoute)) // in-place
+                        case Some(agentAlreadyRecordedInStore) =>
+                          completePathStore.update(agentId, agentAlreadyRecordedInStore.updated(departureTime, updatedRoute)) // in-place
+                      }
+
+                      self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
+
+                      self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
+                        case None =>
+                          logger.error(s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added")
+                        case Some(numberOfPathAssignments) =>
+                          logger.debug(s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime")
+                      }
+                    case RequestClass.UE =>
+                      // noop
+                  }
                 }
-
-                self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
-
-                self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
-                  case None =>
-                    logger.error(s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added")
-                  case Some(numberOfPathAssignments) =>
-                    logger.debug(s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime")
-                }
-              case RequestClass.UE =>
-                // noop
             }
         }
       }

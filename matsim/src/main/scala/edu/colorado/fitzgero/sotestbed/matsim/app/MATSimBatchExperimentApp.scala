@@ -114,7 +114,7 @@ object MATSimBatchExperimentApp extends CommandApp(
                   case Left(e) =>
                     println(s"trial $trial exit with experiment run failure")
                     batchLogger.write(s"$trial,${e.toString}\n")
-                  case Right(e) =>
+                  case Right(_) =>
                     println(s"trial $trial exited normally")
                     batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
                 }
@@ -126,7 +126,7 @@ object MATSimBatchExperimentApp extends CommandApp(
                   variationPopFile,
                   popSize,
                   0.2,
-                  seed = Some { experimentNumber }
+                  seed = Some { trial }
                 ) match {
                   case Left(e) => println(e)
                   case Right(_) =>

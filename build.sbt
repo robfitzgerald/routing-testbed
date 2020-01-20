@@ -1,13 +1,13 @@
 
 name := "so-testbed"
 version := "0.1"
-scalaVersion := "2.12.10"
+val sVersion = "2.12.10"
 
 lazy val core = project
   .in(file("core")).
   settings(
     name := "so-testbed-core",
-    scalaVersion := "2.12.10",
+    scalaVersion := sVersion,
     scalacOptions ++= scalac,
     libraryDependencies ++= coreDependencies
   )
@@ -17,11 +17,20 @@ lazy val matsim = project
   .in(file("matsim")).
   settings(
     name := "so-testbed-matsim",
-    scalaVersion := "2.12.10",
+    scalaVersion := sVersion,
     scalacOptions ++= scalac,
     libraryDependencies ++= coreDependencies // ++ matsimDependencies
   )
   .dependsOn(core)
+
+lazy val matsimSpark = project
+  .in(file("matsim-spark"))
+  .settings(
+    name := "so-testbed-matsim-spark",
+    scalaVersion := sVersion,
+    libraryDependencies ++= matsimSparkDependencies
+  )
+  .dependsOn(core, matsim)
 
 lazy val scalac =  List(
   "-language:higherKinds",                   // FP type wizardry
@@ -56,6 +65,10 @@ lazy val coreDependencies = List(
   // TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
+)
+
+lazy val matsimSparkDependencies = List(
+  "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided"
 )
 
 //lazy val matsimDependencies = List(
