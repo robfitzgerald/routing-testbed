@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.EdgeData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 

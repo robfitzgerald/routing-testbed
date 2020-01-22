@@ -7,7 +7,7 @@ object BatchSplittingFunction {
     * @param maxBatchSize user-imposed maximum batch size
     * @return the batch, broken out to smaller batches if needed
     */
-  def bySlidingWindow(batch: List[AgentBatchData], maxBatchSize: Int): List[List[AgentBatchData]] =
+  def bySlidingWindow[T](batch: List[T], maxBatchSize: Int): List[List[T]] =
     batch.sliding(maxBatchSize, maxBatchSize).toList
 
   /**
@@ -17,13 +17,13 @@ object BatchSplittingFunction {
     * @param maxBatchSize user-imposed maximum batch size
     * @return the batch, broken out to smaller batches if needed
     */
-  def splitUntilValid(batch: List[AgentBatchData], maxBatchSize: Int): List[List[AgentBatchData]] = {
+  def splitUntilValid[T](batch: List[T], maxBatchSize: Int): List[List[T]] = {
     @scala.annotation.tailrec
-    def _split(solution: List[List[AgentBatchData]]): List[List[AgentBatchData]] = {
+    def _split(solution: List[List[T]]): List[List[T]] = {
       if (solution.forall(_.lengthCompare(maxBatchSize) <= 0)) {
         solution
       } else {
-        val nextSolution: List[List[AgentBatchData]] = solution.flatMap { subBatch =>
+        val nextSolution: List[List[T]] = solution.flatMap { subBatch =>
           if (subBatch.lengthCompare(maxBatchSize) > 0) {
             val (a, b) = subBatch.splitAt(subBatch.length / 2)
             List(a, b)
@@ -37,6 +37,6 @@ object BatchSplittingFunction {
     _split(List(batch))
   }
 
-  def takeOnlyOne(batch: List[AgentBatchData], maxBatchSize: Int): List[List[AgentBatchData]] =
+  def takeOnlyOne[T](batch: List[T], maxBatchSize: Int): List[List[T]] =
     List(batch.take(maxBatchSize))
 }

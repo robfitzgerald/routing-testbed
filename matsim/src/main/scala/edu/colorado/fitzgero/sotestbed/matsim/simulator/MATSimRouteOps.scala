@@ -5,6 +5,7 @@ import scala.util.Try
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, TravelMode}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
@@ -81,7 +82,7 @@ object MATSimRouteOps extends LazyLogging {
   }
 
   final case class ConvertToRoutingPathAccumulator(
-    routingPath: List[AgentBatchData.EdgeData] = List.empty,
+    routingPath: List[RouteRequestData.EdgeData] = List.empty,
     estimatedTravelTime: SimTime = SimTime.Zero
   )
 
@@ -90,7 +91,7 @@ object MATSimRouteOps extends LazyLogging {
     * @param route the complete MATSim route
     * @return as a List[EdgeId]
     */
-  def convertToRoutingPath(route: List[Id[Link]], qSim: QSim): List[AgentBatchData.EdgeData] = {
+  def convertToRoutingPath(route: List[Id[Link]], qSim: QSim): List[RouteRequestData.EdgeData] = {
     val result = route.foldLeft(ConvertToRoutingPathAccumulator()) { (acc, linkId) =>
       val link                             = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
       val src                              = link.getFromNode.getCoord
@@ -98,7 +99,7 @@ object MATSimRouteOps extends LazyLogging {
       val dst                              = link.getToNode.getCoord
       val dstCoordinate                    = Coordinate(dst.getX, dst.getY)
       val nextEstimatedTravelTime: SimTime = SimTime(link.getLength / link.getFreespeed) + acc.estimatedTravelTime
-      val edgeData = AgentBatchData.EdgeData(
+      val edgeData = RouteRequestData.EdgeData(
         EdgeId(linkId.toString),
         nextEstimatedTravelTime,
         srcCoordinate,

@@ -1,17 +1,17 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching._
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
+import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 final case class BatchingManager(
   batchWindow: SimTime,
   requestUpdateCycle: SimTime,
   minBatchSize: Int,
-  batchingStrategy: BatchingStrategy = Map.empty,
-  agentBatchDataMap: Map[String, AgentBatchData] = Map.empty,
+  batchData: Map[String, RouteRequestData] = Map.empty,
   mostRecentBatchRequested: SimTime = SimTime.Zero
 ) extends LazyLogging {
 
@@ -23,37 +23,83 @@ final case class BatchingManager(
     * then it is stale and removed.
     *
     * @param updates the updated AgentBatchData
-    * @param currentTime the current time
     * @return the manager with all AgentBatchData updated, and stale instructions removed
     */
-  def updateStoredBatchData(updates: List[AgentBatchData], currentTime: SimTime): BatchingManager = {
-
-    val isNotStaleTest: AgentBatchData => Boolean = {
-      val mostRecentRequestUpdate: SimTime = currentTime - (currentTime % requestUpdateCycle)
-      data: AgentBatchData => { mostRecentRequestUpdate < data.timeOfRequest }
-    }
-
-    // update list of agents in simulation
-    val newData: Map[String, AgentBatchData] = updates.map { a =>
-      a.request.agent -> a
-    }.toMap
-    val cleanedOldData: Map[String, AgentBatchData]         = this.agentBatchDataMap.filter { case (_, data) => isNotStaleTest(data) }
-    val updatedAgentBatchDatas: Map[String, AgentBatchData] = cleanedOldData ++ newData
-
-    // remove stale instructions
-    val (cleanedBatchingStrategy: BatchingStrategy, cntRemoved: Int) =
-      updatedAgentBatchDatas.foldLeft((Map.empty[String, BatchingInstruction], 0)) {
-        case ((strat, countRemoved), (agentId, _)) =>
-          this.batchingStrategy.get(agentId) match {
-            case None    => (strat - agentId, countRemoved + 1)
-            case Some(_) => (strat, countRemoved)
-          }
+  def updateAgentBatchData(updates: List[AgentBatchData]): BatchingManager = {
+    val updated: Map[String, RouteRequestData] =
+      updates.foldLeft(this.batchData) { (b, data) =>
+        data match {
+          case SOAgentArrivalData(agentId) => b - agentId
+          case routeRequestData: RouteRequestData => b.updated(routeRequestData.request.agent, routeRequestData)
+        }
       }
-
-    logger.debug(s"removed $cntRemoved stale batching strategies")
-
-    this.copy(agentBatchDataMap = updatedAgentBatchDatas, batchingStrategy = cleanedBatchingStrategy)
+    this.copy(batchData = updated)
   }
+
+  /**
+    * if it is the right time to request an SO batch of requests, then we do that
+    *
+    * detail: maybe we want to prevent instantaneous routing solutions in the future,
+    * so we can demonstrate the online and realtime accuracy of the solution,
+    * but for now, we can just let this happen, since the time a replanning
+    * event is computed is less of a constraint under this formulation.
+    *
+    * @param currentTime the current sim time
+    * @return either an SO route request (and batch manager update) or no change
+    */
+  def submitActiveRouteRequestsForReplanning(currentTime: SimTime): (BatchingManager, List[RouteRequestData]) = {
+
+    val targetBatchTime = BatchingManager.nextBatchTimeFrom(this.batchWindow, this.mostRecentBatchRequested)
+    if (targetBatchTime <= currentTime) {
+      // we either just hit a batch time or just passed it; let's request routing!
+      (this.copy(mostRecentBatchRequested = targetBatchTime), batchData.values.toList)
+    } else {
+      // no route requests this time, bubba
+      (this, List.empty)
+    }
+  }
+
+
+
+//  /**
+//    * reads through the latest set of requests, and updates the collection of AgentBatchData
+//    * so that it is current. if any agent instructions stored are stale, we remove it.
+//    *
+//    * invariant: if an agent's data is stored in the manager but does not come via the updates,
+//    * then it is stale and removed.
+//    *
+//    * @param updates the updated AgentBatchData
+//    * @param currentTime the current time
+//    * @return the manager with all AgentBatchData updated, and stale instructions removed
+//    */
+//  def updateStoredBatchData(updates: List[AgentBatchData], currentTime: SimTime): BatchingManager = {
+//
+//    val isNotStaleTest: AgentBatchData => Boolean = {
+//      val mostRecentRequestUpdate: SimTime = currentTime - (currentTime % requestUpdateCycle)
+//      data: AgentBatchData => { mostRecentRequestUpdate < data.timeOfRequest }
+//    }
+//
+//    // update list of agents in simulation
+//    val newData: Map[String, AgentBatchData] = updates.map { a =>
+//      a.request.agent -> a
+//    }.toMap
+//    val cleanedOldData: Map[String, AgentBatchData]         = this.agentBatchDataMap.filter { case (_, data) => isNotStaleTest(data) }
+//    val updatedAgentBatchDatas: Map[String, AgentBatchData] = cleanedOldData ++ newData
+//
+//    // remove stale instructions
+//    val (cleanedBatchingStrategy: BatchingStrategy, cntRemoved: Int) =
+//      updatedAgentBatchDatas.foldLeft((Map.empty[String, BatchingInstruction], 0)) {
+//        case ((strat, countRemoved), (agentId, _)) =>
+//          this.batchingStrategy.get(agentId) match {
+//            case None    => (strat - agentId, countRemoved + 1)
+//            case Some(_) => (strat, countRemoved)
+//          }
+//      }
+//
+//    logger.debug(s"removed $cntRemoved stale batching strategies")
+//
+//    this.copy(agentBatchDataMap = updatedAgentBatchDatas, batchingStrategy = cleanedBatchingStrategy)
+//  }
 
 //  def updateStoredBatchData(updates: List[AgentBatchData], currentTime: SimTime): BatchingManager = {
 //
@@ -87,101 +133,108 @@ final case class BatchingManager(
 //    this.copy(batchingStrategy = updatedStrat)
 //  }
 
-  /**
-    * takes an update to the batching strategy and folds it into the strategy already defined
-    *
-    * @param revisedBatchingInstructions instructions from a batching function
-    * @param currentTime the current time
-    * @return the manager with any updated (valid) instructions folded into it's batching strategy
-    */
-  def applyBatchingFunctionInstructions(
-    revisedBatchingInstructions: Option[List[BatchingInstruction]],
-    currentTime: SimTime
-  ): BatchingManager = {
-
-    // resolves new with old, ignoring any changes to the next batch time. if no new strat, keep old one
-    revisedBatchingInstructions match {
-      case None                       => this
-      case Some(batchingInstructions) =>
-        // create a list of the invalid times
-        val invalidTimes: Set[SimTime] = {
-          for {
-            t <- currentTime until BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
-            time = SimTime(t)
-          } yield time
-
-        }.toSet
-
-        // split out invalid and valid instructions
-        val (invalidInstructions, validInstructions) = batchingInstructions.partition { i =>
-          invalidTimes.contains(i.batchingTime)
-        }
-
-        // report invalid instructions
-        for { i <- invalidInstructions } {
-          logger.debug(s"batching strategy update at time $currentTime has invalid time ${i.batchingTime} for agent ${i.agentId}; ignoring")
-        }
-
-        // create/update batching strategy entries for agents based on the valid instructions
-        val updatedBatchingStrategy: BatchingStrategy =
-          this.batchingStrategy ++ validInstructions.map { i =>
-            i.agentId -> i
-          }.toMap
-
-        this.copy(batchingStrategy = updatedBatchingStrategy)
-    }
-  }
-
-  /**
-    * exports any batching instructions for the current time as batches of routing requests
-    * @param currentSimTime the current time
-    * @return the updated batching manager as well as any batches of routing requests to solve
-    */
-  def getBatchesForTime(currentSimTime: SimTime): (BatchingManager, List[List[Request]]) = {
-    // returns our strat for currentSimTime
-
-    // separate out instructions for this batch and later batches
-    val (thisBatch, futureBatches) =
-      this.batchingStrategy.values
-        .foldLeft((List.empty[BatchingInstruction], List.empty[BatchingInstruction])) {
-          case ((t, f), i) =>
-            // catch any batching times since the last simulation update which were not included in the
-            // most recent batch request (catches batches which should be handled but their exact SimTime
-            // was skipped by the underlying simulator
-            if (this.mostRecentBatchRequested < i.batchingTime && i.batchingTime <= currentSimTime) (i +: t, f)
-            else (t, i +: f)
-        }
-
-    // group into sub-batches of Request objects
-    val subBatches: List[List[Request]] =
-      thisBatch
-        .groupBy { _.batchId }
-        .values
-        .map {
-          _.flatMap { i =>
-            this.agentBatchDataMap.get(i.agentId) match {
-              case None                 => None
-              case Some(agentBatchData) => Some { agentBatchData.request }
-            }
-          }
-        }
-        .toList
-
-    // re-wrap the remaining instructions as the next BatchingStrategy
-    val nextStrategy: BatchingStrategy = futureBatches.map { i =>
-      i.agentId -> i
-    }.toMap
-
-    val updatedBatchingManager: BatchingManager = this.copy(
-      mostRecentBatchRequested = currentSimTime,
-      batchingStrategy = nextStrategy
-    )
-
-    (updatedBatchingManager, subBatches)
-  }
+//  /**
+//    * takes an update to the batching strategy and folds it into the strategy already defined
+//    *
+//    * @param revisedBatchingInstructions instructions from a batching function
+//    * @param currentTime the current time
+//    * @return the manager with any updated (valid) instructions folded into it's batching strategy
+//    */
+//  def applyBatchingFunctionInstructions(
+//    revisedBatchingInstructions: Option[List[BatchingInstruction]],
+//    currentTime: SimTime
+//  ): BatchingManager = {
+//
+//    // resolves new with old, ignoring any changes to the next batch time. if no new strat, keep old one
+//    revisedBatchingInstructions match {
+//      case None                       => this
+//      case Some(batchingInstructions) =>
+//        // create a list of the invalid times
+//        val invalidTimes: Set[SimTime] = {
+//          for {
+//            t <- currentTime until BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
+//            time = SimTime(t)
+//          } yield time
+//
+//        }.toSet
+//
+//        // split out invalid and valid instructions
+//        val (invalidInstructions, validInstructions) = batchingInstructions.partition { i =>
+//          invalidTimes.contains(i.batchingTime)
+//        }
+//
+//        // report invalid instructions
+//        for { i <- invalidInstructions } {
+//          logger.debug(s"batching strategy update at time $currentTime has invalid time ${i.batchingTime} for agent ${i.agentId}; ignoring")
+//        }
+//
+//        // create/update batching strategy entries for agents based on the valid instructions
+//        val updatedBatchingStrategy: BatchingStrategy =
+//          this.batchingStrategy ++ validInstructions.map { i =>
+//            i.agentId -> i
+//          }.toMap
+//
+//        this.copy(batchingStrategy = updatedBatchingStrategy)
+//    }
+//  }
+//
+//  /**
+//    * exports any batching instructions for the current time as batches of routing requests
+//    * @param currentSimTime the current time
+//    * @return the updated batching manager as well as any batches of routing requests to solve
+//    */
+//  def getBatchesForTime(currentSimTime: SimTime): (BatchingManager, List[List[Request]]) = {
+//    // returns our strat for currentSimTime
+//
+//    // separate out instructions for this batch and later batches
+//    val (thisBatch, futureBatches) =
+//      this.batchingStrategy.values
+//        .foldLeft((List.empty[BatchingInstruction], List.empty[BatchingInstruction])) {
+//          case ((t, f), i) =>
+//            // catch any batching times since the last simulation update which were not included in the
+//            // most recent batch request (catches batches which should be handled but their exact SimTime
+//            // was skipped by the underlying simulator
+//            if (this.mostRecentBatchRequested < i.batchingTime && i.batchingTime <= currentSimTime) (i +: t, f)
+//            else (t, i +: f)
+//        }
+//
+//    // group into sub-batches of Request objects
+//    val subBatches: List[List[Request]] =
+//      thisBatch
+//        .groupBy { _.batchId }
+//        .values
+//        .map {
+//          _.flatMap { i =>
+//            this.agentBatchDataMap.get(i.agentId) match {
+//              case None                 => None
+//              case Some(agentBatchData) => Some { agentBatchData.request }
+//            }
+//          }
+//        }
+//        .toList
+//
+//    // re-wrap the remaining instructions as the next BatchingStrategy
+//    val nextStrategy: BatchingStrategy = futureBatches.map { i =>
+//      i.agentId -> i
+//    }.toMap
+//
+//    val updatedBatchingManager: BatchingManager = this.copy(
+//      mostRecentBatchRequested = currentSimTime,
+//      batchingStrategy = nextStrategy
+//    )
+//
+//    (updatedBatchingManager, subBatches)
+//  }
 }
 
 object BatchingManager {
+
+  def splitUEFromSO(data: AgentBatchData): Boolean = {
+    data match {
+      case AgentBatchData.RouteRequestData(req, _, _, _) => req.requestClass == RequestClass.UE
+      case _ => false
+    }
+  }
 
   /**
     * inspects the output of routing algorithms and makes sure there exists one response per agent
@@ -195,6 +248,27 @@ object BatchingManager {
       .groupBy { _.request.agent }
       .map { case (_, solutionsForAgent: List[Response]) => solutionsForAgent.minBy { _.costEstimate } }
       .toList
+
+  /**
+    * it is invalid to set a batch time for agents unless a complete
+    * batch window exists between now and that time. this function
+    * gives the next valid batch time based on the current time and
+    * the batch window
+    *
+    * @param batchWindow configuration parameter
+    * @param currentTime the current sim time
+    * @return the next valid replanning batch time that can be set
+    */
+  def nextBatchTimeFrom(batchWindow    : SimTime, currentTime: SimTime): SimTime = {
+    if (currentTime < SimTime.Zero) {
+      // end of the first batch window will suffice for negative time values
+      // (of which -1 should be the only one)
+      SimTime.Zero
+    } else {
+      // find the SimTime at the end of the next batch
+      ((currentTime / batchWindow) * batchWindow) + batchWindow + SimTime(1)
+    }
+  }
 
   /**
     * it is invalid to set a batch time for agents unless a complete
@@ -234,71 +308,71 @@ object BatchingManager {
     }
   }
 
-  /**
-    * filter predicate which remove agents who have met the
-    * minimum replanning wait time since their last replanning
-    * @param currentTime
-    * @param minimumReplanningWaitTime
-    * @return
-    */
-  def filterNewDataByMinReplanningWaitTime(
-    currentTime: SimTime,
-    minimumReplanningWaitTime: SimTime
-  ): AgentBatchData => Boolean = { data =>
-    data.lastReplanningTime match {
-      case None => true
-      case Some(lastReplanningTime) =>
-        lastReplanningTime + minimumReplanningWaitTime > currentTime
-    }
-  }
+//  /**
+//    * filter predicate which remove agents who have met the
+//    * minimum replanning wait time since their last replanning
+//    * @param currentTime
+//    * @param minimumReplanningWaitTime
+//    * @return
+//    */
+//  def filterNewDataByMinReplanningWaitTime(
+//    currentTime: SimTime,
+//    minimumReplanningWaitTime: SimTime
+//  ): AgentBatchData => Boolean = { data =>
+//    data.lastReplanningTime match {
+//      case None => true
+//      case Some(lastReplanningTime) =>
+//        lastReplanningTime + minimumReplanningWaitTime > currentTime
+//    }
+//  }
 
-  /**
-    * when we get an update, we may want to toss any old data for any agent
-    * @param oldData
-    * @param newData
-    * @return
-    */
-  def keepLatestAgentBatchData(
-    oldData: List[AgentBatchData],
-    newData: List[AgentBatchData]
-  ): List[AgentBatchData] = {
-    for {
-      (_, agentData) <- (oldData ++ newData).groupBy { _.request.agent }
-    } yield {
-      if (agentData.lengthCompare(0) > 0) {
-        agentData.maxBy { _.timeOfRequest }(Ordering.by { _.value })
-      } else {
-        agentData.head
-      }
-    }
-  }.toList
+//  /**
+//    * when we get an update, we may want to toss any old data for any agent
+//    * @param oldData
+//    * @param newData
+//    * @return
+//    */
+//  def keepLatestAgentBatchData(
+//    oldData: List[AgentBatchData],
+//    newData: List[AgentBatchData]
+//  ): List[AgentBatchData] = {
+//    for {
+//      (_, agentData) <- (oldData ++ newData).groupBy { _.request.agent }
+//    } yield {
+//      if (agentData.lengthCompare(0) > 0) {
+//        agentData.maxBy { _.timeOfRequest }(Ordering.by { _.value })
+//      } else {
+//        agentData.head
+//      }
+//    }
+//  }.toList
 
-  /**
-    * removes any stale requests using a filter
-    *
-    * @param strat the strat to clean
-    * @param currentTime the current sim time
-    * @param requestUpdateCycle the request update cycle
-    * @return the cleaned stategy
-    */
-  def cleanStaleRequestsInStrategy(
-    currentTime: SimTime,
-    requestUpdateCycle: SimTime
-  )(
-    strat: Map[SimTime, List[List[AgentBatchData]]]
-  ): Map[SimTime, List[List[AgentBatchData]]] =
-    strat.flatMap {
-      case (simTime, batches) =>
-        batches.map {
-          _.filter { data =>
-            val mostRecentRequestUpdate: SimTime = currentTime - (currentTime % requestUpdateCycle)
-            mostRecentRequestUpdate < data.timeOfRequest
-          }
-        } match {
-          case Nil          => None
-          case filteredData => Some { simTime -> filteredData }
-        }
-    }
+//  /**
+//    * removes any stale requests using a filter
+//    *
+//    * @param strat the strat to clean
+//    * @param currentTime the current sim time
+//    * @param requestUpdateCycle the request update cycle
+//    * @return the cleaned stategy
+//    */
+//  def cleanStaleRequestsInStrategy(
+//    currentTime: SimTime,
+//    requestUpdateCycle: SimTime
+//  )(
+//    strat: Map[SimTime, List[List[AgentBatchData]]]
+//  ): Map[SimTime, List[List[AgentBatchData]]] =
+//    strat.flatMap {
+//      case (simTime, batches) =>
+//        batches.map {
+//          _.filter { data =>
+//            val mostRecentRequestUpdate: SimTime = currentTime - (currentTime % requestUpdateCycle)
+//            mostRecentRequestUpdate < data.timeOfRequest
+//          }
+//        } match {
+//          case Nil          => None
+//          case filteredData => Some { simTime -> filteredData }
+//        }
+//    }
 
   /**
     * keeps only the soonest batch, who should not be tampered with

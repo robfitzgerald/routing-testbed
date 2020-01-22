@@ -3,7 +3,9 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 import cats.Monad
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.{BatchingInstruction, BatchingStrategy}
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
@@ -29,42 +31,38 @@ class GreedyCoordinateGridBatching(
     * update to that batching strategy
     *
     * @param roadNetwork          the current road network state
-    * @param currentBatchStrategy the current strategy
-    * @param newBatchData         some new data about agents eligible for replanning from the system
-    * @param agentBatchDataMap the most current information about each SO agent that is active
+    * @param activeRouteRequests agents which are available for SO routing requests
     * @param currentTime          the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
   def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-                                                newBatchData: List[AgentBatchData],
-                                                currentBatchStrategy: BatchingStrategy,
-                                                agentBatchDataMap: Map[String, AgentBatchData],
-                                                currentTime: SimTime): F[Option[List[Batching.BatchingInstruction]]] = Monad[F].pure {
+                                                activeRouteRequests: List[RouteRequestData],
+                                                currentTime: SimTime): F[Option[List[List[Request]]]] = Monad[F].pure {
 
-    newBatchData match {
+    activeRouteRequests match {
       case Nil =>
         // no new batch data; use current strategy
-        Some { currentBatchStrategy.values.toList }
+        None
       case _ =>
-        val nextValidBatchTime = BatchingManager.nextValidBatchingTime(this.batchWindow, currentTime)
-
-        // agents slated for the next valid batching time should not be touched
-        val (replannableCurrentBatch, slatedForNextBatchingTime) =
-          currentBatchStrategy
-            .map { case (_, i) => i }
-            .toList
-            .partition { _.batchingTime > nextValidBatchTime }
-
-        val replannableCurrentBatchData: List[AgentBatchData] =
-          replannableCurrentBatch.flatMap { i =>
-            agentBatchDataMap.get(i.agentId)
-          }
+//        val nextValidBatchTime = BatchingManager.nextValidBatchingTime(this.batchWindow, currentTime)
+//
+//        // agents slated for the next valid batching time should not be touched
+//        val (replannableCurrentBatch, slatedForNextBatchingTime) =
+//          currentBatchStrategy
+//            .map { case (_, i) => i }
+//            .toList
+//            .partition { _.batchingTime > nextValidBatchTime }
+//
+//        val replannableCurrentBatchData: List[AgentBatchData] =
+//          replannableCurrentBatch.flatMap { i =>
+//            agentBatchDataMap.get(i.agentId)
+//          }
 
         // find all agent's estimated location at batchPathTimeDelay time into future and find their coordinate.
         // create a tag from this src coordinate and the agent's final destination as a coordinate
         // map the coordinates to string ids and concatenate them into a grouping tag
-        val tagged: List[(String, AgentBatchData)] = for {
-          agentBatchData <- newBatchData ++ replannableCurrentBatchData
+        val tagged: List[(String, RouteRequestData)] = for {
+          agentBatchData <- activeRouteRequests
           tagger         <- GreedyCoordinateGridBatching.BatchTag.makeBatchTag(tagType, agentBatchData)
           tagged <- tagger match {
             case od: GreedyCoordinateGridBatching.BatchTag.ODTag =>
@@ -85,25 +83,21 @@ class GreedyCoordinateGridBatching(
         }
 
         // make sub-batches based on the tag groupings
-        val grouped: Map[String, List[(String, AgentBatchData)]] = tagged.groupBy { case (tag, _) => tag }
+        val grouped: Map[String, List[(String, RouteRequestData)]] = tagged.groupBy { case (tag, _) => tag }
 
         //
-        val toAdd: List[BatchingInstruction] = grouped.flatMap {
+        val toAdd: List[(RouteRequestData, String)] = grouped.flatMap {
           case (tag, tuples) =>
             // this group may exceed our maxBatchSize, so, break them up based on a batch splitting function
-            val agentBatchData: List[AgentBatchData] = tuples.map { case (_, agentBatchData) => agentBatchData }
+            val routeRequestDatas: List[RouteRequestData] = tuples.map { case (_, agentBatchData) => agentBatchData }
             for {
-              (batch, batchIdx) <- BatchSplittingFunction.bySlidingWindow(agentBatchData, this.maxBatchSize).zipWithIndex
+              (batch, batchIdx) <- BatchSplittingFunction.bySlidingWindow(routeRequestDatas, this.maxBatchSize).zipWithIndex
               batchId = s"$tag-$batchIdx"
-              agentBatchData <- batch
+              routeRequestData <- batch
             } yield {
               // at this point we have all the information we need to create a batch id
               // since a tag plus window index should be unique
-              Batching.BatchingInstruction(
-                agentBatchData.request.agent,
-                nextValidBatchTime,
-                batchId
-              )
+              (routeRequestData, batchId)
             }
 
         }.toList
@@ -122,9 +116,13 @@ class GreedyCoordinateGridBatching(
           logger.info(s"so batched agent locations at $currentTime:\n" + grid.printGrid(prettyPrintMe))
           logger.info(s"batch groupings:\n ${grouped.map { case (_, v) => v.size }.mkString("[", ",", "]")}")
 
-          // we can update our plan based on this grouping
+          // share our grouping with the world, let them smile upon our greatness
           Some {
-            slatedForNextBatchingTime ++ toAdd
+            toAdd
+              .groupBy{ case (_, batchId) => batchId }
+              .values
+              .map{_.map{ case (data, _) => data.request}}
+              .toList
           }
         }
     }
@@ -136,7 +134,7 @@ object GreedyCoordinateGridBatching {
 
   object BatchTag {
 
-    def makeBatchTag(tagType: String, agentBatchData: AgentBatchData): Option[BatchTag] = {
+    def makeBatchTag(tagType: String, agentBatchData: RouteRequestData): Option[BatchTag] = {
       tagType.trim.toLowerCase match {
         case "od" => Some { ODTag(agentBatchData) }
         case "o"  => Some { OTag(agentBatchData) }
@@ -145,12 +143,12 @@ object GreedyCoordinateGridBatching {
       }
     }
 
-    final case class OTag(agentBatchData: AgentBatchData) extends BatchTag {
+    final case class OTag(routeRequestData: RouteRequestData) extends BatchTag {
 
       def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
         for {
           src <- BatchingOps.findCoordinateInFuture(
-            agentBatchData.currentEdgeRoute,
+            routeRequestData.currentEdgeRoute,
             currentTime,
             batchPathTimeDelay
           )
@@ -159,26 +157,26 @@ object GreedyCoordinateGridBatching {
           originTag
         }
     }
-    final case class DTag(agentBatchData: AgentBatchData) extends BatchTag {
+    final case class DTag(routeRequestData: RouteRequestData) extends BatchTag {
 
       def tag(grid: CoordinateGrid): Option[String] =
         for {
-          dst <- agentBatchData.currentEdgeRoute.lastOption.map { _.linkSourceCoordinate }
+          dst <- routeRequestData.currentEdgeRoute.lastOption.map { _.linkSourceCoordinate }
         } yield {
           val destinationTag: String = grid.getGridId(dst.x, dst.y)
           destinationTag
         }
     }
-    final case class ODTag(agentBatchData: AgentBatchData) extends BatchTag {
+    final case class ODTag(routeRequestData: RouteRequestData) extends BatchTag {
 
       def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
         for {
           src <- BatchingOps.findCoordinateInFuture(
-            agentBatchData.currentEdgeRoute,
+            routeRequestData.currentEdgeRoute,
             currentTime,
             batchPathTimeDelay
           )
-          dst <- agentBatchData.currentEdgeRoute.lastOption.map { _.linkSourceCoordinate }
+          dst <- routeRequestData.currentEdgeRoute.lastOption.map { _.linkSourceCoordinate }
         } yield {
           val originTag: String      = grid.getGridId(src.x, src.y)
           val destinationTag: String = grid.getGridId(dst.x, dst.y)

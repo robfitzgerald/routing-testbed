@@ -7,6 +7,7 @@ import scala.concurrent.duration.Duration
 
 import cats.Monad
 
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.BatchingStrategy
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, Batching, BatchingFunction}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR}
@@ -154,17 +155,13 @@ object MATSimConfig {
           * update to that batching strategy
           *
           * @param roadNetwork          the current road network state
-          * @param currentBatchStrategy the current strategy
-          * @param newBatchData         some new data about agents eligible for replanning from the system
+          * @param activeRouteRequests agents which are available for SO routing requests0
           * @param currentTime          the current sim time
           * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
           */
-        def updateBatchingStrategy[F[_] : Monad, V, E](
-          roadNetwork: RoadNetwork[F, V, E],
-          newBatchData: List[AgentBatchData],
-          currentBatchStrategy: BatchingStrategy,
-          agentBatchDataMap: Map[String, AgentBatchData],
-          currentTime: SimTime): F[Option[List[Batching.BatchingInstruction]]] = Monad[F].pure{ None }
+        def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
+          activeRouteRequests: List[RouteRequestData],
+          currentTime: SimTime): F[Option[List[List[Request]]]] = Monad[F].pure{ None }
       }
     }
 

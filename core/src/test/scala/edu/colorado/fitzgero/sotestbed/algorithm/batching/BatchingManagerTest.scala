@@ -7,6 +7,30 @@ class BatchingManagerTest extends WordSpec with Matchers {
 
   "BatchingManagerTest" when {
 
+    "nearestBatchTime" when {
+      "called with a 5 second batch window" should {
+        "properly set the next valid batching time across a range of values" in {
+          val batchWindow = SimTime(5)
+          // the nearest batching time should be 0
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(-1)) should be (SimTime(0))
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(0)) should be (SimTime(0))
+
+          // the nearest batching time should be 5
+
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(1)) should be (SimTime(5))
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(2)) should be (SimTime(5))
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(3)) should be (SimTime(5))
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(4)) should be (SimTime(5))
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(5)) should be (SimTime(5))
+
+          // the nearest batching time should be 10
+
+          BatchingManager.nextBatchTimeFrom(batchWindow, SimTime(6)) should be (SimTime(10))
+        }
+      }
+    }
+
+
     "nextValidBatchingTime" when {
       "called with a 5 second batch window" should {
         "properly set the next valid batching time across a range of values" in {
