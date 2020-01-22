@@ -7,11 +7,11 @@ import org.matsim.api.core.v01.events.handler.{PersonEntersVehicleEventHandler, 
 import org.matsim.api.core.v01.events.{PersonEntersVehicleEvent, PersonLeavesVehicleEvent, PersonStuckEvent}
 import org.matsim.api.core.v01.population.Person
 
-
 class SOAgentReplanningHandler(
   val agentsUnderControl: Set[Id[Person]],
   val requestUpdateCycle: SimTime,
   val maxPathAssignments: Int,
+  val minimumReplanningWaitTime: SimTime
 ) extends PersonEntersVehicleEventHandler
     with PersonLeavesVehicleEventHandler
     with PersonStuckEventHandler {
@@ -21,15 +21,14 @@ class SOAgentReplanningHandler(
   private val agentsInSimulation: collection.mutable.Map[Id[Person], AgentData] = collection.mutable.Map.empty
 
   // tracks a rolling average
-  private var avgPathsAssigned: Double = 0
-  private var cntPathsAssigned: Int = 0
+  private var avgPathsAssigned: Double         = 0
+  private var cntPathsAssigned: Int            = 0
   private var avgFailedRoutingAttempts: Double = 0
-  private var sumFailedRoutingAttempts: Int = 0
-  private var cntFailedRoutingAttempts: Int = 0
-  def getAvgPathsAssigned: Double = avgPathsAssigned
-  def getAvgFailedRoutingAttempts: Double = avgFailedRoutingAttempts
-  def getSumFailedRoutingAttempts: Int = sumFailedRoutingAttempts
-
+  private var sumFailedRoutingAttempts: Int    = 0
+  private var cntFailedRoutingAttempts: Int    = 0
+  def getAvgPathsAssigned: Double              = avgPathsAssigned
+  def getAvgFailedRoutingAttempts: Double      = avgFailedRoutingAttempts
+  def getSumFailedRoutingAttempts: Int         = sumFailedRoutingAttempts
 
   /**
     * recognizes agents with a System-Optimal routing agenda
@@ -48,6 +47,7 @@ class SOAgentReplanningHandler(
 
   /**
     * looks at all active SO agents and returns the ones that have not exceeded this.maxPathAssignments
+    * and that have spent at least this.minimumReplanningWaitTime since they were last replanned
     *
     * @param currentSimTime the current sim time
     * @return list of agents eligible for replanning
@@ -58,7 +58,14 @@ class SOAgentReplanningHandler(
       List.empty
     } else {
       agentsInSimulation
-        .filter{ case (_, agentData) => agentData.numberOfPathAssignments < this.maxPathAssignments}
+        .filter {
+          case (_, agentData) =>
+            val hasNotExceededMaxAssignments: Boolean =
+              agentData.numberOfPathAssignments < this.maxPathAssignments
+            val hasSurpassedMinReplanningWaitTime: Boolean =
+              currentSimTime - agentData.mostRecentTimePlanned.getOrElse(SimTime.Zero) > minimumReplanningWaitTime
+            hasNotExceededMaxAssignments && hasSurpassedMinReplanningWaitTime
+        }
         .keys
         .toList
     }
@@ -109,7 +116,7 @@ class SOAgentReplanningHandler(
     */
   def getMostRecentTimePlannedForAgent(agent: Id[Person]): Option[SimTime] =
     for {
-      agentData <- agentsInSimulation.get(agent)
+      agentData             <- agentsInSimulation.get(agent)
       mostRecentTimePlanned <- agentData.mostRecentTimePlanned
     } yield mostRecentTimePlanned
 
@@ -137,9 +144,8 @@ class SOAgentReplanningHandler(
     */
   def stopTrackingAgent(agent: Id[Person]): Unit = {
     agentsInSimulation.get(agent) match {
-      case None =>
+      case None            =>
       case Some(agentData) =>
-
         // update our average paths assigned per SO agent
         avgPathsAssigned = SOAgentReplanningHandler.addToRollingAverage(
           observation = agentData.numberOfPathAssignments,

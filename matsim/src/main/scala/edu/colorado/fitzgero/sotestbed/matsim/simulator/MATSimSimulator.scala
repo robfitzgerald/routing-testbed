@@ -157,7 +157,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.soAgentReplanningHandler = new SOAgentReplanningHandler(
       config.pop.agentsUnderControl,
       config.routing.requestUpdateCycle,
-      config.routing.maxPathAssignments
+      config.routing.maxPathAssignments,
+      config.routing.minimumReplanningWaitTime
     )
     self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
 
@@ -755,7 +756,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       }
 
                       self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
-
                       self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
                         case None =>
                           logger.error(s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added")

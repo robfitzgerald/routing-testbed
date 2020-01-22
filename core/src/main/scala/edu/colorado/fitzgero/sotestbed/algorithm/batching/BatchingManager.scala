@@ -48,14 +48,16 @@ final case class BatchingManager(
     * @return either an SO route request (and batch manager update) or no change
     */
   def submitActiveRouteRequestsForReplanning(currentTime: SimTime): (BatchingManager, List[RouteRequestData]) = {
-
-    val targetBatchTime = BatchingManager.nextBatchTimeFrom(this.batchWindow, this.mostRecentBatchRequested)
-    if (targetBatchTime <= currentTime) {
-      // we either just hit a batch time or just passed it; let's request routing!
-      (this.copy(mostRecentBatchRequested = targetBatchTime), batchData.values.toList)
-    } else {
-      // no route requests this time, bubba
-      (this, List.empty)
+    BatchingManager.mostRecentBatchTime(this.batchWindow, currentTime) match {
+      case None => (this, List.empty)
+      case Some(aBatchTimePossiblySkipped) =>
+        if (mostRecentBatchRequested < aBatchTimePossiblySkipped) {
+          // we just passed a batch time or landed on one
+          (this.copy(mostRecentBatchRequested = aBatchTimePossiblySkipped), batchData.values.toList)
+        } else {
+          // haven't hit it yet
+          (this, List.empty)
+        }
     }
   }
 
@@ -259,7 +261,7 @@ object BatchingManager {
     * @param currentTime the current sim time
     * @return the next valid replanning batch time that can be set
     */
-  def nextBatchTimeFrom(batchWindow    : SimTime, currentTime: SimTime): SimTime = {
+  def nextBatchTimeFrom(batchWindow: SimTime, currentTime: SimTime): SimTime = {
     if (currentTime < SimTime.Zero) {
       // end of the first batch window will suffice for negative time values
       // (of which -1 should be the only one)
@@ -267,6 +269,20 @@ object BatchingManager {
     } else {
       // find the SimTime at the end of the next batch
       ((currentTime / batchWindow) * batchWindow) + batchWindow + SimTime(1)
+    }
+  }
+
+  /**
+    * gives us the most recently-completed batch window time
+    * @param batchWindow duration of batches
+    * @param currentTime the current sim time
+    * @return the most recently-completed batch time, or None if currentTime is negative
+    */
+  def mostRecentBatchTime(batchWindow: SimTime, currentTime: SimTime): Option[SimTime] = {
+    if (currentTime < SimTime.Zero) None
+    else {
+      val batchOfDay: Int = math.floor(currentTime.value.toDouble / batchWindow.value.toDouble).toInt
+      Some{ SimTime(batchOfDay) * batchWindow }
     }
   }
 
@@ -307,72 +323,6 @@ object BatchingManager {
       time
     }
   }
-
-//  /**
-//    * filter predicate which remove agents who have met the
-//    * minimum replanning wait time since their last replanning
-//    * @param currentTime
-//    * @param minimumReplanningWaitTime
-//    * @return
-//    */
-//  def filterNewDataByMinReplanningWaitTime(
-//    currentTime: SimTime,
-//    minimumReplanningWaitTime: SimTime
-//  ): AgentBatchData => Boolean = { data =>
-//    data.lastReplanningTime match {
-//      case None => true
-//      case Some(lastReplanningTime) =>
-//        lastReplanningTime + minimumReplanningWaitTime > currentTime
-//    }
-//  }
-
-//  /**
-//    * when we get an update, we may want to toss any old data for any agent
-//    * @param oldData
-//    * @param newData
-//    * @return
-//    */
-//  def keepLatestAgentBatchData(
-//    oldData: List[AgentBatchData],
-//    newData: List[AgentBatchData]
-//  ): List[AgentBatchData] = {
-//    for {
-//      (_, agentData) <- (oldData ++ newData).groupBy { _.request.agent }
-//    } yield {
-//      if (agentData.lengthCompare(0) > 0) {
-//        agentData.maxBy { _.timeOfRequest }(Ordering.by { _.value })
-//      } else {
-//        agentData.head
-//      }
-//    }
-//  }.toList
-
-//  /**
-//    * removes any stale requests using a filter
-//    *
-//    * @param strat the strat to clean
-//    * @param currentTime the current sim time
-//    * @param requestUpdateCycle the request update cycle
-//    * @return the cleaned stategy
-//    */
-//  def cleanStaleRequestsInStrategy(
-//    currentTime: SimTime,
-//    requestUpdateCycle: SimTime
-//  )(
-//    strat: Map[SimTime, List[List[AgentBatchData]]]
-//  ): Map[SimTime, List[List[AgentBatchData]]] =
-//    strat.flatMap {
-//      case (simTime, batches) =>
-//        batches.map {
-//          _.filter { data =>
-//            val mostRecentRequestUpdate: SimTime = currentTime - (currentTime % requestUpdateCycle)
-//            mostRecentRequestUpdate < data.timeOfRequest
-//          }
-//        } match {
-//          case Nil          => None
-//          case filteredData => Some { simTime -> filteredData }
-//        }
-//    }
 
   /**
     * keeps only the soonest batch, who should not be tampered with

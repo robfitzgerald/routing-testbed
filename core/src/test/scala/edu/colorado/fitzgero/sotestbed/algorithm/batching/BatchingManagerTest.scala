@@ -30,6 +30,30 @@ class BatchingManagerTest extends WordSpec with Matchers {
       }
     }
 
+    "mostRecentBatchTime" when {
+      "called with a 5 second batch window" should {
+        "properly set the most recent batching time across a range of values" in {
+          val batchWindow = SimTime(5)
+          // no batches have happened yet
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(-1)) should be (None)
+
+
+
+          // the most recent batch time should be 0
+
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(0)) should be (Some{SimTime(0)})
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(1)) should be (Some{SimTime(0)})
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(2)) should be (Some{SimTime(0)})
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(3)) should be (Some{SimTime(0)})
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(4)) should be (Some{SimTime(0)})
+
+          // the most recent batch time should be 5
+
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(5)) should be (Some{SimTime(5)})
+          BatchingManager.mostRecentBatchTime(batchWindow, SimTime(6)) should be (Some{SimTime(5)})
+        }
+      }
+    }
 
     "nextValidBatchingTime" when {
       "called with a 5 second batch window" should {
