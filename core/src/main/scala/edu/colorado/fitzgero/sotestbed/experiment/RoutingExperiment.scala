@@ -49,18 +49,19 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
             batchDataUpdate     <- getAgentsNewlyAvailableForReplanning(e1)
             (ueUpdate, soUpdate) = batchDataUpdate.partition { payload => selfishOnly || payload.request.requestClass == RequestClass.UE }
             ueResults           <- ueRoutingAlgorithm.map{_.route(ueUpdate.map{_.request}, r1)}.getOrElse(Monad[F].pure{RoutingAlgorithm.Result()})
-            batchStratUpdate    <- batchingFunction.updateBatchingStrategy(r1, b0.batchingStrategy, soUpdate, currentSimTime)
-            b1                   = b0.updateBatchData(batchStratUpdate, currentSimTime)
-            (b2, batches)        = b1.getBatchesForTime(currentSimTime)
+            b1                   = b0.updateStoredBatchData(soUpdate, currentSimTime)
+            batchStratUpdate    <- batchingFunction.updateBatchingStrategy(r1, soUpdate, b1.batchingStrategy, b1.agentBatchDataMap, currentSimTime)
+            b2                   = b1.applyBatchingFunctionInstructions(batchStratUpdate, currentSimTime)
+            (b3, batches)        = b2.getBatchesForTime(currentSimTime)
             soResults           <- batches.traverse { batch => soRoutingAlgorithm.route(batch, r1) }
-            resolvedResults      = b2.resolveRoutingResultBatches(ueResults +: soResults)
+            resolvedResults      = BatchingManager.resolveRoutingResultBatches(ueResults +: soResults)
             e2                  <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
             _                    = updateReports(soResults, currentSimTime) // unit is ok here, no modifications to application state
             simulatorState      <- getState(e2)
           } yield {
             simulatorState match {
-              case Right(newState) => ExperimentState(e2, r1, b2, newState)
-              case Left(error)     => ExperimentState(e2, r1, b2, s0, Some { error })
+              case Right(newState) => ExperimentState(e2, r1, b3, newState)
+              case Left(error)     => ExperimentState(e2, r1, b3, s0, Some { error })
             }
           }
       } {
@@ -79,7 +80,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
 
     for {
       initialSimulatorState <- initializeSimulator(config)
-      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, minBatchSize, requestUpdateCycle))
+      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, requestUpdateCycle, minBatchSize))
       result <- _run(initialExperimentState)
     } yield {
       result

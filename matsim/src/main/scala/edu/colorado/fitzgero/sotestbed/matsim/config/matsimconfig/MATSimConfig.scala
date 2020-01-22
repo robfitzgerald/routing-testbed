@@ -7,7 +7,8 @@ import scala.concurrent.duration.Duration
 
 import cats.Monad
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, BatchingFunction}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.BatchingStrategy
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, Batching, BatchingFunction}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR}
 import edu.colorado.fitzgero.sotestbed.config.algorithm._
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
@@ -148,12 +149,22 @@ object MATSimConfig {
           throw new IllegalStateException("algorithm.type is selfish, so we shouldn't be doing any routing.")
       }
       def batchingStub: BatchingFunction = new BatchingFunction {
+        /**
+          * takes the current batching strategy and any updates about replan-able agents, and spits out an
+          * update to that batching strategy
+          *
+          * @param roadNetwork          the current road network state
+          * @param currentBatchStrategy the current strategy
+          * @param newBatchData         some new data about agents eligible for replanning from the system
+          * @param currentTime          the current sim time
+          * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
+          */
         def updateBatchingStrategy[F[_] : Monad, V, E](
-          roadNetwork  : RoadNetwork[F, V, E],
-          currentBatchStrategy: Map[SimTime, List[List[AgentBatchData]]],
+          roadNetwork: RoadNetwork[F, V, E],
           newBatchData: List[AgentBatchData],
-          currentTime: SimTime): F[Option[Map[SimTime, List[List[AgentBatchData]]]]] =
-          Monad[F].pure{ None }
+          currentBatchStrategy: BatchingStrategy,
+          agentBatchDataMap: Map[String, AgentBatchData],
+          currentTime: SimTime): F[Option[List[Batching.BatchingInstruction]]] = Monad[F].pure{ None }
       }
     }
 

@@ -2,55 +2,76 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import cats.Monad
 
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.{BatchingInstruction, BatchingStrategy}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
-case class GreedyBatching (
+case class GreedyBatching(
   batchWindow: SimTime,
   minimumReplanningWaitTime: SimTime,
   maxBatchSize: Int
 ) extends BatchingFunction {
 
   /**
-    * simply assigns any agents eligible for planning/replanning to the next possible batch
+    * takes the current batching strategy and any updates about replan-able agents, and spits out an
+    * update to that batching strategy
     *
+    * @param roadNetwork          the current road network state
     * @param currentBatchStrategy the current strategy
-    * @param newBatchData some new data about agents eligible for replanning from the system
-    * @param currentTime the current sim time
+    * @param newBatchData         some new data about agents eligible for replanning from the system
+    * @param currentTime          the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
-  def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-    currentBatchStrategy: Map[SimTime, List[List[AgentBatchData]]],
-    newBatchData: List[AgentBatchData],
-    currentTime: SimTime): F[Option[Map[SimTime, List[List[AgentBatchData]]]]] = {
+  def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
+                                                newBatchData: List[AgentBatchData],
+                                                currentBatchStrategy: BatchingStrategy,
+                                                agentBatchDataMap: Map[String, AgentBatchData],
+                                                currentTime: SimTime): F[Option[List[Batching.BatchingInstruction]]] = {
     if (newBatchData.isEmpty) Monad[F].pure {
       None
-    } else Monad[F].pure {
+    } else
+      Monad[F].pure {
 
-      // just insert requests at the soonest possible batch time
-      val nextBatchingTime: SimTime = BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
+        // just insert requests at the soonest possible batch time
+        val nextBatchingTime: SimTime = BatchingManager.nextValidBatchingTime(batchWindow, currentTime)
 
-      newBatchData
-        .filter{
-          // remove agents who have met the minimum replanning wait time since their last replanning
-          _.lastReplanningTime match {
-            case None => true
-            case Some(lastReplanningTime) =>
-              lastReplanningTime + minimumReplanningWaitTime > currentTime
-          }
-        } match {
-        case Nil => None
-        case newRequests =>
-          // we have agents that we can replan to add to the nearest possible request time
-          val agentsToAdd: List[List[AgentBatchData]] = newRequests.sliding(maxBatchSize, maxBatchSize).toList
+        newBatchData
+          .filter {
+            // remove agents who have met the minimum replanning wait time since their last replanning
+            _.lastReplanningTime match {
+              case None => true
+              case Some(lastReplanningTime) =>
+                lastReplanningTime + minimumReplanningWaitTime > currentTime
+            }
+          } match {
+          case Nil         => None
+          case newRequests =>
+            // we have agents that we can replan to add to the nearest possible request time
+            val agentsToAdd: BatchingStrategy = {
+              newRequests.map { data =>
+                data.request.agent -> BatchingInstruction(data.request.agent, nextBatchingTime, "placeholder")
+              }
+            }.toMap
 
-          val updatedBatchingStrategyForNextBatchingTime: List[List[AgentBatchData]] =
-            currentBatchStrategy.getOrElse(nextBatchingTime, List.empty) ++ agentsToAdd
+            val added: Map[String, BatchingInstruction] =
+              agentsToAdd.foldLeft(currentBatchStrategy) {
+                case (strat, (id, instruction)) =>
+                  strat.updated(id, instruction)
+              }
 
-          Some {
-            currentBatchStrategy.updated(nextBatchingTime, updatedBatchingStrategyForNextBatchingTime)
-          }
+            val asBatches: List[BatchingInstruction] = {
+              for {
+                (batch, idx) <- added.values.sliding(maxBatchSize, maxBatchSize).zipWithIndex.toList
+                batchId = s"$idx"
+                instruction <- batch
+              } yield instruction.copy(batchId = batchId)
+            }
+
+            asBatches match {
+              case Nil => None
+              case _   => Some { asBatches }
+            }
+        }
       }
-    }
   }
 }

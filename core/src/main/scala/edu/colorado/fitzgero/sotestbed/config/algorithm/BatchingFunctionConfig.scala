@@ -15,7 +15,25 @@ object BatchingFunctionConfig {
     def build(): batching.BatchingFunction = batching.GreedyBatching(batchWindow, minimumReplanningWaitTime, maxBatchSize)
   }
 
-  final case class GreedyCoordinateGrid (
+//  final case class GreedyCoordinateGrid (
+//    batchWindow: SimTime,
+//    minimumReplanningWaitTime: SimTime,
+//    maxBatchSize: Int,
+//    minX: Double,
+//    maxX: Double,
+//    minY: Double,
+//    maxY: Double,
+//    splitFactor: Int,
+//    batchPathTimeDelay: SimTime
+//  ) extends BatchingFunctionConfig {
+//    require(splitFactor > 0, "split factor must be positive")
+//    def build(): batching.BatchingFunction =
+//      new batching.GreedyCoordinateGridBatching(
+//        batchWindow, minimumReplanningWaitTime, maxBatchSize, minX, maxX, minY, maxY, splitFactor, batchPathTimeDelay
+//      )
+//  }
+
+  final case class GreedyCoordinateGrouping (
     batchWindow: SimTime,
     minimumReplanningWaitTime: SimTime,
     maxBatchSize: Int,
@@ -24,30 +42,13 @@ object BatchingFunctionConfig {
     minY: Double,
     maxY: Double,
     splitFactor: Int,
-    batchPathTimeDelay: SimTime
+    batchPathTimeDelay: SimTime,
+    batchType: String // "o", "d", "od"
   ) extends BatchingFunctionConfig {
     require(splitFactor > 0, "split factor must be positive")
     def build(): batching.BatchingFunction =
       new batching.GreedyCoordinateGridBatching(
-        batchWindow, minimumReplanningWaitTime, maxBatchSize, minX, maxX, minY, maxY, splitFactor, batchPathTimeDelay
-      )
-  }
-
-  final case class GreedyCoordinateOriginDestinationGrouping (
-    batchWindow: SimTime,
-    minimumReplanningWaitTime: SimTime,
-    maxBatchSize: Int,
-    minX: Double,
-    maxX: Double,
-    minY: Double,
-    maxY: Double,
-    splitFactor: Int,
-    batchPathTimeDelay: SimTime
-  ) extends BatchingFunctionConfig {
-    require(splitFactor > 0, "split factor must be positive")
-    def build(): batching.BatchingFunction =
-      new batching.GreedyCoordinateGridODBatching(
-        batchWindow, minimumReplanningWaitTime, maxBatchSize, minX, maxX, minY, maxY, splitFactor, batchPathTimeDelay
+        batchWindow, minimumReplanningWaitTime, maxBatchSize, minX, maxX, minY, maxY, splitFactor, batchPathTimeDelay, batchType
       )
   }
 }

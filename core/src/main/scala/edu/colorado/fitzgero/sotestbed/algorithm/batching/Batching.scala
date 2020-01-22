@@ -13,7 +13,7 @@ object Batching {
   type BatchingStrategy = Map[String, BatchingInstruction]
 
   final case class BatchingInstruction(
-    agentBatchData: AgentBatchData,
+    agentId: String,
     batchingTime: SimTime,
     batchId: String
   )
