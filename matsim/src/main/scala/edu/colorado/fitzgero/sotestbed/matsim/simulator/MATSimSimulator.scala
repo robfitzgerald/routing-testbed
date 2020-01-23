@@ -151,7 +151,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     // needs to happen after the controler checks the experiment directory
     val outputFilePath: String = config.io.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
     pw = new PrintWriter(outputFilePath)
-    pw.write(s"experiment ${config.io.experimentDirectory}\n\n")
+    pw.write(s"experiment $experimentPath\n\n")
 
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.soAgentReplanningHandler = new SOAgentReplanningHandler(

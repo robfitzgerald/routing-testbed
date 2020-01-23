@@ -1,18 +1,16 @@
 package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io
-import java.io.File
-import java.nio.file.Files
+import java.io.{File, FileOutputStream, PrintWriter}
+import java.nio.file.{Files, Path}
+
+import scala.util.Try
+import scala.util.matching.Regex
 
 import cats.effect.SyncIO
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
-  RoutingAlgorithm,
-  SelfishSyncRoutingBPR,
-  TwoPhaseLocalMCTSRoutingAlgorithm,
-  TwoPhaseRoutingAlgorithm
-}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
@@ -22,7 +20,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRU
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
-case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[MATSimConfig.IO.ScenarioData] = None) extends LazyLogging {
+case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataOption: Option[MATSimConfig.IO.ScenarioData] = None) extends LazyLogging {
 
   /**
     * performs a synchronous run of a MATSim simulation from a MATSimConfig
@@ -119,7 +117,39 @@ case class MATSimExperimentRunner(config: MATSimConfig, trialDataOption: Option[
         }
 
       val result: experiment.ExperimentState = experimentSyncIO.unsafeRunSync()
+
       result.error.foreach(e => logger.error(e))
+
+      // let's drop some knowledge at output
+      val tripDurationsFile: File =
+        matsimRunConfig.io.experimentDirectory.resolve("ITERS").resolve("it.0").resolve("0.tripdurations.txt").toFile
+      val tripDurationsSource = scala.io.Source.fromFile(tripDurationsFile)
+      val avgDurRegex: Regex = "average trip duration: (\\d+\\.\\d+) seconds".r.unanchored
+      val avgDuration: String = tripDurationsSource.getLines.mkString("") match {
+        case avgDurRegex(g1) => g1
+        case _ => ""
+      }
+      tripDurationsSource.close()
+
+      val traveldistancestatsFile: File =
+        matsimRunConfig.io.experimentDirectory.resolve("traveldistancestats.txt").toFile
+      val travelDistancesSource = scala.io.Source.fromFile(traveldistancestatsFile)
+      val avgDistRegex: Regex = "(\\d+\\.\\d+)".r.unanchored
+      val avgDistance: String = travelDistancesSource.getLines.mkString("") match {
+        case avgDistRegex(g1) => g1
+        case _ => ""
+      }
+
+      val batchOverviewFile: File = matsimRunConfig.io.batchLoggingDirectory.resolve("result.csv").toFile
+      val APPEND_MODE: Boolean = true
+      val batchOverviewOutput: PrintWriter = new PrintWriter(new FileOutputStream(batchOverviewFile, APPEND_MODE))
+      val scenarioName: String = matsimRunConfig.io.scenarioData.map{_.toTrialName}.getOrElse("")
+      Try {
+        val (avgDistMeters, avgDurSeconds) = (avgDistance.toDouble, avgDuration.toDouble)
+        val avgSpeedMph: Double = (avgDistMeters/1609.0) / (avgDurSeconds/3600.0)
+        batchOverviewOutput.append(s"$scenarioName,$popSize,$avgDuration,$avgDistance,$avgSpeedMph\n")
+      }
+      batchOverviewOutput.close()
       "done"
     }
   }

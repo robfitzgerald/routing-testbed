@@ -113,20 +113,39 @@ object MATSimConfig {
     final case class ScenarioData(
       algorithm  : String,
       trialNumber: Int,
-      variation  : String = "",
+      variation  : String = "", // a list of arguments, or, popSize if selfish
     ) {
       def toTrialName: String = {
-        s"$variation-$trialNumber-$algorithm"
+        algorithm match {
+          case "selfish" => s"$algorithm-$trialNumber"
+          case _ => s"$variation-$algorithm-$trialNumber"
+        }
       }
 
       def toVariationPath(basePath: Path, batchName: String): Path =
-        basePath.resolve(batchName).resolve(variation)
+        algorithm match {
+          case "selfish" =>
+            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variation-${trialNumber.toString}-logging")
+          case _ =>
+            basePath.resolve(batchName).resolve(variation)
+        }
 
       def toTrialPath(basePath: Path, batchName: String): Path =
-        basePath.resolve(batchName).resolve(variation).resolve(trialNumber.toString)
+        algorithm match {
+          case "selfish" =>
+            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variation-${trialNumber.toString}-logging")
+          case _ =>
+            basePath.resolve(batchName).resolve(variation).resolve(trialNumber.toString)
+        }
 
       def toExperimentPath(basePath: Path, batchName: String): Path =
-        basePath.resolve(batchName).resolve(variation).resolve(trialNumber.toString).resolve(algorithm)
+        algorithm match {
+          case "selfish" =>
+            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variation-${trialNumber.toString}")
+          case _ =>
+            basePath.resolve(batchName).resolve(variation).resolve(trialNumber.toString).resolve(algorithm)
+        }
+
     }
   }
 
