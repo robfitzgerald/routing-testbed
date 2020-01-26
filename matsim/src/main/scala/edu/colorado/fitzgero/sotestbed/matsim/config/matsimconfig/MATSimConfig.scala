@@ -87,24 +87,24 @@ object MATSimConfig {
     matsimConfigFile : File,
     batchName        : String = System.currentTimeMillis.toString,
     scenarioData     : Option[ScenarioData] = None,
-    baseDirectory    : Path = Paths.get("/tmp"),
+    outputBaseDirectory: Path = Paths.get("/tmp"),
     matsimLogLevel   : String = "INFO",
   ) {
     def batchLoggingDirectory: Path = {
-      baseDirectory.resolve(batchName)
+      outputBaseDirectory.resolve(batchName)
     }
 
     def experimentLoggingDirectory: Path = {
       this.scenarioData match {
-        case None => baseDirectory
-        case Some(scenarioData) => scenarioData.toTrialPath(baseDirectory, batchName)
+        case None => outputBaseDirectory
+        case Some(scenarioData) => scenarioData.toTrialPath(outputBaseDirectory, batchName)
       }
     }
 
     def experimentDirectory: Path = {
       this.scenarioData match {
-        case None => baseDirectory.resolve(batchName)
-        case Some(scenarioData) => scenarioData.toExperimentPath(baseDirectory, batchName)
+        case None => outputBaseDirectory.resolve(batchName)
+        case Some(scenarioData) => scenarioData.toExperimentPath(outputBaseDirectory, batchName)
       }
     }
   }

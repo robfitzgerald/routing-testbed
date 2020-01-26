@@ -1,3 +1,4 @@
+import sbtassembly.MergeStrategy
 
 name := "so-testbed"
 version := "0.1"
@@ -19,18 +20,19 @@ lazy val matsim = project
     name := "so-testbed-matsim",
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
+    matsimAssemblyStrategy,
     libraryDependencies ++= coreDependencies // ++ matsimDependencies
   )
   .dependsOn(core)
 
-lazy val matsimSpark = project
-  .in(file("matsim-spark"))
-  .settings(
-    name := "so-testbed-matsim-spark",
-    scalaVersion := sVersion,
-    libraryDependencies ++= matsimSparkDependencies
-  )
-  .dependsOn(core, matsim)
+//lazy val matsimSpark = project
+//  .in(file("matsim-spark"))
+//  .settings(
+//    name := "so-testbed-matsim-spark",
+//    scalaVersion := sVersion,
+//    libraryDependencies ++= matsimSparkDependencies
+//  )
+//  .dependsOn(core, matsim)
 
 lazy val scalac =  List(
   "-language:higherKinds",                   // FP type wizardry
@@ -67,11 +69,30 @@ lazy val coreDependencies = List(
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
 )
 
-lazy val matsimSparkDependencies = List(
-  "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided"
-)
+//lazy val matsimSparkDependencies = List(
+//  "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided"
+//)
 
 //lazy val matsimDependencies = List(
 //  "org.matsim" % "matsim" % "0.10.1" // most recent official release/tag
 //)
 //lazy val matsimGithubDependency = ProjectRef(uri("https://github.com/matsim-org/matsim.git#master"), "matsim")
+
+
+/////////////////////////// sbt-assembly ///////////////////////////
+
+lazy val matsimAssemblyStrategy = Seq(
+  mainClass in (Compile, run) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
+  mainClass in (Compile, packageBin) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
+  mainClass in assembly := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
+  test in assembly := {},
+  assemblyMergeStrategy in assembly := {
+//    case "META-INF/sun-jaxb.episode"                   => MergeStrategy.concat
+//    case "META-INF/sun-jaxb.episode" => MergeStrategy.discard
+//    case "messages.properties" => MergeStrategy.concat
+    case "tec/uom/se/format/messages.properties" => MergeStrategy.concat
+    case x =>
+      val oldStrategy: String => MergeStrategy = (assemblyMergeStrategy in assembly).value
+      oldStrategy(x)
+  }
+)

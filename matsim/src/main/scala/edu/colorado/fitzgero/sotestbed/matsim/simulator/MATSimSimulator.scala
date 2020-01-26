@@ -83,7 +83,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var newSORouteRequests: Option[RouteRequests]                                                 = None
   var newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]                         = collection.mutable.ListBuffer.empty
   var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData]            = collection.mutable.ListBuffer.empty
-  var pw: PrintWriter                                                                           = _
+  var runStatsPrintWriter: PrintWriter                                                                           = _
+  var agentExperiencePrintWriter: PrintWriter = _
 
   // matsim variables
   var controler: Controler                                   = _
@@ -148,10 +149,14 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     // start MATSim and capture object references to simulation in broader MATSimActor scope
     self.controler = new Controler(matsimConfig)
 
-    // needs to happen after the controler checks the experiment directory
-    val outputFilePath: String = config.io.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
-    pw = new PrintWriter(outputFilePath)
-    pw.write(s"experiment $experimentPath\n\n")
+    // needs to happen after the controler checks the experiment directory (20200125-is this still true?)
+    val statsFilePath: String = config.io.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
+    runStatsPrintWriter = new PrintWriter(statsFilePath)
+    runStatsPrintWriter.write(s"experiment $experimentPath\n\n")
+
+    val agentExperienceFilePath: String = config.io.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
+    agentExperiencePrintWriter = new PrintWriter(agentExperienceFilePath)
+    agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance\n")
 
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.soAgentReplanningHandler = new SOAgentReplanningHandler(
@@ -208,15 +213,16 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         val avgFailed: Double       = soAgentReplanningHandler.getAvgFailedRoutingAttempts
         val sumFailed: Int          = soAgentReplanningHandler.getSumFailedRoutingAttempts
 
-        pw.append(s"$iterationPrefix.sum.selfish.assignments = $selfishAgentRoutesAssigned\n")
-        pw.append(s"$iterationPrefix.avg.paths.assigned = $avgPaths\n")
-        pw.append(s"$iterationPrefix.avg.failed.routing.attempts = $avgFailed\n")
-        pw.append(s"$iterationPrefix.sum.failed.routing.attempts = $sumFailed\n")
-        pw.append(s"$iterationPrefix.sum.reached_destination = ${self.reachedDestination}\n")
+        runStatsPrintWriter.append(s"$iterationPrefix.sum.selfish.assignments = $selfishAgentRoutesAssigned\n")
+        runStatsPrintWriter.append(s"$iterationPrefix.avg.paths.assigned = $avgPaths\n")
+        runStatsPrintWriter.append(s"$iterationPrefix.avg.failed.routing.attempts = $avgFailed\n")
+        runStatsPrintWriter.append(s"$iterationPrefix.sum.failed.routing.attempts = $sumFailed\n")
+        runStatsPrintWriter.append(s"$iterationPrefix.sum.reached_destination = ${self.reachedDestination}\n")
       }
 
       def notifyShutdown(shutdownEvent: ShutdownEvent): Unit = {
-        pw.close()
+        runStatsPrintWriter.close()
+        agentExperiencePrintWriter.close()
       }
     })
 
@@ -376,22 +382,33 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                   self.reachedDestination += 1
 
                   val agentId: Id[Person] = event.getPersonId
-                  if (!self.onlySelfishAgents &&
-                    soReplanningThisIteration &&
-                    soAgentReplanningHandler.isUnderControl(agentId)) {
 
-                    // queue up a message to remove this agent from the batching manager
-                    self.agentLeftSimulationRequests += SOAgentArrivalData(agentId.toString)
+                  for {
+                    mobsimAgent   <- self.qSim.getAgents.asScala.get(agentId)
+                    leg <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
+                    departureTime = leg.getDepartureTime.toInt
+                    agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
+                    distance <- MATSimRouteOps.distanceOfPath(agentExperiencedRoute, qSim)
+                  } {
 
-                    // FINALIZE THIS AGENT'S ROUTE FOR NON-PLANNING ITERATIONS
-                    logger.debug(s"[VehicleLeavesTrafficEventHandler] triggered for so agent $agentId")
-                    for {
-                      mobsimAgent   <- self.qSim.getAgents.asScala.get(agentId)
-                      departureTime <- soAgentReplanningHandler.getDepartureTimeForAgent(agentId)
-                      plan          <- MATSimRouteOps.safeGetModifiablePlan(mobsimAgent)
-                      leg           <- MATSimRouteOps.getLegFromPlanByDepartureTime(plan, departureTime)
-                      agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
-                    } {
+                    // record the agent experience
+                    val travelTime: Int = playPauseSimulationControl.getLocalTime.toInt - departureTime
+                    val requestClass: RequestClass =
+                      if (soAgentReplanningHandler.isUnderControl(agentId)) RequestClass.SO() else RequestClass.UE
+                    val row: String = s"$agentId,$requestClass,$departureTime,$travelTime,$distance\n"
+
+                    agentExperiencePrintWriter.append(row)
+
+                    // considerations only for SO agents under control
+                    if (!self.onlySelfishAgents &&
+                      soReplanningThisIteration &&
+                      soAgentReplanningHandler.isUnderControl(agentId)) {
+
+                      // queue up a message to remove this agent from the batching manager
+                      self.agentLeftSimulationRequests += SOAgentArrivalData(agentId.toString)
+
+                      // FINALIZE THIS AGENT'S ROUTE FOR NON-PLANNING ITERATIONS
+                      logger.debug(s"[VehicleLeavesTrafficEventHandler] triggered for so agent $agentId")
 
                       logger.debug(
                         s"[VehicleLeavesTrafficEventHandler] ${SimTime(self.playPauseSimulationControl.getLocalTime)} agent $agentId: storing completed route with ${agentExperiencedRoute.length} edges")
@@ -404,11 +421,10 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       // attach this path, keyed by departure time, to the complete list
                       completePathStore.get(agentId) match {
                         case None =>
-                          val thisPath: Map[DepartureTime, List[Id[Link]]] =
-                            Map(departureTime -> agentExperiencedRoute)
+                          val thisPath: Map[DepartureTime, List[Id[Link]]] = Map(DepartureTime(departureTime) -> agentExperiencedRoute)
                           completePathStore.update(agentId, thisPath)
                         case Some(alreadyHasPaths) =>
-                          completePathStore.update(agentId, alreadyHasPaths.updated(departureTime, agentExperiencedRoute))
+                          completePathStore.update(agentId, alreadyHasPaths.updated(DepartureTime(departureTime), agentExperiencedRoute))
                       }
                     }
                   }
@@ -855,6 +871,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
       self.newUERouteRequests.clear()
 
       val agentsLeftSimulationRequests: List[SOAgentArrivalData] = self.agentLeftSimulationRequests.toList
+      self.agentLeftSimulationRequests.clear()
 
       self.newSORouteRequests match {
         case None =>

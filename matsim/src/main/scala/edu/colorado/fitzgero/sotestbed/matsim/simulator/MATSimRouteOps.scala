@@ -12,7 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
-import org.matsim.api.core.v01.population.{Leg, Person, Plan}
+import org.matsim.api.core.v01.population.{Activity, Leg, Person, Plan}
 import org.matsim.core.mobsim.framework.{MobsimAgent, PlayPauseSimulationControl}
 import org.matsim.core.mobsim.qsim.QSim
 import org.matsim.core.mobsim.qsim.agents.WithinDayAgentUtils
@@ -48,6 +48,21 @@ object MATSimRouteOps extends LazyLogging {
   }
 
   /**
+    * calculates the total distance of a path (does not validate the path in the process)
+    * @param path the path to get distance of
+    * @param qSim the network simulation
+    * @return an optional distance in Meters
+    */
+  def distanceOfPath(path: List[Id[Link]], qSim: QSim): Option[Meters] = {
+    val distances: List[Double] = for {
+      linkId <- path
+      netsimLink <- Try{ qSim.getNetsimNetwork.getNetsimLink(linkId) }.toOption
+    } yield netsimLink.getLink.getLength
+    if (distances.isEmpty) None
+    else Some { Meters(distances.sum) }
+  }
+
+  /**
     * steps through an agent's [[Plan]] to find a [[Leg]] with a matching [[DepartureTime]]
     * @param plan the agent's plan
     * @param departureTime the time that we expect to match a Leg's departure time
@@ -59,6 +74,26 @@ object MATSimRouteOps extends LazyLogging {
         l.isInstanceOf[Leg] && l.asInstanceOf[Leg].getDepartureTime.toInt == departureTime.value
       }
       .map { _.asInstanceOf[Leg] }
+  }
+
+  /**
+    * gets the current leg
+    * @param mobsimAgent the mobsim agent
+    * @return [[Some]] expected [[Leg]], or [[None]]
+    */
+  def getCurrentLegFromPlan(mobsimAgent: MobsimAgent): Option[Leg] = {
+    val idx: Int = WithinDayAgentUtils.getCurrentPlanElementIndex(mobsimAgent)
+    safeGetModifiablePlan(mobsimAgent).flatMap{plan =>
+      plan.getPlanElements.asScala.toList(idx) match {
+        case leg: Leg => Some{ leg }
+        case _: Activity if idx > 0 =>
+          // maybe we just started the next activity, so, let's see if idx - 1 is a leg
+          plan.getPlanElements.asScala.toList(idx - 1) match {
+            case _: Activity => None // nonsense
+            case leg: Leg => Some{ leg }
+          }
+      }
+    }
   }
 
   /**

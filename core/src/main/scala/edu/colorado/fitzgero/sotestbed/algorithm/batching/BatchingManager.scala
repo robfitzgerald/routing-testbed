@@ -52,10 +52,16 @@ final case class BatchingManager(
       case None => (this, List.empty)
       case Some(aBatchTimePossiblySkipped) =>
         if (mostRecentBatchRequested < aBatchTimePossiblySkipped) {
-          // we just passed a batch time or landed on one
-          (this.copy(mostRecentBatchRequested = aBatchTimePossiblySkipped), batchData.values.toList)
+
+          // we just passed a batch time or landed on one. export the batch. clear the batch of requests.
+          val batchingManagerAfterExport: BatchingManager = this.copy(
+            mostRecentBatchRequested = aBatchTimePossiblySkipped,
+            batchData = Map.empty
+          )
+          (batchingManagerAfterExport, batchData.values.toList)
         } else {
-          // haven't hit it yet
+
+          // haven't hit batch request time yet, so, hold on to the batch for now.
           (this, List.empty)
         }
     }
@@ -250,27 +256,6 @@ object BatchingManager {
       .groupBy { _.request.agent }
       .map { case (_, solutionsForAgent: List[Response]) => solutionsForAgent.minBy { _.costEstimate } }
       .toList
-
-  /**
-    * it is invalid to set a batch time for agents unless a complete
-    * batch window exists between now and that time. this function
-    * gives the next valid batch time based on the current time and
-    * the batch window
-    *
-    * @param batchWindow configuration parameter
-    * @param currentTime the current sim time
-    * @return the next valid replanning batch time that can be set
-    */
-  def nextBatchTimeFrom(batchWindow: SimTime, currentTime: SimTime): SimTime = {
-    if (currentTime < SimTime.Zero) {
-      // end of the first batch window will suffice for negative time values
-      // (of which -1 should be the only one)
-      SimTime.Zero
-    } else {
-      // find the SimTime at the end of the next batch
-      ((currentTime / batchWindow) * batchWindow) + batchWindow + SimTime(1)
-    }
-  }
 
   /**
     * gives us the most recently-completed batch window time

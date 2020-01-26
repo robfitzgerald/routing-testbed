@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.matsim.app
 
-import java.io.{File, PrintWriter}
+import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.{Files, Path, Paths}
 
 import cats.implicits._
@@ -30,8 +30,11 @@ object MATSimBatchExperimentApp extends CommandApp(
     val trialsPerConfigOpt: Opts[Int] =
       Opts.option[Int]("trials", short = "t", help = "number of trials per variation").withDefault(1)
 
-    (batchNameOpt, batchConfigOpt, scenarioConfigDirectoryOpt, trialsPerConfigOpt)
-      .mapN { (batchName, batchConfig, scenarioDefaultConfPath, trials) =>
+    val batchSeedOps: Opts[Long] =
+      Opts.option[Long](long = "seed", help = "a seed value to offset how populations are generated ").withDefault(0)
+
+    (batchNameOpt, batchConfigOpt, scenarioConfigDirectoryOpt, trialsPerConfigOpt, batchSeedOps)
+      .mapN { (batchName, batchConfig, scenarioDefaultConfPath, trials, batchSeed) =>
 
       MATSimBatchConfig.readBatchConfig(new File(batchConfig), Paths.get(scenarioDefaultConfPath)) match {
         case Left(e) =>
@@ -75,17 +78,22 @@ object MATSimBatchExperimentApp extends CommandApp(
             }
 
 
-            val batchLoggerFile: File = batchLoggerPath.resolve("batch_log.csv").toFile
-            if (!Files.exists(batchLoggerFile)) {
-              val batchLogger: PrintWriter = new PrintWriter(batchLoggerFile)
+            val batchLoggerFile: Path = batchLoggerPath.resolve("batch_log.csv")
+
+            val batchLogger: PrintWriter = if (!Files.exists(batchLoggerFile)) {
+              val batchLogger: PrintWriter = new PrintWriter(batchLoggerFile.toFile)
               val batchHeader: String = "trial,message\n"
               batchLogger.write(batchHeader)
               println(s"created batch logging file at $batchLoggerFile")
+              batchLogger
+            }else {
+              val APPEND_MODE: Boolean = true
+              new PrintWriter(new FileOutputStream(batchLoggerFile.toFile, APPEND_MODE))
             }
 
-            val batchOverviewFile: File = batchLoggerPath.resolve("result.csv").toFile
+            val batchOverviewFile: Path = batchLoggerPath.resolve("result.csv")
             if (!Files.exists(batchOverviewFile)) {
-              val batchOverview: PrintWriter = new PrintWriter(batchOverviewFile)
+              val batchOverview: PrintWriter = new PrintWriter(batchOverviewFile.toFile)
               val batchOverviewHeader: String = "experimentName,popSize,avgTTSecs,avgDistMeters,avgSpeedMph\n"
               batchOverview.write(batchOverviewHeader)
               batchOverview.close()
@@ -119,7 +127,7 @@ object MATSimBatchExperimentApp extends CommandApp(
                 variationPopFile,
                 popSize,
                 0.2,
-                seed = Some { trial }
+                seed = Some { trial + batchSeed }
               ) match {
                 case Left(e) => println(e)
                 case Right(_) =>
@@ -184,7 +192,7 @@ object MATSimBatchExperimentApp extends CommandApp(
                   variationPopFile,
                   popSize,
                   0.2,
-                  seed = Some { trial }
+                  seed = Some { trial + batchSeed }
                 ) match {
                   case Left(e) => println(e)
                   case Right(_) =>

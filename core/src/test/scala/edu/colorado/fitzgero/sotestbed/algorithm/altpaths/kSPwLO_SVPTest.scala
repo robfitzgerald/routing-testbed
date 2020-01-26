@@ -42,8 +42,9 @@ class kSPwLO_SVPTest extends SoTestBedBaseTest {
               // only 3 possible unique paths
               alts.size should equal(3)
 
-              // 8 different vertices should end up in the SVP vertex list
-              pathsSeen.value should equal (8)
+              // 6 different vertices should end up in the SVP vertex list:
+              // 2a, 2b, 1a, 1b, 3a, and 3b
+              pathsSeen.value should equal (6)
 
               // should have found exactly these 3 paths (no other unique paths exist)
               val altsStrings = {
