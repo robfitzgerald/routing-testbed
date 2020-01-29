@@ -16,6 +16,7 @@ import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
+import edu.colorado.fitzgero.sotestbed.matsim.model.roadnetwork.MATSimCapacitiesOverRoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRUpdateOps}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
@@ -43,9 +44,9 @@ case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataO
       )
 
       val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
-        case MATSimConfig.Algorithm.Selfish =>
+        case selfish @ MATSimConfig.Algorithm.Selfish(_) =>
           // need a no-phase dijkstra's algorithm here?
-          MATSimConfig.Algorithm.Selfish.build()
+          selfish.build()
         case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
           systemOptimal.selectionAlgorithm match {
             case local: LocalMCTSSelection =>
@@ -84,20 +85,20 @@ case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataO
 
       val experimentSyncIO: SyncIO[experiment.ExperimentState] =
         matsimRunConfig.algorithm match {
-          case MATSimConfig.Algorithm.Selfish =>
+          case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction) =>
             // need a no-batching manager version here? or, a dummy for now?
             experiment.run(
               config = matsimRunConfig,
               roadNetwork = network,
               ueRoutingAlgorithm = ueRoutingAlgorithm,
-              soRoutingAlgorithm = MATSimConfig.Algorithm.Selfish.build(),
-              updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta,
-              batchingFunction = MATSimConfig.Algorithm.Selfish.batchingStub,
+              soRoutingAlgorithm = selfish.build(),
+              updateFunction = edgeUpdateFunction.build(),
+              batchingFunction = selfish.batchingStub,
               batchWindow = matsimRunConfig.routing.batchWindow,
               minBatchSize = matsimRunConfig.routing.minBatchSize,
               requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
               doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
-              selfishOnly = MATSimConfig.Algorithm.Selfish.selfishOnly
+              selfishOnly = selfish.selfishOnly
             )
           case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
             experiment.run(
@@ -105,7 +106,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataO
               roadNetwork = network,
               ueRoutingAlgorithm = ueRoutingAlgorithm,
               soRoutingAlgorithm = soRoutingAlgorithm,
-              updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
+              updateFunction = systemOptimal.edgeUpdateFunction.build(), // <- comes from same source that will feed routingAlgorithm above
               batchingFunction = systemOptimal.batchingFunction.build(),
               batchWindow = matsimRunConfig.routing.batchWindow,
               minBatchSize = matsimRunConfig.routing.minBatchSize,

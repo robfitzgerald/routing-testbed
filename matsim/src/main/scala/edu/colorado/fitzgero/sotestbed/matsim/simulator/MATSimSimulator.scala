@@ -114,7 +114,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.minimumRemainingRouteTimeForReplanning = config.routing.reasonableReplanningLeadTime
     self.simulationTailTimeout = config.run.simulationTailTimeout
     self.onlySelfishAgents = config.algorithm match {
-      case MATSimConfig.Algorithm.Selfish => true
+      case _: MATSimConfig.Algorithm.Selfish => true
       case _ => false
     }
 
@@ -243,13 +243,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
               // this is called at the top of every iteration, so we must check to make sure
               // we add exactly one version of each listeners/handler to the qSim
               if (!matsimOverridingModuleAdded) {
-                // grab the QSim once it has been initialized so we can add modules to it
-                //                self.qSim = e.getQueueSimulation.asInstanceOf[QSim]
-
-                // start the playPause functionality
-                //                self.playPauseSimulationControl = new PlayPauseSimulationControl(self.qSim)
-                //                self.playPauseSimulationControl.pause()
-                // track active agents under control
 
                 self.qSim.getEventsManager.addHandler(soAgentReplanningHandler)
                 self.qSim.getEventsManager.addHandler(roadNetworkDeltaHandler)
@@ -554,9 +547,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                 }
                 logger.debug("added overriding router as before simstep handler")
               })
-
-//                self.matsimOverridingModuleAdded = true
-//              }
             }
           })
 
@@ -788,9 +778,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
       logger.debug(s"[assignRoutes] modified agents in MATSim based on route responses")
 
-      // if there's a semaphore, release it
-//      self.access.foreach { _.release() }
-//      self.access = None
+      qSim.getNetsimNetwork.getNetsimLink(Id.create("asdf", classOf[Link])).getLink.getFlowCapacityPerSec
 
       simulator
     }
@@ -850,9 +838,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
       if linkId != null // this happened, no idea why
     } yield (EdgeId(linkId.toString), Flow(count))
     roadNetworkDeltaHandler.clear()
-
-//    val numCounts = if (updatedEdges.isEmpty) 0 else updatedEdges.map { _._2.value }.sum
-//    logger.info(s"[getUpdatedEdges] has ${updatedEdges.length} entries with aggregate (sum) flow effect of $numCounts")
 
     updatedEdges
   }

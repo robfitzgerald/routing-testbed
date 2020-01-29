@@ -178,7 +178,7 @@ object LocalAdjacencyListFlowNetwork {
         } yield {
           (length * lanes) / VehicleSpacer
         }
-      }.flatMap { cap =>
+        }.flatMap { cap =>
         // it is possible that capacity, when scaled, could be less than one..
         // @todo: perhaps this isn't the best, but, we ensure that each link
         //   has a capacity of AT LEAST one.
@@ -261,3 +261,4 @@ object LocalAdjacencyListFlowNetwork {
     }
   }
 }
+

@@ -83,15 +83,18 @@ object MATSimRouteOps extends LazyLogging {
     */
   def getCurrentLegFromPlan(mobsimAgent: MobsimAgent): Option[Leg] = {
     val idx: Int = WithinDayAgentUtils.getCurrentPlanElementIndex(mobsimAgent)
-    safeGetModifiablePlan(mobsimAgent).flatMap{plan =>
-      plan.getPlanElements.asScala.toList(idx) match {
-        case leg: Leg => Some{ leg }
-        case _: Activity if idx > 0 =>
-          // maybe we just started the next activity, so, let's see if idx - 1 is a leg
-          plan.getPlanElements.asScala.toList(idx - 1) match {
-            case _: Activity => None // nonsense
-            case leg: Leg => Some{ leg }
-          }
+    if (idx == -1) None // haven't begun our trip yet!
+    else {
+      safeGetModifiablePlan(mobsimAgent).flatMap{plan =>
+        plan.getPlanElements.asScala.toList(idx) match {
+          case leg: Leg => Some{ leg }
+          case _: Activity if idx > 0 =>
+            // maybe we just started the next activity, so, let's see if idx - 1 is a leg
+            plan.getPlanElements.asScala.toList(idx - 1) match {
+              case _: Activity => None // nonsense
+              case leg: Leg => Some{ leg }
+            }
+        }
       }
     }
   }

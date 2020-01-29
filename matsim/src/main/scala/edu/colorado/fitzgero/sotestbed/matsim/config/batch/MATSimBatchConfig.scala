@@ -109,7 +109,9 @@ object MATSimBatchConfig {
                           ConfigSource.fromConfig(thisVariationConfig).load[MATSimConfig]
                         val thisVariationHint: List[String] =
                           variation
-                            .filter { case (k, _) => !k.contains("algorithm.name") }
+                            .filter { case (k, _) =>
+                              !k.contains("algorithm.name") && !k.contains("scenarioBasePath")
+                            }
                             .map {
                               case (key, value) =>
                                 key.split('.').headOption match {

@@ -1,16 +1,16 @@
 package edu.colorado.fitzgero.sotestbed.config.algorithm
 
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRCostOps}
 
 sealed trait MarginalCostFunctionConfig {
-  def build(): edge.EdgeBPR => Flow => Cost
+  def build(): EdgeBPR => Flow => Cost
 }
 object MarginalCostFunctionConfig {
-  final case class EdgeBPR(
+  final case class EdgeBPRFunction(
     alpha: Double,
     beta: Double
   ) extends MarginalCostFunctionConfig {
-    def build(): edge.EdgeBPR => Flow => Cost = edge.EdgeBPRCostOps.marginalCostFunction(alpha, beta)
+    def build(): EdgeBPR => Flow => Cost = EdgeBPRCostOps.marginalCostFunction(alpha, beta)
   }
 }

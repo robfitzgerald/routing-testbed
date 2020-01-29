@@ -160,7 +160,9 @@ object MATSimConfig {
     def selfishOnly: Boolean
   }
   object Algorithm {
-    final case object Selfish extends Algorithm {
+    final case class Selfish(
+      edgeUpdateFunction: EdgeUpdateFunctionConfig
+    ) extends Algorithm {
       override def name: String = "selfish"
       override def selfishOnly: Boolean = true
 
@@ -188,6 +190,7 @@ object MATSimConfig {
       name: String,
       kspAlgorithm: KSPAlgorithmConfig,
       selectionAlgorithm: SelectionAlgorithmConfig,
+      edgeUpdateFunction: EdgeUpdateFunctionConfig,
       pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
       combineFlowsFunction: CombineFlowsFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,

@@ -24,7 +24,7 @@ class MATSimBatchConfigTest extends SoTestBedBaseTest {
           } {
             List(15L,30L) should contain (conf.routing.batchWindow.value)
             conf.algorithm match {
-              case MATSimConfig.Algorithm.Selfish => fail("wrong algorithm type found")
+              case _: MATSimConfig.Algorithm.Selfish => fail("wrong algorithm type found")
               case so: MATSimConfig.Algorithm.SystemOptimal =>
 
                 so.name should equal ("system optimal")

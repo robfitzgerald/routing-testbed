@@ -47,9 +47,9 @@ object MATSimExperimentApp extends App {
       }
 
     val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
-      case MATSimConfig.Algorithm.Selfish =>
+      case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction) =>
         // need a no-phase dijkstra's algorithm here?
-        MATSimConfig.Algorithm.Selfish.build()
+        selfish.build()
       case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
         systemOptimal.selectionAlgorithm match {
           case local: LocalMCTSSelection =>
@@ -77,15 +77,15 @@ object MATSimExperimentApp extends App {
 
     val experimentSyncIO: SyncIO[experiment.ExperimentState] =
       matsimRunConfig.algorithm match {
-        case MATSimConfig.Algorithm.Selfish =>
+        case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction) =>
           // need a no-batching manager version here? or, a dummy for now?
           experiment.run(
             config = matsimRunConfig,
             roadNetwork = network,
             ueRoutingAlgorithm = ueRoutingAlgorithm,
             soRoutingAlgorithm = soRoutingAlgorithm,
-            updateFunction = EdgeBPRUpdateOps.edgeUpdateWithFlowCountDelta, // <- comes from same source that will feed routingAlgorithm above
-            batchingFunction = MATSimConfig.Algorithm.Selfish.batchingStub,
+            updateFunction = edgeUpdateFunction.build(), // <- comes from same source that will feed routingAlgorithm above
+            batchingFunction = selfish.batchingStub,
             batchWindow = matsimRunConfig.routing.batchWindow,
             minBatchSize = matsimRunConfig.routing.minBatchSize,
             requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
