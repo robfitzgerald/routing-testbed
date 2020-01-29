@@ -8,7 +8,7 @@ import scala.xml.XML
 import cats.effect.SyncIO
 
 import cse.bdlab.fitzgero.sorouting.common.util.XMLParserIgnoresDTD
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, MetersPerSecond, NonNegativeNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}
 
@@ -89,18 +89,38 @@ case class LocalAdjacencyListFlowNetwork[V, E](
   def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (E, Flow) => E): SyncIO[LocalAdjacencyListFlowNetwork[V, E]] =
     SyncIO {
 
-      // update only the edges provided in the flows argument
-      val updatedEdges =
-        flows.foldLeft(edges) {
-          case (acc, (edgeId, flow)) =>
+      val flowsMap: Map[EdgeId, Flow] = flows.toMap
+
+      // update all edges with marginal flows
+      val updatedEdges: Map[EdgeId, RoadNetwork.EdgeTriplet[E]] =
+        this.edges.keys.foldLeft(edges) {
+          case (acc, edgeId) =>
+            val marginalFlow: Flow = flowsMap.get(edgeId) match {
+              case None => Flow.Zero
+              case Some(flow) => flow
+            }
             acc.get(edgeId) match {
               case None => acc
               case Some(edgeTriplet) =>
-                val updatedEdgeTriplet =
-                  edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, flow))
+                val updatedEdgeTriplet: RoadNetwork.EdgeTriplet[E] =
+                  edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, marginalFlow))
                 acc.updated(edgeId, updatedEdgeTriplet)
             }
         }
+
+//      // update only the edges provided in the flows argument
+//      val updatedEdges =
+//
+//        flows.foldLeft(edges) {
+//          case (acc, (edgeId, flow)) =>
+//            acc.get(edgeId) match {
+//              case None => acc
+//              case Some(edgeTriplet) =>
+//                val updatedEdgeTriplet =
+//                  edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, flow))
+//                acc.updated(edgeId, updatedEdgeTriplet)
+//            }
+//        }
 
       this.copy(
         edges = updatedEdges
@@ -134,9 +154,9 @@ object LocalAdjacencyListFlowNetwork {
     * @param networkFile the file location of a network
     * @return either a local adjacency graph representation of a MATSim network, or, reports on failures from parsing
     */
-  final def fromMATSimXML(networkFile: File): Either[String, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
+  final def fromMATSimXML(networkFile: File, batchWindow: SimTime = SimTime(3600)): Either[String, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
     val network: xml.Elem = XML.withSAXParser(XMLParserIgnoresDTD.parser).loadFile(networkFile)
-    fromMATSimXML(network)
+    fromMATSimXML(network, batchWindow)
   }
 
   /**
@@ -144,7 +164,9 @@ object LocalAdjacencyListFlowNetwork {
     * @param network xml tree matching the DTD description of network.xml for MATSim
     * @return either a local adjacency graph representation of a MATSim network, or, reports on failures from parsing
     */
-  final def fromMATSimXML(network: xml.Elem): Either[String, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
+  final def fromMATSimXML(network: xml.Elem, batchWindow: SimTime): Either[String, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
+
+    val capacityBatchTimeScale: Double = batchWindow.value / 3600.0
 
     // add vertices to an empty graph
     val networkFileVertices = network \ "nodes" \ "node"
@@ -168,26 +190,10 @@ object LocalAdjacencyListFlowNetwork {
       val src: VertexId                            = VertexId(linkData("from").toString)
       val dst: VertexId                            = VertexId(linkData("to").toString)
       val freespeedOption: Option[MetersPerSecond] = linkData.get("freespeed").map(fs => MetersPerSecond(toDoubleWithMinimum(fs, DefaultFreeSpeed)))
-      val lanesOption: Option[Double]              = linkData.get("permlanes").map(toDoubleWithMinimum(_, DefaultLanes)) // default of 1 lane
+//      val lanesOption: Option[Double]              = linkData.get("permlanes").map(toDoubleWithMinimum(_, DefaultLanes)) // default of 1 lane
       val lengthOption: Option[Meters]             = linkData.get("length").map(safeDistance(_))
+      val capacityOption: Option[Capacity]         = linkData.get("capacity").map{c => Capacity(toDoubleWithMinimum(c) * capacityBatchTimeScale)}
 
-      val capacityOption: Option[NonNegativeNumber] = {
-        for {
-          lanes  <- lanesOption
-          length <- lengthOption
-        } yield {
-          (length * lanes) / VehicleSpacer
-        }
-        }.flatMap { cap =>
-        // it is possible that capacity, when scaled, could be less than one..
-        // @todo: perhaps this isn't the best, but, we ensure that each link
-        //   has a capacity of AT LEAST one.
-        if (cap.value < 1) {
-          Some { NonNegativeNumber.One }
-        } else {
-          NonNegativeNumber(cap.value.toInt).toOption
-        }
-      }
 
       if (freespeedOption.isEmpty || capacityOption.isEmpty || lengthOption.isEmpty) {
         println(link.toString)

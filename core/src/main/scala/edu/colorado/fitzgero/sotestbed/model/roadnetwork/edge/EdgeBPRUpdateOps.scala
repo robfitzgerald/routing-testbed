@@ -52,17 +52,17 @@ object EdgeBPRUpdateOps {
 
     if (e.flowHistoryLength == flowRateBufferTime.value) {
       // flow history buffer is full, will stay at previous length after operation (drop one off the queue)
-      val nextFlowHistory: Queue[Flow] = e.flowHistory.tail.enqueue(flow)
 
       // remove the oldest data point from a running average
       // new_average = ((average * nbValues) - value) / (nbValues - 1)
       val oldestValue: Flow = e.flowHistory.head
       val avgWithoutOldest: Flow = ((e.flow * Flow(e.flowHistoryLength)) - oldestValue) / Flow(e.flowHistoryLength- 1)
 
-      // update the flow-as-count, which is what is actually enqueued
+      // update the vehicle count, which is what is actually enqueued
       // new_average = average + ((value - average) / nbValues)
       // guard against negative values
       val updatedVehicleCount: Flow = Flow(math.max(e.vehicleCount.value + flow.value, 0))
+      val nextFlowHistory: Queue[Flow] = e.flowHistory.tail.enqueue(updatedVehicleCount)
       val avgWithLatest: Flow = avgWithoutOldest + ((updatedVehicleCount - avgWithoutOldest) / Flow(e.flowHistoryLength))
 
       e.copy(
@@ -73,11 +73,11 @@ object EdgeBPRUpdateOps {
 
     } else if (e.flowHistoryLength < flowRateBufferTime.value) {
       // haven't fully filled up the flow history buffer yet
-      val nextFlowHistory: Queue[Flow] = e.flowHistory.enqueue(flow)
       val nextFlowHistoryLength: Int = e.flowHistoryLength + 1
 
       // update flow-as-count value
       val updatedVehicleCount: Flow = Flow(math.max(e.vehicleCount.value + flow.value, 0))
+      val nextFlowHistory: Queue[Flow] = e.flowHistory.enqueue(updatedVehicleCount)
       val avgWithLatest: Flow = e.flow + ((updatedVehicleCount - e.flow) / Flow(nextFlowHistoryLength))
 
       e.copy(
@@ -89,8 +89,8 @@ object EdgeBPRUpdateOps {
     } else {
       // flowRateBufferTime must have changed to be smaller since last edge update. should be rare or never happen
       // but! if it does, we need to downsize our history and traverse the history to compute the average
-      val nextFlowHistory: Queue[Flow] = e.flowHistory.drop(flowRateBufferTime.value.toInt - 1).enqueue(flow)
       val updatedVehicleCount: Flow = e.vehicleCount + flow
+      val nextFlowHistory: Queue[Flow] = e.flowHistory.drop(flowRateBufferTime.value.toInt - 1).enqueue(updatedVehicleCount)
       val revisedAverage: Flow =
         if (nextFlowHistory.nonEmpty) Flow(nextFlowHistory.reduce(_+_).value / flowRateBufferTime.value)
         else Flow.Zero

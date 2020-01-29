@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge
 
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime}
 import org.scalactic.{Equality, TolerantNumerics}
 
 class EdgeBPRUpdateOpsTest extends SoTestBedBaseTest {
@@ -12,7 +12,7 @@ class EdgeBPRUpdateOpsTest extends SoTestBedBaseTest {
       "called on a range of values" should {
         "produce the correct (running mean) outcome" in {
           val fn: (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithFlowRate(SimTime(5))
-          val edge: EdgeBPR = EdgeBPR(Meters(10), MetersPerSecond(10), NonNegativeNumber.One)
+          val edge: EdgeBPR = EdgeBPR(Meters(10), MetersPerSecond(10), Capacity(1))
           val (f1,f2,f3,f4,f5,f6) = (Flow(1), Flow(1), Flow(-1), Flow(1), Flow(-1), Flow(1))
 
           // sequence 6 updates.
@@ -45,7 +45,7 @@ class EdgeBPRUpdateOpsTest extends SoTestBedBaseTest {
       "with a bunch of zeroes in the mix" should {
         "produce the correct (running mean) outcome" in {
           val fn: (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithFlowRate(SimTime(5))
-          val edge: EdgeBPR = EdgeBPR(Meters(10), MetersPerSecond(10), NonNegativeNumber.One)
+          val edge: EdgeBPR = EdgeBPR(Meters(10), MetersPerSecond(10), Capacity(1))
           val (f1,f2,f3,f4,f5,f6) = (Flow(1), Flow(0), Flow(0), Flow(-1), Flow(0), Flow(0))
 
           // sequence 6 updates.
@@ -81,7 +81,7 @@ class EdgeBPRUpdateOpsTest extends SoTestBedBaseTest {
       "with enough zeroes" should {
         "should trail out to zero flow" in {
           val fn: (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithFlowRate(SimTime(5))
-          val edge: EdgeBPR = EdgeBPR(Meters(10), MetersPerSecond(10), NonNegativeNumber.One)
+          val edge: EdgeBPR = EdgeBPR(Meters(10), MetersPerSecond(10), Capacity(1))
           val (f1,f2,f3,f4,f5,f6,f7) = (Flow(1), Flow(-1), Flow(0), Flow(0), Flow(0), Flow(0), Flow(0))
 
           // sequence 6 updates.

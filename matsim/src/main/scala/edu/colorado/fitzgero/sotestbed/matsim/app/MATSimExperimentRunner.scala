@@ -30,7 +30,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataO
     */
   def run(): Either[io.Serializable, Any] = {
     for {
-      network            <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile)
+      network            <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile, config.routing.batchWindow)
       agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.io.populationFile)
     } yield {
 

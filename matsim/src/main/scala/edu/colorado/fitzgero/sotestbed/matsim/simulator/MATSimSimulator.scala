@@ -748,7 +748,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                   leg.setRoute(route)
                   WithinDayAgentUtils.resetCaches(mobsimAgent)
 
-                  logger.info(s"replanned route for ${response.request.requestClass} agent $agentId")
+                  logger.debug(s"replanned route for ${response.request.requestClass} agent $agentId")
 
                   response.request.requestClass match {
                     case RequestClass.SO(_) =>
@@ -777,8 +777,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
       }
 
       logger.debug(s"[assignRoutes] modified agents in MATSim based on route responses")
-
-      qSim.getNetsimNetwork.getNetsimLink(Id.create("asdf", classOf[Link])).getLink.getFlowCapacityPerSec
 
       simulator
     }

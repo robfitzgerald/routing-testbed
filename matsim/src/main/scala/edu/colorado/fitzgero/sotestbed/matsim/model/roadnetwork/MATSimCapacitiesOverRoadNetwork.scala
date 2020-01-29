@@ -5,7 +5,7 @@ import scala.util.Try
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
-import edu.colorado.fitzgero.sotestbed.model.numeric.NonNegativeNumber
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork.EdgeTriplet
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
@@ -46,18 +46,15 @@ object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
               case None =>
                 (rn, f"failed to find edge ${edgeTriplet.edgeId} in MATSim network" +: errors)
               case Some(link) =>
-                NonNegativeNumber(link.getCapacity.toInt) match {
-                  case Left(e) =>
-                    (rn, e.getMessage +: errors)
-                  case Right(cap) =>
-                    val updatedEdgeBPR: EdgeBPR = edgeBPR.copy(capacity = cap)
-                    val updatedEdgeTriplet: EdgeTriplet[EdgeBPR] = edgeTriplet.copy(attr = updatedEdgeBPR)
-                    val updatedRoadNetwork: LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR] =
-                      rn.copy(
-                        edges = rn.edges.updated(edgeTriplet.edgeId, updatedEdgeTriplet)
-                      )
-                    (updatedRoadNetwork, errors)
-                }
+                // not properly scaling this Capacity value here
+                val cap: Capacity = Capacity(link.getCapacity.toInt)
+                val updatedEdgeBPR: EdgeBPR = edgeBPR.copy(capacity = cap)
+                val updatedEdgeTriplet: EdgeTriplet[EdgeBPR] = edgeTriplet.copy(attr = updatedEdgeBPR)
+                val updatedRoadNetwork: LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR] =
+                  rn.copy(
+                    edges = rn.edges.updated(edgeTriplet.edgeId, updatedEdgeTriplet)
+                  )
+                (updatedRoadNetwork, errors)
 
             }
         }

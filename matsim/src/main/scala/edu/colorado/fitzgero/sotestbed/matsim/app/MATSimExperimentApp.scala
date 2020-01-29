@@ -21,7 +21,7 @@ object MATSimExperimentApp extends App {
 
   val result: Either[io.Serializable, Any] = for {
     fileConfig <- ConfigSource.file("matsim/src/main/resources/matsim-conf/louisville/default-experiment.conf").load[MATSimConfig]
-    network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(fileConfig.io.matsimNetworkFile)
+    network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(fileConfig.io.matsimNetworkFile, fileConfig.routing.batchWindow)
     agentsUnderControl <- PopulationOps.loadAgentsUnderControl(fileConfig.io.populationFile)
   } yield {
 
