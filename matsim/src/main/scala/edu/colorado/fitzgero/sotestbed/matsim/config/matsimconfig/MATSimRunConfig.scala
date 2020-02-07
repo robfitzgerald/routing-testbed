@@ -4,7 +4,7 @@ import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
 final case class MATSimRunConfig(
-  pop: MATSimRunConfig.Population,
+  pop: MATSimRunConfig.PopulationData,
   io: MATSimConfig.IO,
   routing: MATSimConfig.Routing,
   run: MATSimConfig.Run,
@@ -15,14 +15,14 @@ object MATSimRunConfig {
 
   def apply(agentsUnderControl: Set[Id[Person]], config: MATSimConfig): MATSimRunConfig =
     MATSimRunConfig(
-      pop = Population(agentsUnderControl),
+      pop = PopulationData(agentsUnderControl),
       io = config.io,
       routing = config.routing,
       run = config.run,
       algorithm = config.algorithm
     )
 
-  final case class Population(
+  final case class PopulationData(
     agentsUnderControl: Set[Id[Person]],
   )
 }

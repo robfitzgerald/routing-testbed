@@ -7,7 +7,7 @@ import scala.xml.XML
 
 import cats.effect.SyncIO
 
-import cse.bdlab.fitzgero.sorouting.common.util.XMLParserIgnoresDTD
+import edu.colorado.fitzgero.sotestbed.util.XMLParserIgnoresDTD
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}

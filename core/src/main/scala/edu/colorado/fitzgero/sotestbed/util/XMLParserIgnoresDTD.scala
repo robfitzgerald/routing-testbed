@@ -1,4 +1,4 @@
-package cse.bdlab.fitzgero.sorouting.common.util
+package edu.colorado.fitzgero.sotestbed.util
 
 import scala.xml.Elem
 import scala.xml.factory.XMLLoader

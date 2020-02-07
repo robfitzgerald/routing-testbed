@@ -2,17 +2,23 @@ package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig
 
 import java.io.File
 import java.nio.file.{Path, Paths}
+import java.time.LocalTime
 
 import scala.concurrent.duration.Duration
 
 import cats.Monad
 
+import pureconfig._
+import pureconfig.configurable._
+import pureconfig.ConvertHelpers._
+import pureconfig.generic.auto._
+
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.BatchingStrategy
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, Batching, BatchingFunction}
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchingFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.config.algorithm._
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
+import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
@@ -21,6 +27,7 @@ final case class MATSimConfig(
   io: MATSimConfig.IO,
   run: MATSimConfig.Run,
   routing: MATSimConfig.Routing,
+  population: MATSimConfig.Population,
   algorithm: MATSimConfig.Algorithm
 ) {
 
@@ -32,6 +39,8 @@ final case class MATSimConfig(
 }
 
 object MATSimConfig {
+
+  implicit val localDateConvert: ConfigConvert[LocalTime] = localTimeConfigConvert(AgentActivity.MATSimTextTimeFormat)
 
   final case class Run(
     startOfSimTime: SimTime,
@@ -46,6 +55,7 @@ object MATSimConfig {
 
   final case class Routing(
     batchWindow: SimTime,
+    adoptionRate: Double,
     maxPathAssignments: Int,
     reasonableReplanningLeadTime: TravelTimeSeconds,
     minimumReplanningWaitTime: SimTime,
@@ -149,6 +159,12 @@ object MATSimConfig {
     }
   }
 
+  final case class Population(
+    workActivityMinTime: LocalTime,
+    workActivityMaxTime: LocalTime,
+    workDurationHours: Int
+  )
+
   sealed trait Algorithm {
     /**
       * the algorithm name is interpreted from the type of the algorithm (algorithm.type)
@@ -194,7 +210,8 @@ object MATSimConfig {
       pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
       combineFlowsFunction: CombineFlowsFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
-      batchingFunction: BatchingFunctionConfig
+      batchingFunction: BatchingFunctionConfig,
+      useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {
       override def selfishOnly: Boolean = false
     }

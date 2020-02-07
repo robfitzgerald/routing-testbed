@@ -3,6 +3,8 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.{Files, Path, Paths}
 
+import scala.util.Try
+
 import cats.implicits._
 
 import com.monovore.decline._
@@ -123,23 +125,32 @@ object MATSimBatchExperimentApp extends CommandApp(
               Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
               // generate population before starting the experiment
               MATSimPopulationRunner.generateUniformPopulation(
-                matsimConfig.io.matsimNetworkFile,
-                variationPopFile,
-                popSize,
-                0.2,
+                matsimNetworkFile = matsimConfig.io.matsimNetworkFile,
+                popFileDestination = variationPopFile,
+                popSize = popSize,
+                adoptionRate = matsimConfig.routing.adoptionRate,
+                workActivityMinTime = matsimConfig.population.workActivityMinTime,
+                workActivityMaxTime = matsimConfig.population.workActivityMaxTime,
+                workDurationHours = matsimConfig.population.workDurationHours,
                 seed = Some { trial + batchSeed }
               ) match {
                 case Left(e) => println(e)
                 case Right(_) =>
                   val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize)
 
-                  experiment.run() match {
+                  Try{ experiment.run() }.toEither match {
                     case Left(e) =>
-                      println(s"trial $trial exit with experiment run failure")
+                      println(s"trial $trial exit with fatal error")
                       batchLogger.write(s"$trial,${e.toString}\n")
-                    case Right(e) =>
-                      println(s"trial $trial exited normally")
-                      batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                    case Right(result) =>
+                      result match {
+                        case Left(e) =>
+                          println(s"trial $trial exit with handled error")
+                          batchLogger.write(s"$trial,${e.toString}\n")
+                        case Right(_) =>
+                          println(s"trial $trial exited normally")
+                          batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                      }
                   }
               }
             }
@@ -176,35 +187,50 @@ object MATSimBatchExperimentApp extends CommandApp(
                 // population already exists. run experiment
                 val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize)
 
-                experiment.run() match {
+                Try{ experiment.run() }.toEither match {
                   case Left(e) =>
-                    println(s"trial $trial exit with experiment run failure")
+                    println(s"trial $trial exit with fatal error")
                     batchLogger.write(s"$trial,${e.toString}\n")
-                  case Right(_) =>
-                    println(s"trial $trial exited normally")
-                    batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                  case Right(result) =>
+                    result match {
+                      case Left(e) =>
+                        println(s"trial $trial exit with handled error")
+                        batchLogger.write(s"$trial,${e.toString}\n")
+                      case Right(_) =>
+                        println(s"trial $trial exited normally")
+                        batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                    }
                 }
               } else {
 
                 // generate population before starting the experiment
                 MATSimPopulationRunner.generateUniformPopulation(
-                  matsimConfig.io.matsimNetworkFile,
-                  variationPopFile,
-                  popSize,
-                  0.2,
+                  matsimNetworkFile = matsimConfig.io.matsimNetworkFile,
+                  popFileDestination = variationPopFile,
+                  popSize = popSize,
+                  adoptionRate = matsimConfig.routing.adoptionRate,
+                  workActivityMinTime = matsimConfig.population.workActivityMinTime,
+                  workActivityMaxTime = matsimConfig.population.workActivityMaxTime,
+                  workDurationHours = matsimConfig.population.workDurationHours,
                   seed = Some { trial + batchSeed }
                 ) match {
                   case Left(e) => println(e)
                   case Right(_) =>
                     val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize)
 
-                    experiment.run() match {
+                    Try{ experiment.run() }.toEither match {
                       case Left(e) =>
-                        println(s"trial $trial exit with experiment run failure")
+                        println(s"trial $trial exit with fatal error")
                         batchLogger.write(s"$trial,${e.toString}\n")
-                      case Right(e) =>
-                        println(s"trial $trial exited normally")
-                        batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                      case Right(result) =>
+                        result match {
+                          case Left(e) =>
+                            println(s"trial $trial exit with handled error")
+                            batchLogger.write(s"$trial,${e.toString}\n")
+                          case Right(_) =>
+                            println(s"trial $trial exited normally")
+                            batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                        }
                     }
                 }
               }

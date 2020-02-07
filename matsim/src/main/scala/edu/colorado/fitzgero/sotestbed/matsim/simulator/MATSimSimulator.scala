@@ -797,8 +797,12 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         @tailrec
         def _isDone(): Either[IsDoneFailure, SimulatorState] = {
           if (!t.isAlive) {
-            logger.info(s"MATSim Simulation exited normally")
-            Right(SimulatorState.Finished)
+            matsimState match {
+              case SimulatorState.Error(msg) => Left(IsDoneFailure.FinishingError(msg))
+              case SimulatorState.Finishing =>
+                logger.info(s"MATSim Simulation exited normally")
+                Right(SimulatorState.Finished)
+            }
           } else if (System.currentTimeMillis > timeoutStop) {
             Left(IsDoneFailure.TimeoutFailure(s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
           } else {

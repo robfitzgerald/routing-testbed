@@ -10,7 +10,7 @@ import scala.util.matching.Regex
 import cats.effect.SyncIO
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
@@ -51,12 +51,13 @@ case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataO
           systemOptimal.selectionAlgorithm match {
             case local: LocalMCTSSelection =>
               // special effect handling for MCTS library
-              new TwoPhaseLocalMCTSRoutingAlgorithm[Coordinate, EdgeBPR](
+              new TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm[Coordinate](
                 altPathsAlgorithm = systemOptimal.kspAlgorithm.build(),
                 selectionAlgorithm = local.build(),
                 pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
                 combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
-                marginalCostFunction = systemOptimal.marginalCostFunction.build()
+                marginalCostFunction = systemOptimal.marginalCostFunction.build(),
+                useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch
               )
             case rand: RandomSamplingSelection =>
               // other libraries play well

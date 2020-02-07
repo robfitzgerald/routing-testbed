@@ -17,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
   */
 class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
   k: Int,
-  theta: Cost = Cost(1.0), // @TODO: percentage numeric type, or, numeric library brah
+  theta: Cost = Cost(1.0),
   val terminationFunction: KSPAlgorithm.AltPathsState => Boolean,
   minBatchSize: Int = 2,
   retainSrcDstEdgesInPaths: Boolean = false

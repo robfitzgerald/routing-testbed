@@ -11,6 +11,7 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
 import pureconfig._
 import pureconfig.error.{ConfigReaderFailures, ThrowableFailure}
 import pureconfig.generic.auto._
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.localDateConvert
 
 object MATSimBatchConfig {
   // provides the ability to generate MATSimConfigs from a range of parameter values

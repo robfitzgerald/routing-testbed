@@ -5,7 +5,7 @@ import java.io.File
 import scala.util.Try
 import scala.xml.XML
 
-import cse.bdlab.fitzgero.sorouting.common.util.XMLParserIgnoresDTD
+import edu.colorado.fitzgero.sotestbed.util.XMLParserIgnoresDTD
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
