@@ -5,9 +5,11 @@ import java.nio.file.{Files, Path, Paths}
 
 import scala.util.Try
 
+import cats.data.Writer
 import cats.implicits._
 
 import com.monovore.decline._
+import com.typesafe.config.{Config, ConfigFactory}
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
 import pureconfig.ConfigSource
@@ -47,7 +49,7 @@ object MATSimBatchExperimentApp extends CommandApp(
         case Right(confs) =>
 
           // write any batch config generation errors to the console; count confs that are ok
-          val goodConfsCount: Int = confs.count { case MATSimBatchConfig.Variation(conf, _, _) =>
+          val goodConfsCount: Int = confs.count { case MATSimBatchConfig.Variation(_, conf, _, _) =>
             conf match {
               case Left(e) =>
                 println(e.prettyPrint())
@@ -66,9 +68,9 @@ object MATSimBatchExperimentApp extends CommandApp(
             val batchLoggerPath: Path =
               confs
                 .headOption.map{_.configReaderResult.map{ firstConf =>
-                // screwy way to inject the batch name here, so we can construct the correct batchLoggingDirectory
-                firstConf.copy(io=firstConf.io.copy(batchName = batchName)).io.batchLoggingDirectory
-              }
+                  // screwy way to inject the batch name here, so we can construct the correct batchLoggingDirectory
+                  firstConf.copy(io=firstConf.io.copy(batchName = batchName)).io.batchLoggingDirectory
+                }
                 .getOrElse(Paths.get("/tmp"))}
                 .getOrElse(Paths.get("/tmp"))
 
@@ -106,7 +108,7 @@ object MATSimBatchExperimentApp extends CommandApp(
             // let's get the selfish experiments done first //
             //////////////////////////////////////////////////
             for {
-              MATSimBatchConfig.Variation(confReaderResult, variationHint, popSize) <- confs
+              MATSimBatchConfig.Variation(config, confReaderResult, variationHint, popSize) <- confs
               conf <- confReaderResult
               confWithBatchName = conf.copy(io=conf.io.copy(batchName = batchName))
               trial <- 0 until trials
@@ -123,6 +125,7 @@ object MATSimBatchExperimentApp extends CommandApp(
                 !Files.isDirectory(matsimConfig.io.experimentDirectory) // don't overwrite if already exists
             } {
               Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
+
               // generate population before starting the experiment
               MATSimPopulationRunner.generateUniformPopulation(
                 matsimNetworkFile = matsimConfig.io.matsimNetworkFile,
@@ -159,7 +162,7 @@ object MATSimBatchExperimentApp extends CommandApp(
             // ok let's run each so experiment now //
             /////////////////////////////////////////
             for {
-              (MATSimBatchConfig.Variation(confReaderResult, variationHint, popSize), experimentNumber) <- confs.zipWithIndex
+              (MATSimBatchConfig.Variation(config, confReaderResult, variationHint, popSize), experimentNumber) <- confs.zipWithIndex
               conf <- confReaderResult
               confWithBatchName = conf.copy(io=conf.io.copy(batchName = batchName))
               trial <- 0 until trials
@@ -175,6 +178,10 @@ object MATSimBatchExperimentApp extends CommandApp(
             } {
 
               Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
+
+              // todo: save the config to a file. posted to stacko:
+              //  https://stackoverflow.com/questions/60119481/standardized-method-for-writing-an-arbitrary-typesafe-config-to-a-hocon-file
+
               val variationOutput: String = variationHint.mkString("\n")
               val variationOutputFile: File = matsimConfig.io.experimentLoggingDirectory.resolve("variation.txt").toFile
               val variationPrintWriter: PrintWriter = new PrintWriter(variationOutputFile.toString)

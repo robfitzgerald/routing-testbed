@@ -31,6 +31,7 @@ object MATSimBatchConfig {
   }
 
   final case class Variation(
+    config: Config,
     configReaderResult: ConfigReader.Result[MATSimConfig],
     variationHint: List[String],
     populationSize: Int
@@ -76,7 +77,7 @@ object MATSimBatchConfig {
             case None =>
               val error: ConfigReaderFailures =
                 ConfigReaderFailures(ThrowableFailure(new IOError(new Throwable("cannot find algorithm.name in batch file")), None))
-              Variation(Left(error), List.empty, 0)
+              Variation(batchConfParsed, Left(error), List.empty, 0)
 
             case Some(algorithmName) =>
               val defaultConfigFile: Path = scenarioConfigFilePath.resolve(s"$algorithmName.conf".trim)
@@ -85,12 +86,12 @@ object MATSimBatchConfig {
                 val error: ConfigReaderFailures = ConfigReaderFailures(
                   ThrowableFailure(new IOError(new Throwable(s"config file for algorithm variation does not exist: $defaultConfigFile")), None)
                 )
-                Variation(Left(error), List.empty, 0)
+                Variation(batchConfParsed, Left(error), List.empty, 0)
               } else {
 
                 // build the default config
                 ConfigSource.file(defaultConfigFile).config() match {
-                  case Left(error) => Variation(Left(error), List.empty, 0)
+                  case Left(error) => Variation(batchConfParsed, Left(error), List.empty, 0)
                   case Right(defaultConfigParsed) =>
 
 
@@ -103,7 +104,7 @@ object MATSimBatchConfig {
                     } match {
                       case util.Failure(error) =>
                         val configReaderFailure: ConfigReaderFailures = ConfigReaderFailures(ThrowableFailure(new IOError(error), None))
-                        Variation(Left(configReaderFailure), List.empty, 0)
+                        Variation(thisVariationConfig, Left(configReaderFailure), List.empty, 0)
                       case util.Success(popSize) =>
 
                         val thisVariationMATSimConfig: ConfigReader.Result[MATSimConfig] =
@@ -121,7 +122,7 @@ object MATSimBatchConfig {
                                 }
                             }
 
-                        Variation(thisVariationMATSimConfig, thisVariationHint, popSize)
+                        Variation(thisVariationConfig, thisVariationMATSimConfig, thisVariationHint, popSize)
                     }
 
                 }
