@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 import cats.effect.SyncIO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
@@ -35,6 +36,7 @@ class TwoPhaseLocalMCTSRoutingAlgorithm[V, E](
 ) extends RoutingAlgorithm[SyncIO, V, E] {
 
   final override def route(reqs: List[Request],
+                           activeAgentHistory: ActiveAgentHistory,
                            roadNetwork: RoadNetwork[SyncIO, V, E]): SyncIO[RoutingAlgorithm.Result] = {
 
     val startTime: RunTime      = RunTime(System.currentTimeMillis)
@@ -47,14 +49,13 @@ class TwoPhaseLocalMCTSRoutingAlgorithm[V, E](
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         kspRuntime = RunTime(System.currentTimeMillis) - startTime
       } yield {
-        val selectionResult: SelectionAlgorithm.Result = selectionAlgorithm.selectRoutes(altsResult.alternatives,
-          roadNetwork,
-          pathToMarginalFlowsFunction,
-          combineFlowsFunction,
-          marginalCostFunction).unsafeRunSync()
+        val selectionResult: SelectionAlgorithm.Result = selectionAlgorithm
+          .selectRoutes(altsResult.alternatives, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
+          .unsafeRunSync()
         val selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
         RoutingAlgorithm.Result(
           altsResult.alternatives,
+          Map.empty, // update w/ ksp filter
           selectionResult.selectedRoutes,
           kspRuntime,
           selectionRuntime

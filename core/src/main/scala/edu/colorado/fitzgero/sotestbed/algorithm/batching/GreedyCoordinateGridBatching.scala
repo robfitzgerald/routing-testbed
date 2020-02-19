@@ -148,7 +148,7 @@ object GreedyCoordinateGridBatching {
       def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
         for {
           src <- BatchingOps.findCoordinateInFuture(
-            routeRequestData.currentEdgeRoute,
+            routeRequestData.remainingRoute,
             currentTime,
             batchPathTimeDelay
           )
@@ -161,7 +161,7 @@ object GreedyCoordinateGridBatching {
 
       def tag(grid: CoordinateGrid): Option[String] =
         for {
-          dst <- routeRequestData.currentEdgeRoute.lastOption.map { _.linkSourceCoordinate }
+          dst <- routeRequestData.remainingRoute.lastOption.map { _.linkSourceCoordinate }
         } yield {
           val destinationTag: String = grid.getGridId(dst.x, dst.y)
           destinationTag
@@ -172,11 +172,11 @@ object GreedyCoordinateGridBatching {
       def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
         for {
           src <- BatchingOps.findCoordinateInFuture(
-            routeRequestData.currentEdgeRoute,
+            routeRequestData.remainingRoute,
             currentTime,
             batchPathTimeDelay
           )
-          dst <- routeRequestData.currentEdgeRoute.lastOption.map { _.linkSourceCoordinate }
+          dst <- routeRequestData.remainingRoute.lastOption.map { _.linkSourceCoordinate }
         } yield {
           val originTag: String      = grid.getGridId(src.x, src.y)
           val destinationTag: String = grid.getGridId(dst.x, dst.y)

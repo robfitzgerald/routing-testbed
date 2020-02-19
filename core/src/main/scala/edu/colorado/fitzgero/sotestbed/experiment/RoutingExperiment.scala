@@ -6,7 +6,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{AgentBatchData, BatchingFunction, BatchingManager}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, AgentBatchData, BatchingFunction, BatchingManager}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
@@ -54,9 +54,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends SimulatorOps[F] with
             (b2, batchRequests)    = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
             routeRequestsOpt      <- batchingFunction.updateBatchingStrategy(r1, batchRequests, currentSimTime)
             routeRequests          = routeRequestsOpt.getOrElse(List.empty)
-//            b2                   = b1.applyBatchingFunctionInstructions(batchStratUpdate, currentSimTime)
-//            (b3, batches)        = b2.getBatchesForTime(currentSimTime)
-            soResults             <- routeRequests.traverse { batch => soRoutingAlgorithm.route(batch, r1) }
+            soResults             <- routeRequests.traverse { batch => soRoutingAlgorithm.route(batch, b2.storedHistory, r1) }
             resolvedResults        = BatchingManager.resolveRoutingResultBatches(ueResults +: soResults)
             e2                    <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
             _                      = updateReports(soResults, currentSimTime) // unit is ok here, no modifications to application state
@@ -103,7 +101,7 @@ object RoutingExperiment {
       }
       case _ => None
     }
-    ueRoutingAlgorithm.map{_.route(ueRouteRequests, roadNetwork)} match {
+    ueRoutingAlgorithm.map{_.route(ueRouteRequests, ActiveAgentHistory.NoHistory, roadNetwork)} match {
       case None => Monad[F].pure{RoutingAlgorithm.Result()}
       case Some(result) => result
     }

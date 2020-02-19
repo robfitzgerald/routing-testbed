@@ -4,6 +4,7 @@ import cats.Monad
 import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
@@ -21,6 +22,7 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
 ) extends RoutingAlgorithm[F, V, E] {
 
   final override def route(reqs: List[Request],
+                           activeAgentHistory: ActiveAgentHistory,
                            roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] = {
 
     val startTime: RunTime      = RunTime(System.currentTimeMillis)
@@ -33,14 +35,15 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         kspRuntime = RunTime(System.currentTimeMillis) - startTime
         selectionResult <- selectionAlgorithm.selectRoutes(altsResult.alternatives,
-          roadNetwork,
-          pathToMarginalFlowsFunction,
-          combineFlowsFunction,
-          marginalCostFunction)
+                                                           roadNetwork,
+                                                           pathToMarginalFlowsFunction,
+                                                           combineFlowsFunction,
+                                                           marginalCostFunction)
         selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
       } yield {
         RoutingAlgorithm.Result(
           altsResult.alternatives,
+          Map.empty, // update w/ ksp filter
           selectionResult.selectedRoutes,
           kspRuntime,
           selectionRuntime

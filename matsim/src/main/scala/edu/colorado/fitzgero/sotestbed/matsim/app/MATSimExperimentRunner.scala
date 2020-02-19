@@ -10,7 +10,7 @@ import scala.util.matching.Regex
 import cats.effect.SyncIO
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm, TwoPhaseLocalMCTSRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm, TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
@@ -21,7 +21,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRU
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
-case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataOption: Option[MATSimConfig.IO.ScenarioData] = None) extends LazyLogging {
+case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, seed: Long, trialDataOption: Option[MATSimConfig.IO.ScenarioData] = None) extends LazyLogging {
 
   /**
     * performs a synchronous run of a MATSim simulation from a MATSimConfig
@@ -51,13 +51,15 @@ case class MATSimExperimentRunner(config: MATSimConfig, popSize: Int, trialDataO
           systemOptimal.selectionAlgorithm match {
             case local: LocalMCTSSelection =>
               // special effect handling for MCTS library
-              new TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm[Coordinate](
+              new TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[Coordinate](
                 altPathsAlgorithm = systemOptimal.kspAlgorithm.build(),
                 selectionAlgorithm = local.build(),
                 pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
                 combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
                 marginalCostFunction = systemOptimal.marginalCostFunction.build(),
-                useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch
+                useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch,
+                kspFilterFunction = systemOptimal.kspFilterFunction.build(),
+                seed = seed
               )
             case rand: RandomSamplingSelection =>
               // other libraries play well

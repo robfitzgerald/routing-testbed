@@ -4,6 +4,7 @@ import cats.effect.SyncIO
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.search.DijkstraSearch
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionCost
@@ -17,7 +18,15 @@ case class SelfishSyncRoutingBPR[V](
   pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[SyncIO, V, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
 ) extends RoutingAlgorithm[SyncIO, V, EdgeBPR] with LazyLogging {
-  def route(requests: List[Request], roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
+
+  /**
+    * runs a selfish routing search using the current network state
+    * @param requests requests to process
+    * @param activeAgentHistory ignored
+    * @param roadNetwork current road network state
+    * @return solution
+    */
+  def route(requests: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
 
     val costFlowsFunction: EdgeBPR => Cost = (edge: EdgeBPR) => marginalCostFunction(edge)(edge.flow)
     val dijkstraSearch: (EdgeId, EdgeId, TraverseDirection) => SyncIO[Option[Path]] =
@@ -64,7 +73,7 @@ case class SelfishSyncRoutingBPR[V](
       }.toMap
 
       RoutingAlgorithm.Result(
-        alternatives = alternatives,
+        kspResult = alternatives,
         responses = successfulRouteResponses,
         kspRuntime = RunTime.Zero,
         selectionRuntime = RunTime.Zero

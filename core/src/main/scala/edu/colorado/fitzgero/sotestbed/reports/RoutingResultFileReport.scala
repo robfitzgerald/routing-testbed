@@ -16,14 +16,14 @@ class RoutingResultFileReport(routingResultFile: File) extends RoutingReports {
       routingResult <- routingResults
     } {
       val avgAltsPerAgent: Double =
-        if (routingResult.alternatives.isEmpty) 0
-        else routingResult.alternatives.map{_._2.length}.sum.toDouble / routingResult.alternatives.size
+        if (routingResult.kspResult.isEmpty) 0
+        else routingResult.kspResult.map{_._2.length}.sum.toDouble / routingResult.kspResult.size
       val output = List(
         currentSimTime.value.toString,
         currentSimTime.toString,
         f"${routingResult.kspRuntime.value}%.2f",
         f"${routingResult.selectionRuntime.value}%.2f",
-        routingResult.alternatives.keys.size.toString,
+        routingResult.kspResult.keys.size.toString,
         routingResult.responses.length,
         f"$avgAltsPerAgent%.2f"
       )

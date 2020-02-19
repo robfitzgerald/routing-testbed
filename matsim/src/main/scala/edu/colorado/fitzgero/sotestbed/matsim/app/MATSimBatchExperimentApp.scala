@@ -139,7 +139,7 @@ object MATSimBatchExperimentApp extends CommandApp(
               ) match {
                 case Left(e) => println(e)
                 case Right(_) =>
-                  val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize)
+                  val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize, trial + batchSeed)
 
                   Try{ experiment.run() }.toEither match {
                     case Left(e) =>
@@ -166,6 +166,7 @@ object MATSimBatchExperimentApp extends CommandApp(
               conf <- confReaderResult
               confWithBatchName = conf.copy(io=conf.io.copy(batchName = batchName))
               trial <- 0 until trials
+              seed = trial + batchSeed
               scenarioData = MATSimConfig.IO.ScenarioData(
                 algorithm = confWithBatchName.algorithm.name,
                 variation = MATSimBatchConfig.createVariationName(variationHint),
@@ -192,7 +193,7 @@ object MATSimBatchExperimentApp extends CommandApp(
               if (variationPopFile.isFile) {
 
                 // population already exists. run experiment
-                val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize)
+                val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize, seed)
 
                 Try{ experiment.run() }.toEither match {
                   case Left(e) =>
@@ -219,11 +220,11 @@ object MATSimBatchExperimentApp extends CommandApp(
                   workActivityMinTime = matsimConfig.population.workActivityMinTime,
                   workActivityMaxTime = matsimConfig.population.workActivityMaxTime,
                   workDurationHours = matsimConfig.population.workDurationHours,
-                  seed = Some { trial + batchSeed }
+                  seed = Some { seed }
                 ) match {
                   case Left(e) => println(e)
                   case Right(_) =>
-                    val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize)
+                    val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize, seed)
 
                     Try{ experiment.run() }.toEither match {
                       case Left(e) =>

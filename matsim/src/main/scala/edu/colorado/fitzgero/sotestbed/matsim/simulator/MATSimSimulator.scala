@@ -17,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, Response, TravelMode}
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps
 import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps.SimulatorState
@@ -71,8 +71,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var observedHitMidnight: Boolean              = false
   var routingRequestsUpdatedToTimeStep: SimTime = SimTime.Zero
   var soReplanningThisIteration: Boolean        = false
-  var reachedDestination: Int                     = 0
-  var selfishAgentRoutesAssigned: Int = 0
+  var reachedDestination: Int                   = 0
+  var selfishAgentRoutesAssigned: Int           = 0
 
   // simulation state containers and handlers
   var roadNetworkDeltaHandler: RoadNetworkDeltaHandler                                          = _
@@ -83,8 +83,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var newSORouteRequests: Option[RouteRequests]                                                 = None
   var newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]                         = collection.mutable.ListBuffer.empty
   var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData]            = collection.mutable.ListBuffer.empty
-  var runStatsPrintWriter: PrintWriter                                                                           = _
-  var agentExperiencePrintWriter: PrintWriter = _
+  var runStatsPrintWriter: PrintWriter                                                          = _
+  var agentExperiencePrintWriter: PrintWriter                                                   = _
 
   // matsim variables
   var controler: Controler                                   = _
@@ -115,7 +115,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.simulationTailTimeout = config.run.simulationTailTimeout
     self.onlySelfishAgents = config.algorithm match {
       case _: MATSimConfig.Algorithm.Selfish => true
-      case _ => false
+      case _                                 => false
     }
 
     // MATSimProxy Selfish Routing Mode
@@ -255,7 +255,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                   Try {
 
                     if (self.useExternalRoutingEngineForSelfishAgents &&
-                      !soAgentReplanningHandler.isUnderControl(event.getPersonId)) {
+                        !soAgentReplanningHandler.isUnderControl(event.getPersonId)) {
                       // this is a UE agent who needs selfish routing. we will
                       // mark them to have dijkstra routing when they enter their
                       // first path edge
@@ -304,13 +304,16 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       // request a Dijkstra's shortest path for this agent
 
                       for {
-                        personId      <- self.markForUEPathOverwrite.get(event.getVehicleId)
-                        mobsimAgent   <- self.qSim.getAgents.asScala.get(personId)
-                        currentLinkId  = mobsimAgent.getCurrentLinkId
-                        leg           <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
-                        fullRoute      = MATSimRouteOps.convertToCompleteRoute(leg)
-                        originLinkId  <- fullRoute.dropWhile(_ != currentLinkId).tail.headOption // confirms MATSim currentLinkId is correct
-                        endLinkId      = leg.getRoute.getEndLinkId
+                        personId    <- self.markForUEPathOverwrite.get(event.getVehicleId)
+                        mobsimAgent <- self.qSim.getAgents.asScala.get(personId)
+                        currentLinkId = mobsimAgent.getCurrentLinkId
+                        leg <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
+                        fullRoute        = MATSimRouteOps.convertToCompleteRoute(leg)
+                        experiencedRoute = fullRoute.takeWhile(_ != currentLinkId)
+                        remaingingRoute  = fullRoute.dropWhile(_ != currentLinkId)
+                        remainingDistance <- MATSimRouteOps.distanceOfPath(remaingingRoute, qSim)
+                        originLinkId      <- fullRoute.dropWhile(_ != currentLinkId).tail.headOption // confirms MATSim currentLinkId is correct
+                        endLinkId = leg.getRoute.getEndLinkId
                       } {
 
                         // construct an AgentBatchData payload to request selfish routing
@@ -318,12 +321,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                         // if there is no link after the current link, then originLinkId fails fast
 
                         MATSimRouteOps.selectRequestOriginLink(fullRoute,
-                          originLinkId,
-                          endLinkId,
-                          self.qSim,
-                          reasonableReplanningLeadTime,
-                          minimumRemainingRouteTimeForReplanning
-                        ) match {
+                                                               originLinkId,
+                                                               endLinkId,
+                                                               self.qSim,
+                                                               reasonableReplanningLeadTime,
+                                                               minimumRemainingRouteTimeForReplanning) match {
                           case None => ()
                           case Some(reasonableStartEdgeId) =>
                             val thisRequest: Request =
@@ -334,8 +336,10 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                 requestClass = RequestClass.UE,
                                 travelMode = TravelMode.Car
                               )
-                            val routeFromCurrentLink: List[RouteRequestData.EdgeData] = MATSimRouteOps.convertToRoutingPath(fullRoute, qSim)
-                            val currentSimTime: SimTime                             = SimTime(self.playPauseSimulationControl.getLocalTime)
+                            val edgeDataExperiencedRoute: List[RouteRequestData.EdgeData] =
+                              MATSimRouteOps.convertToRoutingPath(experiencedRoute, qSim)
+                            val edgeDataRemainingRoute: List[RouteRequestData.EdgeData] = MATSimRouteOps.convertToRoutingPath(remaingingRoute, qSim)
+                            val currentSimTime: SimTime                                 = SimTime(self.playPauseSimulationControl.getLocalTime)
 
                             logger.debug(s"ue agent $personId's matsim-set route: ${fullRoute.mkString("->")}")
 
@@ -343,7 +347,9 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                               RouteRequestData(
                                 request = thisRequest,
                                 timeOfRequest = currentSimTime,
-                                currentEdgeRoute = routeFromCurrentLink,
+                                experiencedRoute = edgeDataExperiencedRoute,
+                                remainingRoute = edgeDataRemainingRoute,
+                                remainingRouteDistance = remainingDistance,
                                 lastReplanningTime = None
                               )
 
@@ -398,9 +404,9 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                     val agentId: Id[Person] = event.getPersonId
 
                     for {
-                      mobsimAgent   <- self.qSim.getAgents.asScala.get(agentId)
-                      leg <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
-                      departureTime = leg.getDepartureTime.toInt
+                      mobsimAgent <- self.qSim.getAgents.asScala.get(agentId)
+                      leg         <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
+                      departureTime         = leg.getDepartureTime.toInt
                       agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                       distance <- MATSimRouteOps.distanceOfPath(agentExperiencedRoute, qSim)
                     } {
@@ -417,8 +423,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
                       // considerations only for SO agents under control
                       if (!self.onlySelfishAgents &&
-                        soReplanningThisIteration &&
-                        soAgentReplanningHandler.isUnderControl(agentId)) {
+                          soReplanningThisIteration &&
+                          soAgentReplanningHandler.isUnderControl(agentId)) {
 
                         // queue up a message to remove this agent from the batching manager
                         self.agentLeftSimulationRequests += SOAgentArrivalData(agentId.toString)
@@ -505,11 +511,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                         val destinationLinkId = leg.getRoute.getEndLinkId
                                         val destinationEdgeId = EdgeId(destinationLinkId.toString)
                                         MATSimRouteOps.selectRequestOriginLink(fullRoute,
-                                          currentLinkId,
-                                          destinationLinkId,
-                                          self.qSim,
-                                          reasonableReplanningLeadTime,
-                                          minimumRemainingRouteTimeForReplanning) match {
+                                                                               currentLinkId,
+                                                                               destinationLinkId,
+                                                                               self.qSim,
+                                                                               reasonableReplanningLeadTime,
+                                                                               minimumRemainingRouteTimeForReplanning) match {
                                           case None =>
                                             val remainingTT = MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
 
@@ -528,21 +534,27 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                                 RequestClass.SO(),
                                                 TravelMode.Car
                                               )
+                                            val experiencedLinkIds: List[Id[Link]] = fullRoute.takeWhile(_ != currentLinkId)
+                                            val experiencedEdgeData: List[RouteRequestData.EdgeData] =
+                                              MATSimRouteOps.convertToRoutingPath(experiencedLinkIds, qSim)
+                                            val remainingLinkIds: List[Id[Link]] = fullRoute.dropWhile(_ != currentLinkId)
+                                            val remainingEdgeData: List[RouteRequestData.EdgeData] =
+                                              MATSimRouteOps.convertToRoutingPath(remainingLinkIds, qSim)
 
-                                            val routeFromCurrentLink: List[RouteRequestData.EdgeData] =
-                                              MATSimRouteOps
-                                                .convertToRoutingPath(fullRoute, qSim)
-                                                .dropWhile { _.edgeId != EdgeId(currentLinkId.toString) }
+                                            val remainingDistance: Meters =
+                                              MATSimRouteOps.distanceOfPath(remainingLinkIds, qSim).getOrElse(Meters.Zero)
 
                                             val lastReplanningTime: Option[SimTime] =
                                               soAgentReplanningHandler.getMostRecentTimePlannedForAgent(agentId)
 
                                             val thisAgentBatchingData: AgentBatchData =
                                               RouteRequestData(
-                                                thisRequest,
-                                                currentSimTime,
-                                                routeFromCurrentLink,
-                                                lastReplanningTime
+                                                request = thisRequest,
+                                                timeOfRequest = currentSimTime,
+                                                experiencedRoute = experiencedEdgeData,
+                                                remainingRoute = remainingEdgeData,
+                                                remainingRouteDistance = remainingDistance,
+                                                lastReplanningTime = lastReplanningTime
                                               )
 
                                             logger.debug(
@@ -631,7 +643,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         simulator
 
       case SimulatorState.Running =>
-
         // crank matsim
 
         val iterationBeforeCrank: Int = observedMATSimIteration
@@ -750,7 +761,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         routingResultPath = MATSimRouteOps.convertToMATSimPath(response.path)
         mobsimAgent <- agentsInSimulation.get(Id.createPersonId(response.request.agent))
         mobsimAgentCurrentRouteLinkIdIndex = WithinDayAgentUtils.getCurrentRouteLinkIdIndex(mobsimAgent)
-        leg         <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
+        leg <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
         if MATSimRouteOps.confirmPathIsValid(routingResultPath, self.qSim) // todo: report invalid paths
       } {
 
@@ -768,16 +779,15 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
             logger.warn(s"[assignRoutes] failed - ${response.request.requestClass} agent ${agentId.toString}'s new route not applied due to: $reason")
 
           case Right(updatedRoute) =>
-
             // test that the updatedRoute has the currentLinkId at the currentLinkIndex
             // otherwise it would cause this agent to have a bad turn logic error.
             Try { updatedRoute(mobsimAgentCurrentRouteLinkIdIndex) }.toEither match {
               case Left(e) =>
                 logger.warn(s"[assignRoutes] tried to check that currentLinkIndex contains currentLink in updatedRoute but failed: $e")
               case Right(updatedRouteLinkAtCurrentLinkIndex) =>
-
                 if (updatedRouteLinkAtCurrentLinkIndex != currentLinkId) {
-                  logger.warn(s"[assignRoutes] composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId")
+                  logger.warn(
+                    s"[assignRoutes] composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId")
 
                 } else {
                   logger.debug(s"[assignRoutes] updating route for ${response.request.requestClass} agent ${agentId.toString}")
@@ -792,7 +802,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
                   response.request.requestClass match {
                     case RequestClass.SO(_) =>
-
                       // continue to record the experienced agent route associated with this departure time
                       completePathStore.get(agentId) match {
                         case None =>
@@ -809,7 +818,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           logger.debug(s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime")
                       }
                     case RequestClass.UE =>
-                      // noop
+                    // noop
                   }
                 }
             }
@@ -843,7 +852,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                 logger.info(s"MATSim Simulation exited normally")
                 Right(SimulatorState.Finished)
               case other =>
-                Left(IsDoneFailure.FinishingError(s"while finishing up simulation, MATSimSimulator went from a ${SimulatorState.Finishing} state to a $other state instead of ${SimulatorState.Finished}"))
+                Left(IsDoneFailure.FinishingError(
+                  s"while finishing up simulation, MATSimSimulator went from a ${SimulatorState.Finishing} state to a $other state instead of ${SimulatorState.Finished}"))
             }
           } else if (System.currentTimeMillis > timeoutStop) {
             Left(IsDoneFailure.TimeoutFailure(s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
@@ -907,7 +917,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
           logger.debug(s"[getActiveRequests] returning empty list (no requests)")
           ueRequests ++ agentsLeftSimulationRequests
         case Some(rr) =>
-          logger.debug(s"[getActiveRequests] sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests")
+          logger.debug(
+            s"[getActiveRequests] sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests")
           val outgoingRequests: List[AgentBatchData] = rr.requests ++ ueRequests ++ agentsLeftSimulationRequests
           self.newSORouteRequests = None
           outgoingRequests

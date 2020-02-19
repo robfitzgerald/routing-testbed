@@ -12,9 +12,8 @@ import pureconfig._
 import pureconfig.configurable._
 import pureconfig.ConvertHelpers._
 import pureconfig.generic.auto._
-
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchingFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, BatchingFunction}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.config.algorithm._
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
@@ -183,7 +182,7 @@ object MATSimConfig {
       override def selfishOnly: Boolean = true
 
       def build[F[_]: Monad, V, E](): RoutingAlgorithm[F, V, E] = new RoutingAlgorithm[F, V, E] {
-        def route(requests: List[Request], roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] =
+        def route(requests: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] =
           throw new IllegalStateException("algorithm.type is selfish, so we shouldn't be doing any routing.")
       }
       def batchingStub: BatchingFunction = new BatchingFunction {
@@ -211,6 +210,7 @@ object MATSimConfig {
       combineFlowsFunction: CombineFlowsFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
       batchingFunction: BatchingFunctionConfig,
+      kspFilterFunction: KSPFilterFunctionConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {
       override def selfishOnly: Boolean = false
