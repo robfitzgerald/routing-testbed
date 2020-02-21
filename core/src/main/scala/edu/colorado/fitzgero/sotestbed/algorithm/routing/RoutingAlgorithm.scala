@@ -19,7 +19,7 @@ object RoutingAlgorithm {
     * Empty route requests.
     *
     * @param kspResult the alternatives generated
-    * @param filteredKspResult the alternatives after applying the [[edu.colorado.fitzgero.sotestbed.config.algorithm.KSPFilterFunctionConfig.KSPFilterFunction]]
+    * @param filteredKspResult the alternatives after applying the [[edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter.KSPFilterFunction]]
     * @param responses route solutions for each [[Request]]-ing agent
     * @param kspRuntime optional runtime for any kSP algorithm run
     * @param selectionRuntime optional runtime for any selection algorithm run

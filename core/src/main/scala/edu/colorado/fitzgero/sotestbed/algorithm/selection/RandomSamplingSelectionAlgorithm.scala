@@ -52,7 +52,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
           marginalCostFunction
         ) map { selectionCost =>
           SelectionAlgorithm.Result(
-            alts.map{ case (req, paths) => Response(req, paths.head.map{_.edgeId}, selectionCost.overallCost)}.toList,
+            alts.map{ case (req, paths) => Response(req, 0, paths.head.map{_.edgeId}, selectionCost.overallCost)}.toList,
             selectionCost.overallCost,
             NonNegativeNumber.Zero
           )
@@ -123,7 +123,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
             .zip(endState.agentPathCosts)
             .map {
               case (((request, alts), idx), cost) =>
-                Response(request, alts(idx).map { _.edgeId }, cost)
+                Response(request, idx, alts(idx).map { _.edgeId }, cost)
             }
             .toList
 //        val bestCostStr: String = endState.bestOverallCost.toString.padTo(10, ' ')

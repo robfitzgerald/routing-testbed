@@ -61,7 +61,7 @@ case class SelfishSyncRoutingBPR[V](
 
       val successfulRouteResponses: List[Response] =
         searchResults.flatten.map{ case (request, path, selectionCost) =>
-          Response(request, path.map{_.edgeId}, selectionCost.overallCost)
+          Response(request, 0, path.map{_.edgeId}, selectionCost.overallCost)
         }
 
       val alternatives: Map[Request, List[Path]] = {

@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io
 import java.io.{File, FileOutputStream, PrintWriter}
-import java.nio.file.{Files, Path}
+import java.nio.file.Files
 
 import scala.util.Try
 import scala.util.matching.Regex
@@ -10,14 +10,12 @@ import scala.util.matching.Regex
 import cats.effect.SyncIO
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm, TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, SelfishSyncRoutingBPR, TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm, TwoPhaseRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
-import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
-import edu.colorado.fitzgero.sotestbed.matsim.model.roadnetwork.MATSimCapacitiesOverRoadNetwork
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRUpdateOps}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 

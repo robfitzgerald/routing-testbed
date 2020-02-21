@@ -6,10 +6,10 @@ import cats.effect.SyncIO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter.KSPFilterFunction
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
-import edu.colorado.fitzgero.sotestbed.config.algorithm.KSPFilterFunctionConfig.KSPFilterFunction
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -87,15 +87,39 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
         val selectionResult: SelectionAlgorithm.Result = selectionAlgorithm
           .selectRoutes(filteredAlts, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
           .unsafeRunSync()
+        val selectionResultWithKSPPaths: List[Response] =
+          TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths(
+            selectionResult.selectedRoutes, altsResult.alternatives
+          )
         val selectionRuntime = RunTime(System.currentTimeMillis) - endOfKspTime
         RoutingAlgorithm.Result(
           altsResult.alternatives,
           filteredAlts,
-          selectionResult.selectedRoutes,
+          selectionResultWithKSPPaths,
           kspRuntime,
           selectionRuntime
         )
       }
+    }
+  }
+}
+
+object TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm {
+  /**
+    * the ksp filter may have modified the path that we will assign; this lets us override the
+    * selection result (due to the ksp filter) with the (complete) path that the ksp algorithm found
+    * @param selectionResponses the responses for this routing
+    * @param altsResults the ksp algorithm response
+    * @return Responses with the complete ksp route due to selection
+    */
+  def useKSPResultPaths(selectionResponses: List[Response], altsResults: Map[Request, List[Path]]): List[Response] = {
+    for {
+      selectionResponse <- selectionResponses
+      alts <- altsResults.get(selectionResponse.request)
+    } yield {
+      selectionResponse.copy(
+        path = alts(selectionResponse.pathIndex).map{_.edgeId}
+      )
     }
   }
 }

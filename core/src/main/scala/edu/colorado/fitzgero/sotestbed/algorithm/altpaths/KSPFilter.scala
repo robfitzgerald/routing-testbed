@@ -4,7 +4,8 @@ import scala.util.Random
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment}
 
 object KSPFilter {
 
@@ -39,5 +40,40 @@ object KSPFilter {
 
       finalAccumulator.map{ case CombinedKSPFilterFunctionAccumulator(_, finalReq, finalAlts, _) => (finalReq, finalAlts) }
     }
+  }
+
+  sealed trait LimitFunction {
+    def limitPath(path: Path): Option[Path]
+  }
+
+  object LimitFunction {
+
+    private[this] final case class ByTravelTimeAccumulator(reversePath: Path = List.empty, totalCost: Cost = Cost.Zero) {
+
+      def addPathSegment(pathSegment: PathSegment): ByTravelTimeAccumulator =
+        this.copy(
+          reversePath = pathSegment +: this.reversePath,
+          totalCost = this.totalCost + pathSegment.cost
+        )
+      def getPath: Path = this.reversePath.reverse
+    }
+
+    final case class ByTravelTime(travelTimeThreshold: TravelTimeSeconds) extends LimitFunction {
+
+      def limitPath(path: Path): Option[Path] = {
+        val accumulator: ByTravelTimeAccumulator =
+          path.foldLeft(ByTravelTimeAccumulator()) { (acc, pathSegment) =>
+            if (acc.totalCost.value + pathSegment.cost.value > travelTimeThreshold.value) acc
+            else acc.addPathSegment(pathSegment)
+          }
+        val limitedPath: Path = accumulator.getPath
+        if (limitedPath.isEmpty) None
+        else Some { limitedPath }
+      }
+    }
+
+    // at this point, PathSegment doesn't allow us to limit by distance, as we only have "cost"
+    // which is equivalent to the travel time
+
   }
 }

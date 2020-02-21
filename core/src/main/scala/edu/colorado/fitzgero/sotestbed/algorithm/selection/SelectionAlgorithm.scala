@@ -219,7 +219,7 @@ object SelectionAlgorithm {
               .zip(finalState.agentPathCosts)
               .map {
                 case (((request, alts), idx), cost) =>
-                  Response(request, alts(idx).map { _.edgeId }, cost)
+                  Response(request, idx, alts(idx).map { _.edgeId }, cost)
               }
               .toList
 

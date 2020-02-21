@@ -4,8 +4,7 @@ import scala.util.Random
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
-import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter.KSPFilterFunction
-import edu.colorado.fitzgero.sotestbed.config.algorithm.KSPFilterFunctionConfig.LimitPath.LimitFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter.{KSPFilterFunction, LimitFunction}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, PathSegment}
@@ -148,50 +147,12 @@ object KSPFilterFunctionConfig {
       }
   }
 
-  object LimitPath {
-
-    sealed trait LimitFunction {
-      def limitPath(path: Path): Option[Path]
-    }
-
-    object LimitFunction {
-
-      private[this] final case class ByTravelTimeAccumulator(reversePath: Path = List.empty, totalCost: Cost = Cost.Zero) {
-
-        def addPathSegment(pathSegment: PathSegment): ByTravelTimeAccumulator =
-          this.copy(
-            reversePath = pathSegment +: this.reversePath,
-            totalCost = this.totalCost + pathSegment.cost
-          )
-        def getPath: Path = this.reversePath.reverse
-      }
-
-      final case class ByTravelTime(travelTimeThreshold: TravelTimeSeconds) extends LimitFunction {
-
-        def limitPath(path: Path): Option[Path] = {
-          val accumulator: ByTravelTimeAccumulator =
-            path.foldLeft(ByTravelTimeAccumulator()) { (acc, pathSegment) =>
-              if (acc.totalCost.value + pathSegment.cost.value > travelTimeThreshold.value) acc
-              else acc.addPathSegment(pathSegment)
-            }
-          val limitedPath: Path = accumulator.getPath
-          if (limitedPath.isEmpty) None
-          else Some { limitedPath }
-        }
-      }
-
-      // at this point, PathSegment doesn't allow us to limit by distance, as we only have "cost"
-      // which is equivalent to the travel time
-
-    }
-  }
-
-  final case class CombinedNoCycleLimitAndSample(maxEdgeVisits: Int, travelTimeThreshold: TravelTimeSeconds) extends KSPFilterFunctionConfig {
+  final case class LimSampLim(maxEdgeVisits: Int, travelTimeThreshold: Double) extends KSPFilterFunctionConfig {
 
     val fns: List[KSPFilterFunction] = List(
       LimitedEdgeVisits(maxEdgeVisits).build(),
       SampleFromRemainingDistanceProportion.build(),
-      LimitPath(LimitPath.LimitFunction.ByTravelTime(travelTimeThreshold)).build()
+      LimitPath(KSPFilter.LimitFunction.ByTravelTime(TravelTimeSeconds(travelTimeThreshold))).build()
     )
 
     /**

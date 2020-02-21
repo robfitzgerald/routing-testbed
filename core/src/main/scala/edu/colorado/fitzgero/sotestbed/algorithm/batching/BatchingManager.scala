@@ -82,7 +82,7 @@ object BatchingManager {
 
   def splitUEFromSO(data: AgentBatchData): Boolean = {
     data match {
-      case AgentBatchData.RouteRequestData(req, _, _, _, _) => req.requestClass == RequestClass.UE
+      case AgentBatchData.RouteRequestData(req, _, _, _, _, _) => req.requestClass == RequestClass.UE
       case _ => false
     }
   }

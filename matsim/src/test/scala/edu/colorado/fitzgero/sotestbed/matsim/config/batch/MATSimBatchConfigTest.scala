@@ -19,7 +19,7 @@ class MATSimBatchConfigTest extends SoTestBedBaseTest {
         case Left(e) => fail(e)
         case Right(result) =>
           for {
-            MATSimBatchConfig.Variation(confResult, _, _) <- result
+            MATSimBatchConfig.Variation(_, confResult, _, _) <- result
             conf <- confResult
           } {
             List(15L,30L) should contain (conf.routing.batchWindow.value)

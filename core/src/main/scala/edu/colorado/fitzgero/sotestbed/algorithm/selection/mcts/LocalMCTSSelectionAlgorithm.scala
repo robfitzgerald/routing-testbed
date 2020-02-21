@@ -62,7 +62,7 @@ class LocalMCTSSelectionAlgorithm[V, E] (
 
           // package result
           SelectionAlgorithm.Result(
-            selectedRoutes = List(Response(request, trueShortestPath.map{_.edgeId}, trueShortestCost.overallCost)),
+            selectedRoutes = List(Response(request, 0, trueShortestPath.map{_.edgeId}, trueShortestCost.overallCost)),
             estimatedCost = trueShortestCost.overallCost,
             samples = NonNegativeNumber.One
           )
@@ -109,7 +109,7 @@ class LocalMCTSSelectionAlgorithm[V, E] (
         for {
           (((request, paths), idx), cost) <- alts.zip(mcts.bestSolution).zip(mcts.bestAgentCosts)
         } yield {
-          Response(request, paths(idx).map { _.edgeId }, cost)
+          Response(request, idx, paths(idx).map { _.edgeId }, cost)
         }
       }.toList
 
