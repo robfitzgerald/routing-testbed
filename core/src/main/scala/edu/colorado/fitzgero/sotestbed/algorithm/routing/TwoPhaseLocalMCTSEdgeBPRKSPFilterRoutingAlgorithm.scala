@@ -78,9 +78,6 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
                     logger.debug(f"ksp filter fn removed agent ${req.agent}")
                     None
                   case Some(filtered) =>
-                    if (filtered._2.length < alts.length) {
-                      println("combined rule")
-                    }
                     logger.debug(f"ksp filter processed agent ${req.agent}")
                     Some { filtered }
                 }
