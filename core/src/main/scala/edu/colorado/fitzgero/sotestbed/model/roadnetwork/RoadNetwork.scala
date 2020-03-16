@@ -17,23 +17,22 @@ trait RoadNetwork[F[_], V, E] {
   def destination(edgeId: EdgeId): F[Option[VertexId]]
   def incidentEdges(vertexId: VertexId, direction: TraverseDirection): F[List[EdgeId]]
   def neighbors(vertexId: VertexId, direction: TraverseDirection): F[List[VertexId]]
+  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): F[List[EdgeTriplet[E]]]
 
-  def incidentEdgeTriplets(vertexId: VertexId,
-                        direction: TraverseDirection): F[List[EdgeTriplet[E]]]
+  // paths
 
   // data structure
-  def updateEdgeFlows(flows: List[(EdgeId, Flow)],
-                      edgeUpdateFunction: (E, Flow) => E): F[RoadNetwork[F, V, E]]
+  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (E, Flow) => E): F[RoadNetwork[F, V, E]]
 }
 
 object RoadNetwork {
   final case class VertexIdAndAttribute[V](
-      vertexId: VertexId,
-      attribute: V
+    vertexId: VertexId,
+    attribute: V
   )
   final case class EdgeIdAndAttribute[E](
-      edgeId: EdgeId,
-      attribute: E
+    edgeId: EdgeId,
+    attribute: E
   )
 
   final case class EdgeTriplet[E](src: VertexId, edgeId: EdgeId, dst: VertexId, attr: E) {

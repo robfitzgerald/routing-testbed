@@ -45,6 +45,7 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
           altsResult.alternatives,
           Map.empty, // update w/ ksp filter
           selectionResult.selectedRoutes, // when ksp filter, be sure to add TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths
+          activeAgentHistory,
           kspRuntime,
           selectionRuntime
         )

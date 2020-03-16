@@ -119,9 +119,9 @@ class GreedyCoordinateGridBatching(
           // share our grouping with the world, let them smile upon our greatness
           Some {
             toAdd
-              .groupBy{ case (_, batchId) => batchId }
+              .groupBy { case (_, batchId) => batchId }
               .values
-              .map{_.map{ case (data, _) => data.request}}
+              .map { _.map { case (data, _) => data.request } }
               .toList
           }
         }
@@ -147,11 +147,7 @@ object GreedyCoordinateGridBatching {
 
       def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
         for {
-          src <- BatchingOps.findCoordinateInFuture(
-            routeRequestData.remainingRoute,
-            currentTime,
-            batchPathTimeDelay
-          )
+          src <- BatchingOps.defaultStartCoordinate(routeRequestData.remainingRoute)
         } yield {
           val originTag: String = grid.getGridId(src.x, src.y)
           originTag
@@ -171,11 +167,7 @@ object GreedyCoordinateGridBatching {
 
       def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
         for {
-          src <- BatchingOps.findCoordinateInFuture(
-            routeRequestData.remainingRoute,
-            currentTime,
-            batchPathTimeDelay
-          )
+          src <- BatchingOps.defaultStartCoordinate(routeRequestData.remainingRoute)
           dst <- routeRequestData.remainingRoute.lastOption.map { _.linkSourceCoordinate }
         } yield {
           val originTag: String      = grid.getGridId(src.x, src.y)

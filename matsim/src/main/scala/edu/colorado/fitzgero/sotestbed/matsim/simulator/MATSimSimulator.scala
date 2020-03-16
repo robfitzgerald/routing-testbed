@@ -17,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, Response, TravelMode}
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, Meters, SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, Meters, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps
 import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps.SimulatorState
@@ -31,7 +31,6 @@ import org.matsim.core.config.{Config, ConfigUtils}
 import org.matsim.core.controler.events.{IterationEndsEvent, IterationStartsEvent, ShutdownEvent}
 import org.matsim.core.controler.listener.{IterationEndsListener, IterationStartsListener, ShutdownListener}
 import org.matsim.core.controler.{AbstractModule, Controler}
-import org.matsim.core.events.handler.EventHandler
 import org.matsim.core.mobsim.framework.events.{MobsimBeforeSimStepEvent, MobsimInitializedEvent}
 import org.matsim.core.mobsim.framework.listeners.{MobsimBeforeSimStepListener, MobsimInitializedListener}
 import org.matsim.core.mobsim.framework.{Mobsim, MobsimAgent, PlayPauseSimulationControl}
@@ -39,6 +38,7 @@ import org.matsim.core.mobsim.qsim.QSim
 import org.matsim.core.mobsim.qsim.agents.WithinDayAgentUtils
 import org.matsim.core.population.routes.RouteUtils
 import org.matsim.vehicles.Vehicle
+import org.matsim.withinday.trafficmonitoring.WithinDayTravelTime
 
 /**
   * performs [[SimulatorOps]] on a MATSim simulation which allows it to be used in a [[edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment]]
@@ -163,7 +163,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
       config.pop.agentsUnderControl,
       config.routing.requestUpdateCycle,
       config.routing.maxPathAssignments,
-      config.routing.minimumReplanningWaitTime
+      SimTime.Zero // config.routing.minimumReplanningWaitTime
     )
     self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
 
@@ -313,7 +313,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                         remaingingRoute  = fullRoute.dropWhile(_ != currentLinkId)
                         remainingDistance <- MATSimRouteOps.distanceOfPath(remaingingRoute, qSim)
                         originLinkId      <- fullRoute.dropWhile(_ != currentLinkId).tail.headOption // confirms MATSim currentLinkId is correct
-                        endLinkId = leg.getRoute.getEndLinkId
+                        endLinkId     = leg.getRoute.getEndLinkId
+                        departureTime = SimTime(self.playPauseSimulationControl.getLocalTime.toLong)
                       } {
 
                         // construct an AgentBatchData payload to request selfish routing
@@ -328,18 +329,20 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                                                minimumRemainingRouteTimeForReplanning) match {
                           case None => ()
                           case Some(reasonableStartEdgeId) =>
+                            val currentSimTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
                             val thisRequest: Request =
                               Request(
                                 agent = personId.toString,
                                 origin = EdgeId(reasonableStartEdgeId.toString),
                                 destination = EdgeId(endLinkId.toString),
                                 requestClass = RequestClass.UE,
-                                travelMode = TravelMode.Car
+                                travelMode = TravelMode.Car,
+                                departureTime = departureTime
                               )
                             val edgeDataExperiencedRoute: List[RouteRequestData.EdgeData] =
-                              MATSimRouteOps.convertToRoutingPath(experiencedRoute, qSim)
-                            val edgeDataRemainingRoute: List[RouteRequestData.EdgeData] = MATSimRouteOps.convertToRoutingPath(remaingingRoute, qSim)
-                            val currentSimTime: SimTime                                 = SimTime(self.playPauseSimulationControl.getLocalTime)
+                              MATSimRouteOps.convertRouteToEdgeData(experiencedRoute, qSim)
+                            val edgeDataRemainingRoute: List[RouteRequestData.EdgeData] =
+                              MATSimRouteOps.convertRouteToEdgeData(remaingingRoute, qSim)
 
                             logger.debug(s"ue agent $personId's matsim-set route: ${fullRoute.mkString("->")}")
 
@@ -491,77 +494,91 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                           soAgentReplanningHandler
                             .getActiveAndEligibleForReplanning(currentSimTime)
                             .foldLeft(List.empty[AgentBatchData]) {
-                              (mobsimAgents, agentInSimulation) =>
-                                agentsInSimulation.get(agentInSimulation) match {
-                                  case None =>
-                                    logger.debug(
-                                      s"[MobsimBeforeSimStepListener] agent $agentInSimulation that emitted a departure event was not found in QSim - possibly already at destination")
-                                    mobsimAgents
-                                  case Some(mobsimAgent) =>
-                                    Option(WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)) match {
-                                      case None =>
-                                        logger.error(
-                                          s"[MobsimBeforeSimStepListener] agent $agentInSimulation that emitted a departure event does not yet have a trip Leg")
-                                        mobsimAgents
-                                      case Some(leg) =>
-                                        // build Requests for this time step
-                                        val agentId           = mobsimAgent.getId
-                                        val fullRoute         = MATSimRouteOps.convertToCompleteRoute(leg)
-                                        val currentLinkId     = mobsimAgent.getCurrentLinkId
-                                        val destinationLinkId = leg.getRoute.getEndLinkId
-                                        val destinationEdgeId = EdgeId(destinationLinkId.toString)
-                                        MATSimRouteOps.selectRequestOriginLink(fullRoute,
-                                                                               currentLinkId,
-                                                                               destinationLinkId,
-                                                                               self.qSim,
-                                                                               reasonableReplanningLeadTime,
-                                                                               minimumRemainingRouteTimeForReplanning) match {
-                                          case None =>
-                                            val remainingTT = MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
+                              (mobsimAgents, agentData) =>
+                                {
 
-                                            logger.debug(
-                                              f"[MobsimBeforeSimStepListener] didn't find a reasonable edge to attempt replanning for agent $agentId with est. remaining travel time $remainingTT%.2f seconds")
-                                            soAgentReplanningHandler.incrementNumberFailedRoutingAttempts(agentId)
-                                            mobsimAgents
-                                          case Some(sourceEdgeId) =>
-                                            //                                      agentsInSimulationNeedingReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
+                                  val personId: Id[Person] = agentData.personId
+                                  agentsInSimulation.get(personId) match {
+                                    case None =>
+                                      logger.debug(
+                                        s"[MobsimBeforeSimStepListener] agent $agentData that emitted a departure event was not found in QSim - possibly already at destination")
+                                      mobsimAgents
+                                    case Some(mobsimAgent) =>
+                                      Option(WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)) match {
+                                        case None =>
+                                          logger.error(
+                                            s"[MobsimBeforeSimStepListener] agent $agentData that emitted a departure event does not yet have a trip Leg")
+                                          mobsimAgents
+                                        case Some(leg) =>
+                                          // build Requests for this time step
+                                          val experiencedRoute: List[(Id[Link], Cost)] = agentData.getExperiencedRoute
+                                          val fullRoute                                = MATSimRouteOps.convertToCompleteRoute(leg)
+                                          val currentLinkId                            = mobsimAgent.getCurrentLinkId
+                                          val destinationLinkId                        = leg.getRoute.getEndLinkId
+                                          val destinationEdgeId                        = EdgeId(destinationLinkId.toString)
+                                          MATSimRouteOps.selectRequestOriginLink(fullRoute,
+                                                                                 currentLinkId,
+                                                                                 destinationLinkId,
+                                                                                 self.qSim,
+                                                                                 reasonableReplanningLeadTime,
+                                                                                 minimumRemainingRouteTimeForReplanning) match {
+                                            case None =>
+                                              val remainingTT = MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
 
-                                            val thisRequest: Request =
-                                              Request(
-                                                agentId.toString,
-                                                sourceEdgeId,
-                                                destinationEdgeId,
-                                                RequestClass.SO(),
-                                                TravelMode.Car
-                                              )
-                                            val experiencedLinkIds: List[Id[Link]] = fullRoute.takeWhile(_ != currentLinkId)
-                                            val experiencedEdgeData: List[RouteRequestData.EdgeData] =
-                                              MATSimRouteOps.convertToRoutingPath(experiencedLinkIds, qSim)
-                                            val remainingLinkIds: List[Id[Link]] = fullRoute.dropWhile(_ != currentLinkId)
-                                            val remainingEdgeData: List[RouteRequestData.EdgeData] =
-                                              MATSimRouteOps.convertToRoutingPath(remainingLinkIds, qSim)
+                                              logger.debug(
+                                                f"[MobsimBeforeSimStepListener] didn't find a reasonable edge to attempt replanning for agent $personId with est. remaining travel time $remainingTT%.2f seconds")
+                                              soAgentReplanningHandler.incrementNumberFailedRoutingAttempts(personId)
+                                              mobsimAgents
+                                            case Some(sourceEdgeId) => {
+                                              for {
+                                                departureTime <- soAgentReplanningHandler.getDepartureTimeForAgent(personId).map { t =>
+                                                  SimTime(t.value)
+                                                }
+                                              } yield {
+                                                val thisRequest: Request =
+                                                  Request(
+                                                    personId.toString,
+                                                    sourceEdgeId,
+                                                    destinationEdgeId,
+                                                    RequestClass.SO(),
+                                                    TravelMode.Car,
+                                                    departureTime
+                                                  )
 
-                                            val remainingDistance: Meters =
-                                              MATSimRouteOps.distanceOfPath(remainingLinkIds, qSim).getOrElse(Meters.Zero)
+                                                val experiencedEdgeData: List[RouteRequestData.EdgeData] =
+                                                  MATSimRouteOps.convertExperiencedRouteToEdgeData(experiencedRoute, qSim)
+                                                val remainingLinkIds: List[Id[Link]] = fullRoute.dropWhile(_ != currentLinkId)
+                                                val remainingEdgeData: List[RouteRequestData.EdgeData] =
+                                                  MATSimRouteOps.convertRouteToEdgeData(remainingLinkIds, qSim)
 
-                                            val lastReplanningTime: Option[SimTime] =
-                                              soAgentReplanningHandler.getMostRecentTimePlannedForAgent(agentId)
+                                                val remainingDistance: Meters =
+                                                  MATSimRouteOps.distanceOfPath(remainingLinkIds, qSim).getOrElse(Meters.Zero)
 
-                                            val thisAgentBatchingData: AgentBatchData =
-                                              RouteRequestData(
-                                                request = thisRequest,
-                                                timeOfRequest = currentSimTime,
-                                                experiencedRoute = experiencedEdgeData,
-                                                remainingRoute = remainingEdgeData,
-                                                remainingRouteDistance = remainingDistance,
-                                                lastReplanningTime = lastReplanningTime
-                                              )
+                                                val lastReplanningTime: Option[SimTime] =
+                                                  soAgentReplanningHandler.getMostRecentTimePlannedForAgent(personId)
 
-                                            logger.debug(
-                                              s"[MobsimBeforeSimStepListener] requesting route for agent $agentId, o=$sourceEdgeId, d=$destinationEdgeId")
-                                            thisAgentBatchingData +: mobsimAgents
-                                        }
-                                    }
+                                                val thisAgentBatchingData: AgentBatchData =
+                                                  RouteRequestData(
+                                                    request = thisRequest,
+                                                    timeOfRequest = currentSimTime,
+                                                    experiencedRoute = experiencedEdgeData,
+                                                    remainingRoute = remainingEdgeData,
+                                                    remainingRouteDistance = remainingDistance,
+                                                    lastReplanningTime = lastReplanningTime
+                                                  )
+
+                                                logger.debug(
+                                                  s"[MobsimBeforeSimStepListener] requesting route for agent $personId, o=$sourceEdgeId, d=$destinationEdgeId")
+                                                thisAgentBatchingData
+                                              }
+                                            } match {
+                                              case None                     => mobsimAgents
+                                              case Some(thisAgentBatchData) => thisAgentBatchData +: mobsimAgents
+                                            }
+
+                                          }
+                                      }
+                                  }
                                 }
                             }
 

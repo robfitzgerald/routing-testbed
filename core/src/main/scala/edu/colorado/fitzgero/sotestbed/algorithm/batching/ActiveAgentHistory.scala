@@ -3,9 +3,10 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
 
-final case class ActiveAgentHistory (
+final case class ActiveAgentHistory(
   observedRouteRequestData: Map[String, AgentHistory] = Map.empty
 ) {
+
   /**
     * adds another route request to the active history of route requests for this agent
     * @param data the new request
@@ -36,15 +37,15 @@ final case class ActiveAgentHistory (
     * @return the RouteRequestData if it exists
     */
   def getOldestDataFor(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map{_.head}
+    this.observedRouteRequestData.get(agentId).map { _.head }
 
   /**
-    * gets the most recent request we have received
+    * gets the most recent request we have received (as recent as the current time step)
     * @param agentId the agent requested
     * @return the latest RouteRequestData if we have any stored
     */
   def getMostRecentDataFor(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map{_.last}
+    this.observedRouteRequestData.get(agentId).map { _.last }
 
   /**
     * gets the complete history we have stored for an agent (as long as they are active in the system)
@@ -52,7 +53,7 @@ final case class ActiveAgentHistory (
     * @return the complete set of requests we have seen for this agent
     */
   def getOrderedRouteRequestHistoryFor(agentId: String): Option[List[RouteRequestData]] =
-    this.observedRouteRequestData.get(agentId).map{_.orderedHistory}
+    this.observedRouteRequestData.get(agentId).map { _.orderedHistory }
 }
 
 object ActiveAgentHistory {
@@ -62,17 +63,17 @@ object ActiveAgentHistory {
     * @param head the first request we received
     * @param tail all subsequent requests we have received, in reverse order for list prepend O(1) performance
     */
-  final case class AgentHistory(
-    head: RouteRequestData,
-    tail: List[RouteRequestData] = List.empty) {
+  final case class AgentHistory(head: RouteRequestData, tail: List[RouteRequestData] = List.empty) {
+
     def appendToTail(routeRequestData: RouteRequestData): AgentHistory =
       this.copy(
         tail = routeRequestData +: tail
       )
+
     def last: RouteRequestData =
       tail match {
         case Nil => head
-        case _ => tail.head
+        case _   => tail.head
       }
     def orderedHistory: List[RouteRequestData] = head +: tail.reverse
   }

@@ -57,6 +57,7 @@ class TwoPhaseLocalMCTSRoutingAlgorithm[V, E](
           altsResult.alternatives,
           Map.empty, // update w/ ksp filter
           selectionResult.selectedRoutes,
+          activeAgentHistory,
           kspRuntime,
           selectionRuntime
         )

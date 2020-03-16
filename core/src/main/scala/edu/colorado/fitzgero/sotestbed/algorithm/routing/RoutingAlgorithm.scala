@@ -6,10 +6,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 
 trait RoutingAlgorithm[F[_], V, E] {
-  def route(
-    requests: List[Request],
-    activeAgentHistory: ActiveAgentHistory,
-    roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result]
+  def route(requests: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result]
 }
 
 object RoutingAlgorithm {
@@ -25,10 +22,11 @@ object RoutingAlgorithm {
     * @param selectionRuntime optional runtime for any selection algorithm run
     */
   case class Result(
-    kspResult       : Map[Request, List[Path]] = Map.empty,
+    kspResult: Map[Request, List[Path]] = Map.empty,
     filteredKspResult: Map[Request, List[Path]] = Map.empty,
-    responses       : List[Response] = List.empty,
-    kspRuntime      : RunTime = RunTime.Zero,
+    responses: List[Response] = List.empty,
+    agentHistory: ActiveAgentHistory = ActiveAgentHistory(),
+    kspRuntime: RunTime = RunTime.Zero,
     selectionRuntime: RunTime = RunTime.Zero
   )
 }

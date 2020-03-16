@@ -38,7 +38,9 @@ class TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm[V](
   limitSelectionRuntime: Boolean = true,
 ) extends RoutingAlgorithm[SyncIO, V, EdgeBPR] {
 
-  final override def route(reqs: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
+  final override def route(reqs: List[Request],
+                           activeAgentHistory: ActiveAgentHistory,
+                           roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
 
     val startTime: RunTime = RunTime(System.currentTimeMillis)
     val costFunction: EdgeBPR => Cost =
@@ -51,7 +53,7 @@ class TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm[V](
       for {
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         endOfKspTime = RunTime(System.currentTimeMillis)
-        kspRuntime = endOfKspTime - startTime
+        kspRuntime   = endOfKspTime - startTime
       } yield {
         val selectionResult: SelectionAlgorithm.Result = selectionAlgorithm
           .selectRoutes(altsResult.alternatives, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
@@ -61,6 +63,7 @@ class TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm[V](
           altsResult.alternatives,
           Map.empty, // update with ksp filter
           selectionResult.selectedRoutes,
+          activeAgentHistory,
           kspRuntime,
           selectionRuntime
         )

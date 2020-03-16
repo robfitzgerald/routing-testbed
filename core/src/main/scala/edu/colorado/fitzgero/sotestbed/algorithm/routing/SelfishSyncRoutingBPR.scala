@@ -17,7 +17,8 @@ case class SelfishSyncRoutingBPR[V](
   marginalCostFunction: EdgeBPR => Flow => Cost, // Likely EdgeBPRCostOps.marginalCostFunction
   pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[SyncIO, V, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
-) extends RoutingAlgorithm[SyncIO, V, EdgeBPR] with LazyLogging {
+) extends RoutingAlgorithm[SyncIO, V, EdgeBPR]
+    with LazyLogging {
 
   /**
     * runs a selfish routing search using the current network state
@@ -26,14 +27,16 @@ case class SelfishSyncRoutingBPR[V](
     * @param roadNetwork current road network state
     * @return solution
     */
-  def route(requests: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
+  def route(requests: List[Request],
+            activeAgentHistory: ActiveAgentHistory,
+            roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
 
     val costFlowsFunction: EdgeBPR => Cost = (edge: EdgeBPR) => marginalCostFunction(edge)(edge.flow)
     val dijkstraSearch: (EdgeId, EdgeId, TraverseDirection) => SyncIO[Option[Path]] =
       DijkstraSearch.edgeOrientedShortestPath(roadNetwork, costFlowsFunction)
 
     // run Dijkstra's Search for each Request
-    val searchResultsF: SyncIO[List[Option[(Request, Path, SelectionCost)]]] = requests.traverse{ req =>
+    val searchResultsF: SyncIO[List[Option[(Request, Path, SelectionCost)]]] = requests.traverse { req =>
       for {
         pathOpt <- dijkstraSearch(req.origin, req.destination, TraverseDirection.Forward)
       } yield {
@@ -42,13 +45,15 @@ case class SelfishSyncRoutingBPR[V](
         } yield {
 
           val selfishAssignmentCost: SelectionCost =
-            SelectionAlgorithm.evaluateCostOfSelection(
-              List(path),
-              roadNetwork,
-              pathToMarginalFlowsFunction,
-              combineFlowsFunction,
-              marginalCostFunction
-            ).unsafeRunSync()
+            SelectionAlgorithm
+              .evaluateCostOfSelection(
+                List(path),
+                roadNetwork,
+                pathToMarginalFlowsFunction,
+                combineFlowsFunction,
+                marginalCostFunction
+              )
+              .unsafeRunSync()
           (req, path, selfishAssignmentCost)
         }
       }
@@ -60,8 +65,9 @@ case class SelfishSyncRoutingBPR[V](
     } yield {
 
       val successfulRouteResponses: List[Response] =
-        searchResults.flatten.map{ case (request, path, selectionCost) =>
-          Response(request, 0, path.map{_.edgeId}, selectionCost.overallCost)
+        searchResults.flatten.map {
+          case (request, path, selectionCost) =>
+            Response(request, 0, path.map { _.edgeId }, selectionCost.overallCost)
         }
 
       val alternatives: Map[Request, List[Path]] = {
@@ -76,7 +82,7 @@ case class SelfishSyncRoutingBPR[V](
         kspResult = alternatives,
         responses = successfulRouteResponses,
         kspRuntime = RunTime.Zero,
-        selectionRuntime = RunTime.Zero
+        selectionRuntime = RunTime.Zero,
       )
     }
   }

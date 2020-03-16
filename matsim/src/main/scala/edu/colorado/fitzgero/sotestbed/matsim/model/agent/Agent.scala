@@ -32,19 +32,6 @@ final case class Agent(
       act1
     }
 
-  def activitiesToRequests: List[Request] =
-    for {
-      AgentActivityPair(act1, act2, travelMode) <- activities
-    } yield {
-      Request(
-        id,
-        act1.location,
-        act2.location,
-        requestClass,
-        travelMode
-      )
-    }
-
   /**
     * convert this [[Agent]] into a <person>
     * @return Agent as an xml tree

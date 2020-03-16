@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig
 
 import java.io.File
-import java.nio.file.{Path, Paths}
+import java.nio.file.{Files, Path, Paths}
 import java.time.LocalTime
 
 import scala.concurrent.duration.Duration
@@ -57,7 +57,7 @@ object MATSimConfig {
     adoptionRate: Double,
     maxPathAssignments: Int,
     reasonableReplanningLeadTime: TravelTimeSeconds,
-    minimumReplanningWaitTime: SimTime,
+//    minimumReplanningWaitTime: SimTime,  // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
     requestUpdateCycle: SimTime,
     minBatchSize: Int,
@@ -120,39 +120,40 @@ object MATSimConfig {
 
   object IO {
     final case class ScenarioData(
-      algorithm  : String,
-      trialNumber: Int,
-      variation  : String = "", // a list of arguments, or, popSize if selfish
+      algorithm: String,
+      trialNumber      : Int,
+      variationName    : String,
+      headerColumnOrder: List[String],
+      scenarioParameters: Map[String, String]
     ) {
-      def toTrialName: String = {
-        algorithm match {
-          case "selfish" => s"$algorithm-$trialNumber"
-          case _ => s"$variation-$algorithm-$trialNumber"
-        }
-      }
+      // prints this scenario's run parameters as csv row entries in the correct order
+      def toCSVRow: String =
+        headerColumnOrder
+          .map{ colName => this.scenarioParameters.getOrElse(colName, "") }
+          .mkString(",")
 
       def toVariationPath(basePath: Path, batchName: String): Path =
         algorithm match {
           case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variation-${trialNumber.toString}-logging")
+            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}-logging")
           case _ =>
-            basePath.resolve(batchName).resolve(variation)
+            basePath.resolve(batchName).resolve(variationName)
         }
 
       def toTrialPath(basePath: Path, batchName: String): Path =
         algorithm match {
           case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variation-${trialNumber.toString}-logging")
+            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}-logging")
           case _ =>
-            basePath.resolve(batchName).resolve(variation).resolve(trialNumber.toString)
+            basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString)
         }
 
       def toExperimentPath(basePath: Path, batchName: String): Path =
         algorithm match {
           case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variation-${trialNumber.toString}")
+            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}")
           case _ =>
-            basePath.resolve(batchName).resolve(variation).resolve(trialNumber.toString).resolve(algorithm)
+            basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString).resolve(algorithm)
         }
 
     }

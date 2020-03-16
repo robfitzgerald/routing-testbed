@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, TravelMode}
-import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPRCostOps
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
@@ -22,10 +22,9 @@ class kSPwLO_SVPTest extends SoTestBedBaseTest {
          *                   3a ->  3b
          */
 
-
         for {
           network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(TestNetwork.threeAltPathsFile)
-          request = Request("test", EdgeId("src->0"), EdgeId("4->dst"), RequestClass.UE, TravelMode.Car)
+          request = Request("test", EdgeId("src->0"), EdgeId("4->dst"), RequestClass.UE, TravelMode.Car, SimTime.Zero)
         } yield {
 
           val altsAlgResult = kSPwLO_SVP_Algorithm.generateAltsForRequest(
@@ -36,15 +35,14 @@ class kSPwLO_SVPTest extends SoTestBedBaseTest {
           )
 
           altsAlgResult.unsafeRunSync() match {
-            case None => fail()
+            case None                                                           => fail()
             case Some(kSPwLO_SVP_Algorithm.SingleSVPResult(_, alts, pathsSeen)) =>
-
               // only 3 possible unique paths
               alts.size should equal(3)
 
               // 6 different vertices should end up in the SVP vertex list:
               // 2a, 2b, 1a, 1b, 3a, and 3b
-              pathsSeen.value should equal (6)
+              pathsSeen.value should equal(6)
 
               // should have found exactly these 3 paths (no other unique paths exist)
               val altsStrings = {

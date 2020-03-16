@@ -6,8 +6,9 @@ import scala.util.Try
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, TravelMode}
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import org.matsim.api.core.v01.Id
@@ -17,6 +18,9 @@ import org.matsim.core.mobsim.framework.{MobsimAgent, PlayPauseSimulationControl
 import org.matsim.core.mobsim.qsim.QSim
 import org.matsim.core.mobsim.qsim.agents.WithinDayAgentUtils
 import org.matsim.core.population.routes.{NetworkRoute, RouteUtils}
+import org.matsim.core.router.util.TravelTime
+import org.matsim.vehicles.Vehicle
+import org.matsim.withinday.trafficmonitoring.WithinDayTravelTime
 
 object MATSimRouteOps extends LazyLogging {
 
@@ -55,8 +59,8 @@ object MATSimRouteOps extends LazyLogging {
     */
   def distanceOfPath(path: List[Id[Link]], qSim: QSim): Option[Meters] = {
     val distances: List[Double] = for {
-      linkId <- path
-      netsimLink <- Try{ qSim.getNetsimNetwork.getNetsimLink(linkId) }.toOption
+      linkId     <- path
+      netsimLink <- Try { qSim.getNetsimNetwork.getNetsimLink(linkId) }.toOption
     } yield netsimLink.getLink.getLength
     if (distances.isEmpty) None
     else Some { Meters(distances.sum) }
@@ -85,14 +89,14 @@ object MATSimRouteOps extends LazyLogging {
     val idx: Int = WithinDayAgentUtils.getCurrentPlanElementIndex(mobsimAgent)
     if (idx == -1) None // haven't begun our trip yet!
     else {
-      safeGetModifiablePlan(mobsimAgent).flatMap{plan =>
+      safeGetModifiablePlan(mobsimAgent).flatMap { plan =>
         plan.getPlanElements.asScala.toList(idx) match {
-          case leg: Leg => Some{ leg }
+          case leg: Leg               => Some { leg }
           case _: Activity if idx > 0 =>
             // maybe we just started the next activity, so, let's see if idx - 1 is a leg
             plan.getPlanElements.asScala.toList(idx - 1) match {
               case _: Activity => None // nonsense
-              case leg: Leg => Some{ leg }
+              case leg: Leg    => Some { leg }
             }
         }
       }
@@ -119,37 +123,87 @@ object MATSimRouteOps extends LazyLogging {
       leg.getRoute.getEndLinkId
   }
 
-  final case class ConvertToRoutingPathAccumulator(
-    routingPath: List[RouteRequestData.EdgeData] = List.empty,
-    estimatedTravelTime: SimTime = SimTime.Zero
-  )
+//  /**
+//    * converts a complete route from a Leg into the format used by the routing testbed
+//    * @param route the complete MATSim route
+//    * @return as a List[EdgeId]
+//    */
+//  def convertToRoutingPath(route: List[Id[Link]], qSim: QSim): List[RouteRequestData.EdgeData] = {
+//
+//    val result = route.foldLeft(ConvertToRoutingPathAccumulator()) { (acc, linkId) =>
+//      val link                        = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+//      val src                         = link.getFromNode.getCoord
+//      val srcCoordinate: Coordinate   = Coordinate(src.getX, src.getY)
+//      val dst                         = link.getToNode.getCoord
+//      val dstCoordinate: Coordinate   = Coordinate(dst.getX, dst.getY)
+//      val freeFlowTravelTime: SimTime = SimTime(link.getLength / link.getFreespeed) + acc.freeFlowTravelTimeForPath
+//      val edgeData: RouteRequestData.EdgeData = RouteRequestData.EdgeData(
+//        EdgeId(linkId.toString),
+//        freeFlowTravelTime,
+//        srcCoordinate,
+//        dstCoordinate
+//      )
+//      acc.copy(
+//        routingPath = edgeData +: acc.routingPath,
+//        freeFlowTravelTimeForPath = freeFlowTravelTime
+//      )
+//    }
+//
+//    result.routingPath.reverse
+//  }
 
   /**
-    * converts a complete route from a Leg into the format used by the routing testbed
-    * @param route the complete MATSim route
-    * @return as a List[EdgeId]
+    * takes an experienced path and adds Coordinates to each link
+    * @param path the route
+    * @param qSim the MATSim simulation
+    * @return EdgeData representation of the experienced path
     */
-  def convertToRoutingPath(route: List[Id[Link]], qSim: QSim): List[RouteRequestData.EdgeData] = {
-    val result = route.foldLeft(ConvertToRoutingPathAccumulator()) { (acc, linkId) =>
-      val link                             = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
-      val src                              = link.getFromNode.getCoord
-      val srcCoordinate                    = Coordinate(src.getX, src.getY)
-      val dst                              = link.getToNode.getCoord
-      val dstCoordinate                    = Coordinate(dst.getX, dst.getY)
-      val nextEstimatedTravelTime: SimTime = SimTime(link.getLength / link.getFreespeed) + acc.estimatedTravelTime
-      val edgeData = RouteRequestData.EdgeData(
-        EdgeId(linkId.toString),
-        nextEstimatedTravelTime,
-        srcCoordinate,
-        dstCoordinate
-      )
-      acc.copy(
-        routingPath = edgeData +: acc.routingPath,
-        estimatedTravelTime = nextEstimatedTravelTime
-      )
+  def convertExperiencedRouteToEdgeData(path: List[(Id[Link], Cost)], qSim: QSim): List[RouteRequestData.EdgeData] = {
+
+    val result: List[EdgeData] = path.foldLeft(List.empty[EdgeData]) {
+      case (acc, (linkId, cost)) =>
+        val link                      = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+        val src                       = link.getFromNode.getCoord
+        val srcCoordinate: Coordinate = Coordinate(src.getX, src.getY)
+        val dst                       = link.getToNode.getCoord
+        val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
+        val travelTime: SimTime       = SimTime(cost.value)
+        val edgeData: RouteRequestData.EdgeData = RouteRequestData.EdgeData(
+          EdgeId(linkId.toString),
+          srcCoordinate,
+          dstCoordinate,
+          Some { travelTime }
+        )
+        edgeData +: acc
     }
 
-    result.routingPath.reverse
+    result.reverse
+  }
+
+  /**
+    * takes a planned remaining path and adds Coordinates to each link
+    * @param path the route
+    * @param qSim the MATSim simulation
+    * @return EdgeData representation of the experienced path
+    */
+  def convertRouteToEdgeData(path: List[Id[Link]], qSim: QSim): List[RouteRequestData.EdgeData] = {
+
+    val result: List[EdgeData] = path.foldLeft(List.empty[EdgeData]) {
+      case (acc, linkId) =>
+        val link                      = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+        val src                       = link.getFromNode.getCoord
+        val srcCoordinate: Coordinate = Coordinate(src.getX, src.getY)
+        val dst                       = link.getToNode.getCoord
+        val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
+        val edgeData: RouteRequestData.EdgeData = RouteRequestData.EdgeData(
+          EdgeId(linkId.toString),
+          srcCoordinate,
+          dstCoordinate
+        )
+        edgeData +: acc
+    }
+
+    result.reverse
   }
 
   /**
@@ -370,7 +424,6 @@ object MATSimRouteOps extends LazyLogging {
 //        Some { currentPath.takeWhile(_ != currentLink) ++ newPathFromCurrentLink }
 //    }
 
-
   /**
     * accumulates a new path by adding links to itself and tracking details
     * which are used to determine the validity of this route.
@@ -387,9 +440,9 @@ object MATSimRouteOps extends LazyLogging {
     currentLink: Id[Link],
     replanningLink: Id[Link],
     coalescedRoutePrependOrdered: List[Id[Link]] = List.empty,
-    currentLinkIdxSeen          : Option[List[Int]] = None,
-    replanningLinkIdxSeen       : Option[List[Int]] = None,
-    pathLength                  : Int = 0
+    currentLinkIdxSeen: Option[List[Int]] = None,
+    replanningLinkIdxSeen: Option[List[Int]] = None,
+    pathLength: Int = 0
   ) {
 
     /**
@@ -402,8 +455,8 @@ object MATSimRouteOps extends LazyLogging {
       val nextCurrentLinkIdxSeen: Option[List[Int]] =
         if (link == currentLink) {
           this.currentLinkIdxSeen match {
-            case None => Some{ List(this.pathLength) }
-            case Some(xs) => Some{ this.pathLength +: xs }
+            case None     => Some { List(this.pathLength) }
+            case Some(xs) => Some { this.pathLength +: xs }
           }
         } else {
           this.currentLinkIdxSeen
@@ -412,8 +465,8 @@ object MATSimRouteOps extends LazyLogging {
       val nextReplanningLinkIdxSeen: Option[List[Int]] =
         if (link == replanningLink) {
           this.replanningLinkIdxSeen match {
-            case None => Some{ List(this.pathLength) }
-            case Some(xs) => Some{ this.pathLength +: xs }
+            case None     => Some { List(this.pathLength) }
+            case Some(xs) => Some { this.pathLength +: xs }
           }
         } else {
           this.replanningLinkIdxSeen
@@ -431,39 +484,38 @@ object MATSimRouteOps extends LazyLogging {
       * reviews accumulated data and returns either the new route, or, an error
       * @return the new path, or, an error
       */
-    def result: Either[String, List[Id[Link]]] =
-      {
-        for {
-          currentLinkIdx <- currentLinkIdxSeen.toRight("current link not seen")
-          replanningLinkIdx <- replanningLinkIdxSeen.toRight("replanning link not seen")
-        } yield {
-          val currentLinkOccursAtLeastOnce: Boolean = currentLinkIdx.lengthCompare(1) >= 0
-          val currentLinkOccursAtMostTwice: Boolean = currentLinkIdx.lengthCompare(2) <= 0
-          val replanningLinkOccursExactlyOnce: Boolean = replanningLinkIdx.lengthCompare(1) == 0
-          val correctOrder: Boolean = currentLinkIdx.last < replanningLinkIdx.last
+    def result: Either[String, List[Id[Link]]] = {
+      for {
+        currentLinkIdx    <- currentLinkIdxSeen.toRight("current link not seen")
+        replanningLinkIdx <- replanningLinkIdxSeen.toRight("replanning link not seen")
+      } yield {
+        val currentLinkOccursAtLeastOnce: Boolean    = currentLinkIdx.lengthCompare(1) >= 0
+        val currentLinkOccursAtMostTwice: Boolean    = currentLinkIdx.lengthCompare(2) <= 0
+        val replanningLinkOccursExactlyOnce: Boolean = replanningLinkIdx.lengthCompare(1) == 0
+        val correctOrder: Boolean                    = currentLinkIdx.last < replanningLinkIdx.last
 
-          if (!(currentLinkOccursAtLeastOnce && currentLinkOccursAtMostTwice)) {
-            (Some{"current link missing or occurred more than twice in updated path"}, List.empty)
-          } else if (!replanningLinkOccursExactlyOnce) {
-            (Some{"replanning link doesn't appear exactly once in updated path"}, List.empty)
-          } else if (!correctOrder) {
-            (Some{"replanning link came before current link in updated path"}, List.empty)
-          } else {
-            (Option.empty[String], coalescedRoutePrependOrdered.reverse)
-          }
+        if (!(currentLinkOccursAtLeastOnce && currentLinkOccursAtMostTwice)) {
+          (Some { "current link missing or occurred more than twice in updated path" }, List.empty)
+        } else if (!replanningLinkOccursExactlyOnce) {
+          (Some { "replanning link doesn't appear exactly once in updated path" }, List.empty)
+        } else if (!correctOrder) {
+          (Some { "replanning link came before current link in updated path" }, List.empty)
+        } else {
+          (Option.empty[String], coalescedRoutePrependOrdered.reverse)
         }
-      } match {
-        case Left(msg) =>
-          println(msg)
-          Left(msg)
-        case Right((badPathOption, path)) =>
-          badPathOption match {
-            case None => Right(path)
-            case Some(badPath) =>
-              println(badPath)
-              Left(badPath)
-          }
       }
+    } match {
+      case Left(msg) =>
+        println(msg)
+        Left(msg)
+      case Right((badPathOption, path)) =>
+        badPathOption match {
+          case None => Right(path)
+          case Some(badPath) =>
+            println(badPath)
+            Left(badPath)
+        }
+    }
   }
 
   /**
@@ -481,9 +533,8 @@ object MATSimRouteOps extends LazyLogging {
   def coalescePath(oldPath: List[Id[Link]], newPath: List[Id[Link]], currentLink: Id[Link]): Either[String, List[Id[Link]]] = {
 
     newPath.headOption match {
-      case None => Left("new path is empty")
+      case None                 => Left("new path is empty")
       case Some(replanningLink) =>
-
         // step through the old path until the replanning link is reached;
         // then step through the new path. validate the result.
         val initialAcc: CoalesceAccumulator = CoalesceAccumulator(currentLink, replanningLink)

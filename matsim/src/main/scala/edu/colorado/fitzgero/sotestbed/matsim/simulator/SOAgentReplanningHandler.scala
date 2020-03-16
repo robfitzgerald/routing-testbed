@@ -1,11 +1,31 @@
 package edu.colorado.fitzgero.sotestbed.matsim.simulator
 
+import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
 import edu.colorado.fitzgero.sotestbed.matsim.simulator.SOAgentReplanningHandler.AgentData
-import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime}
 import org.matsim.api.core.v01.Id
-import org.matsim.api.core.v01.events.handler.{PersonEntersVehicleEventHandler, PersonLeavesVehicleEventHandler, PersonStuckEventHandler}
-import org.matsim.api.core.v01.events.{PersonEntersVehicleEvent, PersonLeavesVehicleEvent, PersonStuckEvent}
+import org.matsim.api.core.v01.events.handler.{
+  LinkEnterEventHandler,
+  LinkLeaveEventHandler,
+  PersonEntersVehicleEventHandler,
+  PersonLeavesVehicleEventHandler,
+  PersonStuckEventHandler,
+  VehicleEntersTrafficEventHandler,
+  VehicleLeavesTrafficEventHandler
+}
+import org.matsim.api.core.v01.events.{
+  LinkEnterEvent,
+  LinkLeaveEvent,
+  PersonEntersVehicleEvent,
+  PersonLeavesVehicleEvent,
+  PersonStuckEvent,
+  VehicleEntersTrafficEvent,
+  VehicleLeavesTrafficEvent
+}
+import org.matsim.api.core.v01.network.Link
 import org.matsim.api.core.v01.population.Person
+import org.matsim.vehicles.Vehicle
 
 class SOAgentReplanningHandler(
   val agentsUnderControl: Set[Id[Person]],
@@ -14,11 +34,17 @@ class SOAgentReplanningHandler(
   val minimumReplanningWaitTime: SimTime
 ) extends PersonEntersVehicleEventHandler
     with PersonLeavesVehicleEventHandler
-    with PersonStuckEventHandler {
+    with PersonStuckEventHandler
+    with LinkEnterEventHandler
+    with LinkLeaveEventHandler
+    with VehicleEntersTrafficEventHandler
+    with VehicleLeavesTrafficEventHandler
+    with LazyLogging {
 
   // this collection tracks which agents are currently active in the simulation,
   // along with some state data about them
-  private val agentsInSimulation: collection.mutable.Map[Id[Person], AgentData] = collection.mutable.Map.empty
+  private val agentsInSimulation: collection.mutable.Map[Id[Person], AgentData]   = collection.mutable.Map.empty
+  private val vehiclesForPersons: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
 
   // tracks a rolling average
   private var avgPathsAssigned: Double         = 0
@@ -52,7 +78,7 @@ class SOAgentReplanningHandler(
     * @param currentSimTime the current sim time
     * @return list of agents eligible for replanning
     */
-  def getActiveAndEligibleForReplanning(currentSimTime: SimTime): List[Id[Person]] = {
+  def getActiveAndEligibleForReplanning(currentSimTime: SimTime): List[AgentData] = {
     if (currentSimTime % requestUpdateCycle != SimTime.Zero) {
       // nothing to report this round
       List.empty
@@ -66,7 +92,7 @@ class SOAgentReplanningHandler(
               currentSimTime - agentData.mostRecentTimePlanned.getOrElse(SimTime.Zero) > minimumReplanningWaitTime
             hasNotExceededMaxAssignments && hasSurpassedMinReplanningWaitTime
         }
-        .keys
+        .values
         .toList
     }
   }
@@ -132,19 +158,26 @@ class SOAgentReplanningHandler(
   /**
     * begin tracking an agent, allowing us to know how often we can replan them,
     * and collecting data on their route assignment history
-    * @param agent the agent to track
-    * @param time the time the agent entered their vehicle
+    * @param event the "enters vehicle" event
     */
-  def beginTrackingAgent(agent: Id[Person], time: Double): Unit =
-    agentsInSimulation += (agent -> AgentData(agent, DepartureTime(time.toInt)))
+  def beginTrackingAgent(event: PersonEntersVehicleEvent): Unit = {
+    val agentData: AgentData = AgentData(
+      event.getPersonId,
+      event.getVehicleId,
+      DepartureTime(event.getTime.toInt)
+    )
+    agentsInSimulation += (event.getPersonId  -> agentData)
+    vehiclesForPersons += (event.getVehicleId -> event.getPersonId)
+  }
 
   /**
     * collect stats on agent and them remove them from tracking
-    * @param agent the agent to stop tracking
+    * @param personId person who just left their vehicle or got stuck
     */
-  def stopTrackingAgent(agent: Id[Person]): Unit = {
-    agentsInSimulation.get(agent) match {
-      case None            =>
+  def stopTrackingAgent(personId: Id[Person]): Unit = {
+    agentsInSimulation.get(personId) match {
+      case None =>
+        logger.warn(s"stop tracking agent called on person $personId who was not being tracked")
       case Some(agentData) =>
         // update our average paths assigned per SO agent
         avgPathsAssigned = SOAgentReplanningHandler.addToRollingAverage(
@@ -164,18 +197,66 @@ class SOAgentReplanningHandler(
         sumFailedRoutingAttempts += agentData.numberFailedRoutingAttempts
 
         // remove agent from tracking
-        agentsInSimulation -= agent
+        agentsInSimulation -= personId
+        vehiclesForPersons -= agentData.vehicleId
     }
   }
 
+  /**
+    * records the time we entered a link
+    * @param personId the person to track
+    * @param currentTime the current time
+    */
+  def trackEnteringALink(personId: Id[Person], currentTime: SimTime): Unit =
+    agentsInSimulation.get(personId) match {
+      case None =>
+        logger.warn(s"personId $personId entering a link but not already tracked")
+      case Some(agentData) =>
+        val updatedAgentData: AgentData = agentData.copy(currentLinkEnterTime = Some { currentTime })
+        this.agentsInSimulation.update(personId, updatedAgentData)
+    }
+
+  /**
+    * computes the duration of time we spent in a link and records it
+    * @param personId the person to track
+    * @param linkId the link they are exiting
+    * @param currentTime the current time
+    */
+  def trackLeavingALink(personId: Id[Person], linkId: Id[Link], currentTime: SimTime): Unit =
+    agentsInSimulation.get(personId) match {
+      case None =>
+        logger.warn(s"personId $personId leaving a link $linkId but agent was not being tracked")
+      case Some(agentData) =>
+        agentData.currentLinkEnterTime match {
+          case None =>
+            logger.warn(s"personId $personId leaving link $linkId but no record having entered it")
+          case Some(currentLinkEnterTime) =>
+            val linkTravelTime: SimTime         = currentTime - currentLinkEnterTime
+            val LinkTraversal: (Id[Link], Cost) = (linkId, Cost(linkTravelTime.value))
+            val updatedAgentData: AgentData =
+              agentData.copy(
+                currentLinkEnterTime = None,
+                reverseExperiencedRoute = LinkTraversal +: agentData.reverseExperiencedRoute
+              )
+            this.agentsInSimulation.update(personId, updatedAgentData)
+        }
+    }
+
   // for more information on these events, see The MATSim Book, page 19, Fig 2.2: Mobsim events
+  // a traversal visits events in this order:
+  //   Enters Vehicle
+  //     Enters Traffic
+  //     Leaves Link  <--\ loop
+  //     Enters Link  ---/
+  //     Leaves Traffic
+  //   Leaves Vehicle
 
   /**
     * when a person enters a vehicle, begin tracking their replanning data
     * @param event person enters vehicle event
     */
   def handleEvent(event: PersonEntersVehicleEvent): Unit =
-    if (agentsUnderControl(event.getPersonId)) this.beginTrackingAgent(event.getPersonId, event.getTime)
+    if (agentsUnderControl(event.getPersonId)) this.beginTrackingAgent(event)
 
   /**
     * when a person leaves a vehicle, stop tracking their replanning data
@@ -190,6 +271,30 @@ class SOAgentReplanningHandler(
     */
   def handleEvent(event: PersonStuckEvent): Unit =
     if (agentsUnderControl(event.getPersonId)) this.stopTrackingAgent(event.getPersonId)
+
+  def handleEvent(event: LinkEnterEvent): Unit = {
+    this.vehiclesForPersons.get(event.getVehicleId) match {
+      case None =>
+        logger.warn(s"entering link with unregistered vehicle ${event.getVehicleId}")
+      case Some(personId) =>
+        this.trackEnteringALink(personId, SimTime(event.getTime.toInt))
+    }
+  }
+
+  def handleEvent(event: LinkLeaveEvent): Unit = {
+    this.vehiclesForPersons.get(event.getVehicleId) match {
+      case None =>
+        logger.warn(s"leaving link with unregistered vehicle ${event.getVehicleId}")
+      case Some(personId) =>
+        this.trackLeavingALink(personId, event.getLinkId, SimTime(event.getTime.toInt))
+    }
+  }
+
+  def handleEvent(event: VehicleEntersTrafficEvent): Unit =
+    this.trackEnteringALink(event.getPersonId, SimTime(event.getTime.toInt))
+
+  def handleEvent(event: VehicleLeavesTrafficEvent): Unit =
+    this.trackLeavingALink(event.getPersonId, event.getLinkId, SimTime(event.getTime.toInt))
 
   /**
     * restart between iterations
@@ -213,14 +318,24 @@ object SOAgentReplanningHandler {
     * @param numberOfPathAssignments number of times they have been assigned a route from our algorithm
     * @param numberFailedRoutingAttempts number of times that assignment was rejected/failed
     * @param mostRecentTimePlanned the most recent time the agent accepted a new route
+    * @param currentLinkEnterTime if we have entered a link, we store the time we entered it
+    * @param reverseExperiencedRoute a reverse-order stored list of visited link data (due to fast List prepend op)
     */
-  private final case class AgentData(
+  final case class AgentData(
     personId: Id[Person],
+    vehicleId: Id[Vehicle],
     timeEnteredVehicle: DepartureTime,
     numberOfPathAssignments: Int = 0,
     numberFailedRoutingAttempts: Int = 0,
     mostRecentTimePlanned: Option[SimTime] = None,
+    currentLinkEnterTime: Option[SimTime] = None,
+    reverseExperiencedRoute: List[(Id[Link], Cost)] = List.empty
   ) {
+
+    /**
+      * @return the experienced route in the correct order
+      */
+    def getExperiencedRoute: List[(Id[Link], Cost)] = this.reverseExperiencedRoute.reverse
 
     def incrementPathAssignmentCount(simTime: SimTime): AgentData =
       this.copy(

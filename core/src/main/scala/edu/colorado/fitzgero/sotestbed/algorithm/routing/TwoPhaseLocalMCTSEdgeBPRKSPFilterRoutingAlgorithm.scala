@@ -71,7 +71,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             activeAgentHistory.observedRouteRequestData.get(req.agent) match {
               case None =>
                 logger.warn(f"agent ${req.agent} with alts has no AgentHistory")
-                Some{ req -> alts }
+                Some { req -> alts }
               case Some(agentHistory) =>
                 kspFilterFunction(agentHistory, req, alts, rng) match {
                   case None =>
@@ -89,13 +89,15 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
           .unsafeRunSync()
         val selectionResultWithKSPPaths: List[Response] =
           TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths(
-            selectionResult.selectedRoutes, altsResult.alternatives
+            selectionResult.selectedRoutes,
+            altsResult.alternatives
           )
         val selectionRuntime = RunTime(System.currentTimeMillis) - endOfKspTime
         RoutingAlgorithm.Result(
           altsResult.alternatives,
           filteredAlts,
           selectionResultWithKSPPaths,
+          activeAgentHistory,
           kspRuntime,
           selectionRuntime
         )
@@ -105,6 +107,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
 }
 
 object TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm {
+
   /**
     * the ksp filter may have modified the path that we will assign; this lets us override the
     * selection result (due to the ksp filter) with the (complete) path that the ksp algorithm found
@@ -115,10 +118,10 @@ object TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm {
   def useKSPResultPaths(selectionResponses: List[Response], altsResults: Map[Request, List[Path]]): List[Response] = {
     for {
       selectionResponse <- selectionResponses
-      alts <- altsResults.get(selectionResponse.request)
+      alts              <- altsResults.get(selectionResponse.request)
     } yield {
       selectionResponse.copy(
-        path = alts(selectionResponse.pathIndex).map{_.edgeId}
+        path = alts(selectionResponse.pathIndex).map { _.edgeId }
       )
     }
   }

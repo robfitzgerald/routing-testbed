@@ -100,8 +100,12 @@ object MATSimBatchExperimentApp
 
                     val batchOverviewFile: Path = batchLoggerPath.resolve("result.csv")
                     if (!Files.exists(batchOverviewFile)) {
-                      val batchOverview: PrintWriter  = new PrintWriter(batchOverviewFile.toFile)
-                      val batchOverviewHeader: String = "experimentName,popSize,avgTTSecs,avgDistMeters,avgSpeedMph\n"
+                      val batchOverview: PrintWriter = new PrintWriter(batchOverviewFile.toFile)
+                      val paramsHeader: String = confs.headOption match {
+                        case None    => ""
+                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
+                      }
+                      val batchOverviewHeader: String = s"$paramsHeader,avgTTSecs,avgDistMeters,avgSpeedMph\n"
                       batchOverview.write(batchOverviewHeader)
                       batchOverview.close()
                       println(s"created batch overview file at $batchOverviewFile")
@@ -113,11 +117,16 @@ object MATSimBatchExperimentApp
                     for {
                       MATSimBatchConfig.Variation(config, confReaderResult, variationHint, popSize) <- confs
                       conf                                                                          <- confReaderResult
+
                       confWithBatchName = conf.copy(io = conf.io.copy(batchName = batchName))
                       trial <- 0 until trials
-                      scenarioData = MATSimConfig.IO.ScenarioData(algorithm = confWithBatchName.algorithm.name,
-                                                                  variation = popSize.toString,
-                                                                  trialNumber = trial)
+                      scenarioData = MATSimConfig.IO.ScenarioData(
+                        algorithm = confWithBatchName.algorithm.name,
+                        variationName = popSize.toString,
+                        trialNumber = trial,
+                        headerColumnOrder = variationHint.keys.toList.sorted,
+                        scenarioParameters = variationHint
+                      )
                       confWithScenarioData = confWithBatchName.copy(io = confWithBatchName.io.copy(scenarioData = Some {
                         scenarioData
                       }))
@@ -129,8 +138,8 @@ object MATSimBatchExperimentApp
                         // NOOP - only running selfish exp. here
                       } else if (Files.isDirectory(matsimConfig.io.experimentDirectory)) {
                         // don't overwrite if already exists
-                        println(s"selfish ${scenarioData.toTrialName} run already exists. skipping.")
-                        batchLogger.write(s"$trial,${scenarioData.toTrialName} run already exists - skipping\n")
+                        println(s"selfish trial $trial already exists. skipping.")
+                        batchLogger.write(s"$trial,run already exists - skipping\n")
                       } else {
 
                         Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
@@ -158,7 +167,7 @@ object MATSimBatchExperimentApp
                           }
 
                           // run experiment
-                          val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize, trial + batchSeed)
+                          val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, trial + batchSeed, Some { scenarioData })
 
                           Try {
                             experiment.run()
@@ -188,10 +197,15 @@ object MATSimBatchExperimentApp
                       conf                                                                                              <- confReaderResult
                       confWithBatchName = conf.copy(io = conf.io.copy(batchName = batchName))
                       trial <- 0 until trials
-                      seed = trial + batchSeed
-                      scenarioData = MATSimConfig.IO.ScenarioData(algorithm = confWithBatchName.algorithm.name,
-                                                                  variation = MATSimBatchConfig.createVariationName(variationHint),
-                                                                  trialNumber = trial)
+                      seed          = trial + batchSeed
+                      variationName = MATSimBatchConfig.createVariationName(variationHint)
+                      scenarioData = MATSimConfig.IO.ScenarioData(
+                        algorithm = confWithBatchName.algorithm.name,
+                        variationName = variationName,
+                        trialNumber = trial,
+                        headerColumnOrder = variationHint.keys.toList.sorted,
+                        scenarioParameters = variationHint
+                      )
                       confWithScenarioData = confWithBatchName.copy(io = confWithBatchName.io.copy(scenarioData = Some {
                         scenarioData
                       }))
@@ -203,8 +217,8 @@ object MATSimBatchExperimentApp
                         // NOOP - running SO experiments here
                       } else if (Files.isDirectory(matsimConfig.io.experimentDirectory)) {
                         // don't overwrite if already exists
-                        println(s"optimal scenario ${scenarioData.toTrialName} run already exists. skipping.")
-                        batchLogger.write(s"$trial,${scenarioData.toTrialName} run already exists - skipping\n")
+                        println(s"optimal scenario $variationName run already exists. skipping.")
+                        batchLogger.write(s"$trial,$variationName run already exists - skipping\n")
                       } else {
 
                         Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
@@ -240,7 +254,7 @@ object MATSimBatchExperimentApp
                           }
                         }
 
-                        val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, popSize, seed)
+                        val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, trial + batchSeed, Some { scenarioData })
 
                         Try {
                           experiment.run()

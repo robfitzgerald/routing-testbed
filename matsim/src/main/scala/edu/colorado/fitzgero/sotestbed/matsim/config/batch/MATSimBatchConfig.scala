@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.batch
 
 import java.io.{File, IOError}
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, Paths}
 
 import scala.annotation.tailrec
 import scala.util.Try
@@ -16,6 +16,9 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.l
 object MATSimBatchConfig {
   // provides the ability to generate MATSimConfigs from a range of parameter values
 
+  // the config keys that are specific to the batch config and not related to the experiment parameters
+  val ignoredBatchKeys: Set[String] = Set("scenarioBasePath", "output-base-directory", "type")
+
   /**
     * a variation hint is produced each time we set up a combination of parameter values from a
     * batch config. this name-ifies the hint, which is just a list of strings containing
@@ -23,9 +26,10 @@ object MATSimBatchConfig {
     * @param variationHint the variation hint
     * @return a variation name which is OS-friendly
     */
-  def createVariationName(variationHint: List[String]): String = {
+  def createVariationName(variationHint: Map[String, String]): String = {
     variationHint
-      .map{ _.replaceAll("[^a-zA-Z0-9._]+", "_") }
+      .filterNot { case (_, v) => Files.exists(Paths.get(v)) }
+      .map { case (k, v) => s"$k=${v.replaceAll("^[ .]+|\\.+$|\\.(?=[^.]*\\.[^.]*$)|[?\\\\/:;]", "_")}" } // v -> k.replaceAll("[^a-zA-Z0-9._]+", "_")
       .mkString("_")
       .trim
   }
@@ -33,7 +37,7 @@ object MATSimBatchConfig {
   final case class Variation(
     config: Config,
     configReaderResult: ConfigReader.Result[MATSimConfig],
-    variationHint: List[String],
+    variationHint: Map[String, String],
     populationSize: Int
   )
 
@@ -45,8 +49,7 @@ object MATSimBatchConfig {
     * @return either errors, or all variations of MATSimConfig requested by
     *         the batch config along with the variation hints for those configs
     */
-  def readBatchConfig(batchConfigFile: File,
-                      scenarioConfigFilePath: Path): Either[IOError, List[Variation]] = {
+  def readBatchConfig(batchConfigFile: File, scenarioConfigFilePath: Path): Either[IOError, List[Variation]] = {
 
     @tailrec
     def appendMetaConfigEntry(config: Config, variation: List[(String, String)]): Config = {
@@ -66,7 +69,6 @@ object MATSimBatchConfig {
       case Left(error) =>
         Left(new IOError(new Throwable(error.prettyPrint())))
       case Right(batchConfParsed) =>
-
         val configVariations: List[Variation] = for {
           variation <- MultiSetConfigIterator(batchConfParsed).allCombinations
         } yield {
@@ -77,7 +79,7 @@ object MATSimBatchConfig {
             case None =>
               val error: ConfigReaderFailures =
                 ConfigReaderFailures(ThrowableFailure(new IOError(new Throwable("cannot find algorithm.name in batch file")), None))
-              Variation(batchConfParsed, Left(error), List.empty, 0)
+              Variation(batchConfParsed, Left(error), Map.empty, 0)
 
             case Some(algorithmName) =>
               val defaultConfigFile: Path = scenarioConfigFilePath.resolve(s"$algorithmName.conf".trim)
@@ -86,15 +88,13 @@ object MATSimBatchConfig {
                 val error: ConfigReaderFailures = ConfigReaderFailures(
                   ThrowableFailure(new IOError(new Throwable(s"config file for algorithm variation does not exist: $defaultConfigFile")), None)
                 )
-                Variation(batchConfParsed, Left(error), List.empty, 0)
+                Variation(batchConfParsed, Left(error), Map.empty, 0)
               } else {
 
                 // build the default config
                 ConfigSource.file(defaultConfigFile).config() match {
-                  case Left(error) => Variation(batchConfParsed, Left(error), List.empty, 0)
+                  case Left(error)                => Variation(batchConfParsed, Left(error), Map.empty, 0)
                   case Right(defaultConfigParsed) =>
-
-
                     // apply all variations for this combination of attributes for the batch config
                     val thisVariationConfig: Config = appendMetaConfigEntry(defaultConfigParsed, variation)
 
@@ -104,25 +104,22 @@ object MATSimBatchConfig {
                     } match {
                       case util.Failure(error) =>
                         val configReaderFailure: ConfigReaderFailures = ConfigReaderFailures(ThrowableFailure(new IOError(error), None))
-                        Variation(thisVariationConfig, Left(configReaderFailure), List.empty, 0)
+                        Variation(thisVariationConfig, Left(configReaderFailure), Map.empty, 0)
                       case util.Success(popSize) =>
-
                         val thisVariationMATSimConfig: ConfigReader.Result[MATSimConfig] =
                           ConfigSource.fromConfig(thisVariationConfig).load[MATSimConfig]
-                        val thisVariationHint: List[String] =
-                          variation
-                            .filter { case (k, _) =>
-                              !k.contains("algorithm.name") && !k.contains("scenarioBasePath")
-                            }
-                            .map {
-                              case (key, value) =>
-                                key.split('.').headOption match {
-                                  case None => s"${key.head}=$value"
-                                  case Some(suffix) => s"${suffix.head}=$value"
-                                }
-                            }
 
-                        Variation(thisVariationConfig, thisVariationMATSimConfig, thisVariationHint, popSize)
+                        // produces a map of the parameter values we are choosing
+                        val thisVariationHintMap: Map[String, String] =
+                          variation.flatMap {
+                            case (key, value) =>
+                              key.split('.').lastOption match {
+                                case None         => if (ignoredBatchKeys(key)) None else Some { key       -> value }
+                                case Some(suffix) => if (ignoredBatchKeys(suffix)) None else Some { suffix -> value }
+                              }
+                          }.toMap
+
+                        Variation(thisVariationConfig, thisVariationMATSimConfig, thisVariationHintMap, popSize)
                     }
 
                 }

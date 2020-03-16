@@ -1,3 +1,3 @@
 package edu.colorado.fitzgero.sotestbed.reports
 
-trait Reports[F[_]] extends RoutingReports with FinalReports[F]
+abstract class Reports[F[_], V, E] extends RoutingReports[F, V, E] with FinalReports[F]
