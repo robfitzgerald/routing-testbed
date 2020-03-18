@@ -27,6 +27,7 @@ object RoutingAlgorithm {
     responses: List[Response] = List.empty,
     agentHistory: ActiveAgentHistory = ActiveAgentHistory(),
     kspRuntime: RunTime = RunTime.Zero,
-    selectionRuntime: RunTime = RunTime.Zero
+    selectionRuntime: RunTime = RunTime.Zero,
+    samples: Int = 0
   )
 }

@@ -84,22 +84,27 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             }
         }
 
-        val selectionResult: SelectionAlgorithm.Result = selectionAlgorithm
-          .selectRoutes(filteredAlts, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
-          .unsafeRunSync()
+        val selectionResult: SelectionAlgorithm.Result =
+          selectionAlgorithm
+            .selectRoutes(filteredAlts, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
+            .unsafeRunSync()
+
         val selectionResultWithKSPPaths: List[Response] =
           TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths(
             selectionResult.selectedRoutes,
             altsResult.alternatives
           )
+
         val selectionRuntime = RunTime(System.currentTimeMillis) - endOfKspTime
+
         RoutingAlgorithm.Result(
           altsResult.alternatives,
           filteredAlts,
           selectionResultWithKSPPaths,
           activeAgentHistory,
           kspRuntime,
-          selectionRuntime
+          selectionRuntime,
+          samples = selectionResult.samples.value
         )
       }
     }
