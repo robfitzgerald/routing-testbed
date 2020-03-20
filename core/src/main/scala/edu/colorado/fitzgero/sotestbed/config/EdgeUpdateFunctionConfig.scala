@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.config.algorithm
+package edu.colorado.fitzgero.sotestbed.config
 
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{EdgeBPR, EdgeBPRUpdateOps}

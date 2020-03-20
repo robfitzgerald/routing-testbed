@@ -4,15 +4,14 @@ import java.io.{File, PrintWriter}
 
 import cats.effect.{IO, SyncIO}
 
-import edu.colorado.fitzgero.sotestbed.reports.{FinalReports, RoutingResultFileReport}
+import edu.colorado.fitzgero.sotestbed.reports.{CompletePathAlternativesRoutingReport, FinalReports}
 
 class MATSimFinalReport(finalReportFile: File) extends FinalReports[SyncIO] {
-  override type Simulator = Unit
 
   val printWriter: PrintWriter = new PrintWriter(finalReportFile)
-  printWriter.write(RoutingResultFileReport.Header + "\n")
+  printWriter.write(CompletePathAlternativesRoutingReport.Header + "\n")
 
-  def finishReports(simulator: Simulator): SyncIO[Unit] = SyncIO {
+  def finishReports(simulator: Any): SyncIO[Unit] = SyncIO {
     printWriter.write("nothing reported yet\n")
     printWriter.close()
   }

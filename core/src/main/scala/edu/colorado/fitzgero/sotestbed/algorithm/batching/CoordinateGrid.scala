@@ -66,7 +66,7 @@ class CoordinateGrid(
         val (xId, yId) = (xStr.toInt, yStr.toInt)
         -(xId + yId * splitFactor)
       }.toOption match {
-        case None => Int.MaxValue
+        case None      => Int.MaxValue
         case Some(ord) => ord
       }
     case _ => Int.MaxValue
@@ -79,15 +79,24 @@ class CoordinateGrid(
     */
   def printGrid(grouped: Map[String, List[(String, AgentBatchData)]]): String = {
     grouped
-      .map{ case (gridId, agents) => (gridId, agents.size) }
+      .map { case (gridId, agents) => (gridId, agents.size) }
       .toList
-      .sortBy{_._1}(GroupIdOrdering)
+      .sortBy { _._1 }(GroupIdOrdering)
       .sliding(this.splitFactor, this.splitFactor)
-      .map{ row =>
-        row.map{ case (_, count) => count.toString.padTo(3, ' ') }.mkString("")
-      }.mkString("\n")
+      .map { row =>
+        row.map { case (_, count) => count.toString.padTo(3, ' ') }.mkString("")
+      }
+      .mkString("\n")
+  }
+
+  def printList(grouped: Map[String, List[(String, AgentBatchData)]]): String = {
+    grouped.toList
+      .sortBy { case (gridId, _) => gridId }
+      .map { case (gridId, agents) => s"$gridId: ${agents.size}" }
+      .mkString("\n")
   }
 }
+
 object CoordinateGrid {
   val GridIdRegex: Regex = """^(\d+)#(\d+)$""".r
 }

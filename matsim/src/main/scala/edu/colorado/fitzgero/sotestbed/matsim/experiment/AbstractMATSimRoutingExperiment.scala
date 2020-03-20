@@ -12,17 +12,16 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
-import edu.colorado.fitzgero.sotestbed.reports.RoutingResultFileReport
+import edu.colorado.fitzgero.sotestbed.reports.{CompletePathAlternativesRoutingReport, RoutingReports}
 
 abstract class AbstractMATSimRoutingExperiment(
-  routingResultFile: File,
   finalReportFile: File,
-  costFunction: EdgeBPR => Cost
+  routingReports: RoutingReports[SyncIO, Coordinate, EdgeBPR]
 ) extends RoutingExperiment[SyncIO, Coordinate, EdgeBPR]
     with MATSimSimulator {
 
-  val routingResultFileReport: RoutingResultFileReport = new RoutingResultFileReport(routingResultFile, costFunction)
-  val finalReport: MATSimFinalReport                   = new MATSimFinalReport(finalReportFile)
+  val routingResultFileReport: RoutingReports[SyncIO, Coordinate, EdgeBPR] = routingReports
+  val finalReport: MATSimFinalReport                                       = new MATSimFinalReport(finalReportFile)
 
   override def updateReports(routingResult: List[RoutingAlgorithm.Result],
                              roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],

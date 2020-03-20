@@ -1,13 +1,13 @@
-package edu.colorado.fitzgero.sotestbed.config.algorithm
+package edu.colorado.fitzgero.sotestbed.config
 
 import scala.util.Random
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter.{KSPFilterFunction, LimitFunction}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, TravelTimeSeconds}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, PathSegment}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path}
 
 /**
   * a filter function which occurs between generating a set of alternative paths and selecting

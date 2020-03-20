@@ -1,14 +1,14 @@
-package edu.colorado.fitzgero.sotestbed.config.algorithm
+package edu.colorado.fitzgero.sotestbed.config
 
 import cats.Monad
 import cats.effect.SyncIO
 
-import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
 
 sealed trait SelectionAlgorithmConfig {
   def selectionTerminationFunction: SelectionTerminationFunctionConfig
 }
+
 object SelectionAlgorithmConfig {
 
   final case class RandomSamplingSelection(
@@ -16,6 +16,7 @@ object SelectionAlgorithmConfig {
     exhaustiveSearchSampleLimit: Int,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
   ) extends SelectionAlgorithmConfig {
+
     def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
       new selection.RandomSamplingSelectionAlgorithm[F, V, E](
         seed,
@@ -29,6 +30,7 @@ object SelectionAlgorithmConfig {
     exhaustiveSearchSampleLimit: Int,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
   ) extends SelectionAlgorithmConfig {
+
     def build[V, E](): selection.SelectionAlgorithm[SyncIO, V, E] = {
       // todo:
       //  the LocalMCTS selection does mutable ops that need to run in an IO; just calling F a Monad here

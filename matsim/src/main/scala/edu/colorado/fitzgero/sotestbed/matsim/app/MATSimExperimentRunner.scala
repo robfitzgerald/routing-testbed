@@ -16,7 +16,8 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
   TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm,
   TwoPhaseRoutingAlgorithm
 }
-import edu.colorado.fitzgero.sotestbed.config.algorithm.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
+import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig.{AggregateData, CompletePath}
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
@@ -24,6 +25,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 
 case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOption: Option[MATSimConfig.IO.ScenarioData] = None)
     extends LazyLogging {
@@ -56,11 +58,18 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
               marginalCostFn(edgeBPR)(Flow.Zero)
         }
 
+      // how we read reports
+      val routingReportFile: File = new File(config.io.experimentLoggingDirectory.resolve(s"route-${config.algorithm.name}.csv").toString)
+      val routingReporter: RoutingReports[SyncIO, Coordinate, EdgeBPR] =
+        matsimRunConfig.io.routingReportConfig match {
+          case AggregateData => AggregateData.build(routingReportFile, costFunction)
+          case CompletePath  => CompletePath.build(routingReportFile, costFunction)
+        }
+
       // the actual Simulation runner instance
       val experiment = new LocalMATSimRoutingExperiment(
-        new File(config.io.experimentLoggingDirectory.resolve(s"route-${config.algorithm.name}.csv").toString),
         new File(config.io.experimentLoggingDirectory.resolve(s"final-${config.algorithm.name}.log").toString),
-        costFunction
+        routingReporter
       )
 
       val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {

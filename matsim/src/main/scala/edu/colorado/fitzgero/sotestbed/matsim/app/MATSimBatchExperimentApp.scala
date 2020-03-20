@@ -173,7 +173,7 @@ object MATSimBatchExperimentApp
                             experiment.run()
                           }.toEither match {
                             case Left(e) =>
-                              println(s"trial $trial exit with fatal error")
+                              println(s"trial $trial exit with fatal error $e")
                               batchLogger.write(s"$trial,${e.toString}\n")
                             case Right(result) =>
                               result match {
@@ -260,7 +260,7 @@ object MATSimBatchExperimentApp
                           experiment.run()
                         }.toEither match {
                           case Left(e) =>
-                            println(s"trial $trial exit with fatal error")
+                            println(s"trial $trial exit with fatal error $e")
                             batchLogger.write(s"$trial,${e.toString}\n")
                           case Right(result) =>
                             result match {

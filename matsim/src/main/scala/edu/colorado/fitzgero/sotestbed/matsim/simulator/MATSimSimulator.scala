@@ -59,7 +59,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var matsimStepSize: SimTime                                   = _
   var matsimSemaphoreTimeoutMs: Long                            = _
   var maxPathAssignments: Int                                   = _
-  var reasonableReplanningLeadTime: TravelTimeSeconds           = _
+  var minimumReplanningLeadTime: TravelTimeSeconds              = _
   var minimumRemainingRouteTimeForReplanning: TravelTimeSeconds = _
   var simulationTailTimeout: Duration                           = _
   var onlySelfishAgents: Boolean                                = _
@@ -110,8 +110,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.matsimStepSize = config.run.matsimStepSize
     self.matsimSemaphoreTimeoutMs = config.run.matsimSemaphoreTimeoutMs
     self.maxPathAssignments = config.routing.maxPathAssignments
-    self.reasonableReplanningLeadTime = config.routing.reasonableReplanningLeadTime
-    self.minimumRemainingRouteTimeForReplanning = config.routing.reasonableReplanningLeadTime
+    self.minimumReplanningLeadTime = config.routing.minimumReplanningLeadTime
+    self.minimumRemainingRouteTimeForReplanning = config.routing.minimumReplanningLeadTime
     self.simulationTailTimeout = config.run.simulationTailTimeout
     self.onlySelfishAgents = config.algorithm match {
       case _: MATSimConfig.Algorithm.Selfish => true
@@ -163,7 +163,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
       config.pop.agentsUnderControl,
       config.routing.requestUpdateCycle,
       config.routing.maxPathAssignments,
-      SimTime.Zero // config.routing.minimumReplanningWaitTime
+      config.routing.minimumReplanningWaitTime
     )
     self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
 
@@ -325,7 +325,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                                                originLinkId,
                                                                endLinkId,
                                                                self.qSim,
-                                                               reasonableReplanningLeadTime,
+                                                               minimumReplanningLeadTime,
                                                                minimumRemainingRouteTimeForReplanning) match {
                           case None => ()
                           case Some(reasonableStartEdgeId) =>
@@ -520,7 +520,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                                                                  currentLinkId,
                                                                                  destinationLinkId,
                                                                                  self.qSim,
-                                                                                 reasonableReplanningLeadTime,
+                                                                                 minimumReplanningLeadTime,
                                                                                  minimumRemainingRouteTimeForReplanning) match {
                                             case None =>
                                               val remainingTT = MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)

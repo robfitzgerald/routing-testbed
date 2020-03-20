@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.config.algorithm
+package edu.colorado.fitzgero.sotestbed.config
 
 import cats.Monad
 
@@ -10,6 +10,7 @@ sealed trait KSPAlgorithmConfig {
   def build[F[_]: Monad, V, E](): altpaths.KSPAlgorithm[F, V, E]
   def kspTerminationFunction: KSPTerminationFunctionConfig
 }
+
 object KSPAlgorithmConfig {
   final case class SvpLoSync(
     k: Int,
@@ -22,10 +23,10 @@ object KSPAlgorithmConfig {
 
     override def build[F[_]: Monad, V, E](): altpaths.KSPAlgorithm[F, V, E] =
       new kSPwLO_SVP_Sync(
-        k=k,
-        theta=theta,
-        terminationFunction=kspTerminationFunction.build(),
-        minBatchSize=minBatchSize
+        k = k,
+        theta = theta,
+        terminationFunction = kspTerminationFunction.build(),
+        minBatchSize = minBatchSize
       )
   }
 }

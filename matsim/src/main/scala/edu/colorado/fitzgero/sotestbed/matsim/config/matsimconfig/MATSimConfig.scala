@@ -15,7 +15,7 @@ import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, BatchingFunction}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.config.algorithm._
+import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, CombineFlowsFunctionConfig, EdgeUpdateFunctionConfig, KSPAlgorithmConfig, KSPFilterFunctionConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, RoutingReportConfig, SelectionAlgorithmConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
@@ -56,9 +56,8 @@ object MATSimConfig {
     batchWindow: SimTime,
     adoptionRate: Double,
     maxPathAssignments: Int,
-    reasonableReplanningLeadTime: TravelTimeSeconds,
-//    minimumReplanningWaitTime: SimTime,  // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
-    minimumRemainingRouteTimeForReplanning: TravelTimeSeconds,
+    minimumReplanningLeadTime: TravelTimeSeconds, // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
+    minimumReplanningWaitTime: SimTime, // we ignore replanning for agents which have not traveled at least this long between replanning events
     requestUpdateCycle: SimTime,
     minBatchSize: Int,
     selfish    : Routing.Selfish
@@ -94,10 +93,11 @@ object MATSimConfig {
     matsimNetworkFile: File,
     populationFile   : File,
     matsimConfigFile : File,
+    routingReportConfig: RoutingReportConfig,
+    matsimLogLevel   : String = "INFO",
     batchName        : String = System.currentTimeMillis.toString,
     scenarioData     : Option[ScenarioData] = None,
     outputBaseDirectory: Path = Paths.get("/tmp"),
-    matsimLogLevel   : String = "INFO",
   ) {
     def batchLoggingDirectory: Path = {
       outputBaseDirectory.resolve(batchName)

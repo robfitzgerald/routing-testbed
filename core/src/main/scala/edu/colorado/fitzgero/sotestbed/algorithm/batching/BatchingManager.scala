@@ -77,13 +77,12 @@ final case class BatchingManager(
 object BatchingManager {
 
   final case class BatchPayload(
-
-  )
+    )
 
   def splitUEFromSO(data: AgentBatchData): Boolean = {
     data match {
-      case AgentBatchData.RouteRequestData(req, _, _, _, _, _) => req.requestClass == RequestClass.UE
-      case _ => false
+      case data: AgentBatchData.RouteRequestData => data.request.requestClass == RequestClass.UE
+      case _                                     => false
     }
   }
 
@@ -110,7 +109,7 @@ object BatchingManager {
     if (currentTime < SimTime.Zero) None
     else {
       val batchOfDay: Int = math.floor(currentTime.value.toDouble / batchWindow.value.toDouble).toInt
-      Some{ SimTime(batchOfDay) * batchWindow }
+      Some { SimTime(batchOfDay) * batchWindow }
     }
   }
 

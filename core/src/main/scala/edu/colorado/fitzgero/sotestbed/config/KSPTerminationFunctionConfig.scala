@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.config.algorithm
+package edu.colorado.fitzgero.sotestbed.config
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm.AltPathsState
 
@@ -23,9 +23,11 @@ object KSPTerminationFunctionConfig {
     scalar: Int,
     k: Int
   ) extends KSPTerminationFunctionConfig {
+
     def build(): AltPathsState => Boolean = {
       val bounds: Int = k * scalar
-      state: AltPathsState => state.alts.length >= bounds
+      state: AltPathsState =>
+        state.alts.length >= bounds
     }
   }
 

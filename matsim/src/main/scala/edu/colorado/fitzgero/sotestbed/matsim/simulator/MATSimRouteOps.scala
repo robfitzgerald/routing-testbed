@@ -273,7 +273,7 @@ object MATSimRouteOps extends LazyLogging {
     * @param currentLinkId the agent's current link location
     * @param destinationLinkId the destination of the path
     * @param qSim contains network link data
-    * @param reasonableReplanningLeadTime how many seconds into the future we should allow the agent to continue
+    * @param minimumReplanningLeadTime how many seconds into the future we should allow the agent to continue
     *                                     their currently planned route before injecting a new route plan
     * @param minimumRemainingRouteTimeForReplanning how many seconds there must be between any discovered replanning
     *                                               request origin and the destination in travel time to allow for
@@ -285,7 +285,7 @@ object MATSimRouteOps extends LazyLogging {
     currentLinkId: Id[Link],
     destinationLinkId: Id[Link],
     qSim: QSim,
-    reasonableReplanningLeadTime: TravelTimeSeconds,
+    minimumReplanningLeadTime: TravelTimeSeconds,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
   ): Option[EdgeId] = {
 
@@ -308,7 +308,7 @@ object MATSimRouteOps extends LazyLogging {
                 .getLink
               (l, Meters.toTravelTime(Meters(link.getLength), MetersPerSecond(link.getFreespeed)))
             }
-            .foldLeft(MATSimRouteOps.ReasonableStartPointFoldAccumulator(reasonableReplanningLeadTime)) { (acc, tup) =>
+            .foldLeft(MATSimRouteOps.ReasonableStartPointFoldAccumulator(minimumReplanningLeadTime)) { (acc, tup) =>
               val (linkId, linkTravelTime)              = tup
               val nextRemainingSlack: TravelTimeSeconds = acc.remainingSlack - linkTravelTime
               if (acc.clearedReplanningLeadTime && acc.startPointNotFound) {

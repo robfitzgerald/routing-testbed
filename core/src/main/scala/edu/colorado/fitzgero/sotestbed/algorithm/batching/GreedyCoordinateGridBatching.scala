@@ -11,7 +11,6 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 class GreedyCoordinateGridBatching(
   batchWindow: SimTime,
-  minimumReplanningWaitTime: SimTime,
   maxBatchSize: Int,
   minX: Double,
   maxX: Double,
@@ -44,20 +43,6 @@ class GreedyCoordinateGridBatching(
         // no new batch data; use current strategy
         None
       case _ =>
-//        val nextValidBatchTime = BatchingManager.nextValidBatchingTime(this.batchWindow, currentTime)
-//
-//        // agents slated for the next valid batching time should not be touched
-//        val (replannableCurrentBatch, slatedForNextBatchingTime) =
-//          currentBatchStrategy
-//            .map { case (_, i) => i }
-//            .toList
-//            .partition { _.batchingTime > nextValidBatchTime }
-//
-//        val replannableCurrentBatchData: List[AgentBatchData] =
-//          replannableCurrentBatch.flatMap { i =>
-//            agentBatchDataMap.get(i.agentId)
-//          }
-
         // find all agent's estimated location at batchPathTimeDelay time into future and find their coordinate.
         // create a tag from this src coordinate and the agent's final destination as a coordinate
         // map the coordinates to string ids and concatenate them into a grouping tag
@@ -113,7 +98,7 @@ class GreedyCoordinateGridBatching(
                     (agentBatchData.request.origin.value, agentBatchData)
                 }
             }
-          logger.info(s"so batched agent locations at $currentTime:\n" + grid.printGrid(prettyPrintMe))
+          logger.info(s"so batched agent locations at $currentTime:\n" + grid.printList(prettyPrintMe))
           logger.info(s"batch groupings:\n ${grouped.map { case (_, v) => v.size }.mkString("[", ",", "]")}")
 
           // share our grouping with the world, let them smile upon our greatness
