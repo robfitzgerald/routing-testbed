@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.reports
 
 import java.io.{File, PrintWriter}
+import java.text.DecimalFormat
 
 import cats.effect.SyncIO
 
@@ -168,6 +169,8 @@ object CompletePathAlternativesRoutingReport {
   val Header: String =
     "agentId,time,decision,decisionTag,batchSize,rowType,alt,selected,samples,searchSpace,spaceExploredPercent,distExperienced,distRemaining,distOverall,distTraveledPercent,timeExperienced,timeEstRemaining,timeOverall,currentLink,lat,lon,path"
 
+  val LatLonPrecisionFormat: DecimalFormat = new DecimalFormat("0.000000")
+
   final case class Row(
     agentId: String,
     time: SimTime,
@@ -193,7 +196,9 @@ object CompletePathAlternativesRoutingReport {
     override def toString: String = {
       val spaceExplored: String    = f"${(samples.toDouble / searchSpace) * 100.0}%.2f%%"
       val distanceTraveled: String = f"${(distanceExperienced.value / distanceOverall.value) * 100.0}%.2f%%"
-      s"$agentId,$time,$decision,$decisionTag,$batchSize,$rowType,$alt,$selected,$samples,$searchSpace,$spaceExplored,$distanceExperienced,$distanceRemaining,$distanceOverall,$distanceTraveled,$timeExperienced,$timeEstRemaining,$timeEstOverall,$currentLink,$lat,$lon,$path\n"
+      val latString: String        = LatLonPrecisionFormat.format(lat)
+      val lonString: String        = LatLonPrecisionFormat.format(lon)
+      s"$agentId,$time,$decision,$decisionTag,$batchSize,$rowType,$alt,$selected,$samples,$searchSpace,$spaceExplored,$distanceExperienced,$distanceRemaining,$distanceOverall,$distanceTraveled,$timeExperienced,$timeEstRemaining,$timeEstOverall,$currentLink,$latString,$lonString,$path\n"
     }
   }
 }
