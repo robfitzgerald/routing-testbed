@@ -208,12 +208,14 @@ class SOAgentReplanningHandler(
     * @param currentTime the current time
     */
   def trackEnteringALink(personId: Id[Person], currentTime: SimTime): Unit =
-    agentsInSimulation.get(personId) match {
-      case None =>
-        logger.warn(s"personId $personId entering a link but not already tracked")
-      case Some(agentData) =>
-        val updatedAgentData: AgentData = agentData.copy(currentLinkEnterTime = Some { currentTime })
-        this.agentsInSimulation.update(personId, updatedAgentData)
+    if (agentsUnderControl(personId)) {
+      agentsInSimulation.get(personId) match {
+        case None =>
+          logger.warn(s"personId $personId entering a link but not already tracked")
+        case Some(agentData) =>
+          val updatedAgentData: AgentData = agentData.copy(currentLinkEnterTime = Some { currentTime })
+          this.agentsInSimulation.update(personId, updatedAgentData)
+      }
     }
 
   /**
@@ -223,23 +225,25 @@ class SOAgentReplanningHandler(
     * @param currentTime the current time
     */
   def trackLeavingALink(personId: Id[Person], linkId: Id[Link], currentTime: SimTime): Unit =
-    agentsInSimulation.get(personId) match {
-      case None =>
-        logger.warn(s"personId $personId leaving a link $linkId but agent was not being tracked")
-      case Some(agentData) =>
-        agentData.currentLinkEnterTime match {
-          case None =>
-            logger.warn(s"personId $personId leaving link $linkId but no record having entered it")
-          case Some(currentLinkEnterTime) =>
-            val linkTravelTime: SimTime         = currentTime - currentLinkEnterTime
-            val LinkTraversal: (Id[Link], Cost) = (linkId, Cost(linkTravelTime.value))
-            val updatedAgentData: AgentData =
-              agentData.copy(
-                currentLinkEnterTime = None,
-                reverseExperiencedRoute = LinkTraversal +: agentData.reverseExperiencedRoute
-              )
-            this.agentsInSimulation.update(personId, updatedAgentData)
-        }
+    if (agentsUnderControl(personId)) {
+      agentsInSimulation.get(personId) match {
+        case None =>
+          logger.warn(s"personId $personId leaving a link $linkId but agent was not being tracked")
+        case Some(agentData) =>
+          agentData.currentLinkEnterTime match {
+            case None =>
+              logger.warn(s"personId $personId leaving link $linkId but no record having entered it")
+            case Some(currentLinkEnterTime) =>
+              val linkTravelTime: SimTime         = currentTime - currentLinkEnterTime
+              val LinkTraversal: (Id[Link], Cost) = (linkId, Cost(linkTravelTime.value))
+              val updatedAgentData: AgentData =
+                agentData.copy(
+                  currentLinkEnterTime = None,
+                  reverseExperiencedRoute = LinkTraversal +: agentData.reverseExperiencedRoute
+                )
+              this.agentsInSimulation.update(personId, updatedAgentData)
+          }
+      }
     }
 
   // for more information on these events, see The MATSim Book, page 19, Fig 2.2: Mobsim events
@@ -275,7 +279,7 @@ class SOAgentReplanningHandler(
   def handleEvent(event: LinkEnterEvent): Unit = {
     this.vehiclesForPersons.get(event.getVehicleId) match {
       case None =>
-        logger.warn(s"entering link with unregistered vehicle ${event.getVehicleId}")
+        logger.debug(s"entering link with unregistered vehicle ${event.getVehicleId} presumed UE agent")
       case Some(personId) =>
         this.trackEnteringALink(personId, SimTime(event.getTime.toInt))
     }
@@ -284,7 +288,7 @@ class SOAgentReplanningHandler(
   def handleEvent(event: LinkLeaveEvent): Unit = {
     this.vehiclesForPersons.get(event.getVehicleId) match {
       case None =>
-        logger.warn(s"leaving link with unregistered vehicle ${event.getVehicleId}")
+        logger.debug(s"leaving link with unregistered vehicle ${event.getVehicleId} presumed UE agent")
       case Some(personId) =>
         this.trackLeavingALink(personId, event.getLinkId, SimTime(event.getTime.toInt))
     }

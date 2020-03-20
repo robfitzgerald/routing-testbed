@@ -90,10 +90,16 @@ class CoordinateGrid(
   }
 
   def printList(grouped: Map[String, List[(String, AgentBatchData)]]): String = {
-    grouped.toList
+    val columns: Int = 8
+    val asStrings: List[String] = grouped.toList
       .sortBy { case (gridId, _) => gridId }
-      .map { case (gridId, agents) => s"$gridId: ${agents.size}" }
-      .mkString("\n")
+      .map { case (gridId, agents) => s"$gridId: ${agents.size.toString.padTo(3, ' ')}" }
+    val splitAcrossRows: Iterator[String] = for {
+      row <- asStrings.sliding(columns, columns)
+    } yield {
+      row.mkString(" ")
+    }
+    splitAcrossRows.mkString("\n")
   }
 }
 

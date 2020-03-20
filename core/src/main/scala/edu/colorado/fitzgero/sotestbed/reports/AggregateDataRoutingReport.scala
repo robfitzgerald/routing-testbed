@@ -26,8 +26,6 @@ class AggregateDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR 
     val pathDistance: Path => Meters              = RouteReportOps.pathDistance(roadNetwork)
     val pathEstTravelTime: Path => Cost           = RouteReportOps.pathEstTravelTime(roadNetwork, costFunction)
 
-    println("here")
-
     // gather all assets required to create routing report rows
     for {
       (routingResult, resultIndex) <- routingResults.zipWithIndex
