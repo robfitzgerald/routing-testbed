@@ -167,7 +167,7 @@ object CompletePathAlternativesRoutingReport {
 
   // header for the route data output file
   val Header: String =
-    "agentId,time,decision,decisionTag,batchSize,rowType,alt,selected,samples,searchSpace,spaceExploredPercent,distExperienced,distRemaining,distOverall,distTraveledPercent,timeExperienced,timeEstRemaining,timeOverall,currentLink,lat,lon,path"
+    "agentId,time,decision,decisionTag,batchSize,rowType,alt,selected,samples,searchSpace,spaceExploredPercent,distExperienced,distRemaining,distOverall,distTraveledPercent,timeExperienced,timeEstRemaining,timeEstOverall,currentLink,lat,lon,path"
 
   val LatLonPrecisionFormat: DecimalFormat = new DecimalFormat("0.000000")
 

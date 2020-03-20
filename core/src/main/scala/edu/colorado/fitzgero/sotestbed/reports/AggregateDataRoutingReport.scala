@@ -94,7 +94,7 @@ object AggregateDataRoutingReport {
 
   // header for the route data output file
   val Header: String =
-    "agentId,time,decision,decisionTag,batchSize,rowType,alt,samples,searchSpace,spaceExploredPercent,distExperienced,distRemaining,distOverall,distTraveledPercent,timeExperienced,timeEstRemaining,timeOverall,currentLink,lat,lon"
+    "agentId,time,decision,decisionTag,batchSize,rowType,alt,samples,searchSpace,spaceExploredPercent,distExperienced,distRemaining,distOverall,distTraveledPercent,timeExperienced,timeEstRemaining,timeEstOverall,currentLink,lat,lon"
 
   val LatLonPrecisionFormat: DecimalFormat = new DecimalFormat("0.000000")
 
