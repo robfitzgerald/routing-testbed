@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-version := "0.1"
+version := "1.0.0"
 val sVersion = "2.12.10"
 
 lazy val core = project
