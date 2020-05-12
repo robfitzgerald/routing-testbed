@@ -18,7 +18,7 @@ class GreedyCoordinateGridBatching(
   maxY: Double,
   splitFactor: Int,
   batchPathTimeDelay: SimTime,
-  tagType: String = "od"
+  tagType: String = "c"
 ) extends BatchingFunction
     with LazyLogging {
 
@@ -48,17 +48,18 @@ class GreedyCoordinateGridBatching(
         // map the coordinates to string ids and concatenate them into a grouping tag
         val tagged: List[(String, RouteRequestData)] = for {
           agentBatchData <- activeRouteRequests
-          tagger         <- GreedyCoordinateGridBatching.BatchTag.makeBatchTag(tagType, agentBatchData)
+          tagger         <- BatchTag.makeBatchTag(tagType, agentBatchData)
           tagged <- tagger match {
-            case od: GreedyCoordinateGridBatching.BatchTag.ODTag =>
-              od.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
+
+            case cd: BatchTag.CDTag =>
+              cd.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
                 (tag, agentBatchData)
               }
-            case o: GreedyCoordinateGridBatching.BatchTag.OTag =>
-              o.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
+            case c: BatchTag.CTag =>
+              c.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
                 (tag, agentBatchData)
               }
-            case d: GreedyCoordinateGridBatching.BatchTag.DTag =>
+            case d: BatchTag.DTag =>
               d.tag(grid).map { tag =>
                 (tag, agentBatchData)
               }
@@ -109,55 +110,6 @@ class GreedyCoordinateGridBatching(
               .map { _.map { case (data, _) => data.request } }
               .toList
           }
-        }
-    }
-  }
-}
-
-object GreedyCoordinateGridBatching {
-  sealed trait BatchTag
-
-  object BatchTag {
-
-    def makeBatchTag(tagType: String, agentBatchData: RouteRequestData): Option[BatchTag] = {
-      tagType.trim.toLowerCase match {
-        case "od" => Some { ODTag(agentBatchData) }
-        case "o"  => Some { OTag(agentBatchData) }
-        case "d"  => Some { DTag(agentBatchData) }
-        case _    => None
-      }
-    }
-
-    final case class OTag(routeRequestData: RouteRequestData) extends BatchTag {
-
-      def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
-        for {
-          src <- BatchingOps.defaultStartCoordinate(routeRequestData.remainingRoute)
-        } yield {
-          val originTag: String = grid.getGridId(src.x, src.y)
-          originTag
-        }
-    }
-    final case class DTag(routeRequestData: RouteRequestData) extends BatchTag {
-
-      def tag(grid: CoordinateGrid): Option[String] =
-        for {
-          dst <- routeRequestData.remainingRoute.lastOption.map { _.linkSourceCoordinate }
-        } yield {
-          val destinationTag: String = grid.getGridId(dst.x, dst.y)
-          destinationTag
-        }
-    }
-    final case class ODTag(routeRequestData: RouteRequestData) extends BatchTag {
-
-      def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
-        for {
-          src <- BatchingOps.defaultStartCoordinate(routeRequestData.remainingRoute)
-          dst <- routeRequestData.remainingRoute.lastOption.map { _.linkSourceCoordinate }
-        } yield {
-          val originTag: String      = grid.getGridId(src.x, src.y)
-          val destinationTag: String = grid.getGridId(dst.x, dst.y)
-          s"$originTag#$destinationTag"
         }
     }
   }

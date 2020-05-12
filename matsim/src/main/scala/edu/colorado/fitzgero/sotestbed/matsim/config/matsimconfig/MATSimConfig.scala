@@ -19,7 +19,7 @@ import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, CombineFl
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 final case class MATSimConfig(
@@ -58,11 +58,13 @@ object MATSimConfig {
     maxPathAssignments: Int,
     minimumReplanningLeadTime: TravelTimeSeconds, // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
     minimumReplanningWaitTime: SimTime, // we ignore replanning for agents which have not traveled at least this long between replanning events
+    minimumAverageImprovement: Cost,
     requestUpdateCycle: SimTime,
     minBatchSize: Int,
     selfish    : Routing.Selfish
   ) {
-    require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle needs to be at least 1")
+    require(minimumAverageImprovement >= Cost.Zero, "matsimConfig.routing.minimumAverageImprovement should be non-negative")
+    require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle should be non-negative")
   }
 
   object Routing {
@@ -91,9 +93,10 @@ object MATSimConfig {
 
   final case class IO(
     matsimNetworkFile: File,
-    populationFile   : File,
+    populationPolygonFile: Option[File],
     matsimConfigFile : File,
     routingReportConfig: RoutingReportConfig,
+    populationFile   : File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
     matsimLogLevel   : String = "INFO",
     batchName        : String = System.currentTimeMillis.toString,
     scenarioData     : Option[ScenarioData] = None,

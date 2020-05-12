@@ -16,7 +16,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
   TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm,
   TwoPhaseRoutingAlgorithm
 }
-import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig.{AggregateData, CompletePath}
+import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig.{AggregateData, CompletePath, Inactive}
 import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
@@ -64,6 +64,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
         matsimRunConfig.io.routingReportConfig match {
           case AggregateData => AggregateData.build(routingReportFile, costFunction)
           case CompletePath  => CompletePath.build(routingReportFile, costFunction)
+          case Inactive      => Inactive.build()
         }
 
       // the actual Simulation runner instance
@@ -87,6 +88,8 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
                 combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
                 marginalCostFunction = systemOptimal.marginalCostFunction.build(),
                 useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch,
+                minimumAverageImprovement = matsimRunConfig.routing.minimumAverageImprovement,
+                minBatchSize = matsimRunConfig.routing.minBatchSize,
                 kspFilterFunction = systemOptimal.kspFilterFunction.build(),
                 seed = seed
               )

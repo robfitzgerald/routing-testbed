@@ -12,10 +12,11 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNum
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
-    seed: Long,
-    exhaustiveSearchSampleLimit: Int,
-    terminationFunction: SelectionState => Boolean
-) extends SelectionAlgorithm[F, V, E] with LazyLogging {
+  seed: Long,
+  exhaustiveSearchSampleLimit: Int,
+  terminationFunction: SelectionState => Boolean
+) extends SelectionAlgorithm[F, V, E]
+    with LazyLogging {
 
   import SelectionAlgorithm._
 
@@ -24,11 +25,11 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
   case class EdgeAndMarginalFlow(edgeId: EdgeId, flow: Flow)
 
   def selectRoutes(
-      alts: Map[Request, List[Path]],
-      roadNetwork: RoadNetwork[F, V, E],
-      pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
-      combineFlowsFunction: Iterable[Flow] => Flow,
-      marginalCostFunction: E => Flow => Cost
+    alts: Map[Request, List[Path]],
+    roadNetwork: RoadNetwork[F, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost
   ): F[SelectionAlgorithm.Result] = {
 
     logger.debug(s"selectRoutes called with ${alts.size} requests")
@@ -37,40 +38,42 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
 
     if (alts.isEmpty) {
       Monad[F].pure {
-        SelectionAlgorithm.Result(
-          List.empty,
-          Cost.Zero,
-          NonNegativeNumber.Zero
-        )
+        SelectionAlgorithm.Result()
       }
     } else if (alts.toList.lengthCompare(1) == 0 && alts.values.head.nonEmpty) {
-        SelectionAlgorithm.evaluateCostOfSelection(
+      SelectionAlgorithm
+        .evaluateCostOfSelection(
           alts.values.flatMap { _.headOption }.toList,
           roadNetwork,
           pathToMarginalFlowsFunction,
           combineFlowsFunction,
           marginalCostFunction
-        ) map { selectionCost =>
+        )
+        .map { selectionCost =>
           SelectionAlgorithm.Result(
-            alts.map{ case (req, paths) => Response(req, 0, paths.head.map{_.edgeId}, selectionCost.overallCost)}.toList,
-            selectionCost.overallCost,
-            NonNegativeNumber.Zero
+            selectedRoutes = alts.map { case (req, paths) => Response(req, 0, paths.head.map { _.edgeId }, selectionCost.overallCost) }.toList,
+            estimatedCost = selectionCost.overallCost,
+            selfishCost = selectionCost.overallCost,
+            samples = NonNegativeNumber.One
           )
         }
     } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
       // problem small enough for an exhaustive search
-      SelectionAlgorithm.performExhaustiveSearch(
-        alts,
-        roadNetwork,
-        pathToMarginalFlowsFunction,
-        combineFlowsFunction,
-        marginalCostFunction
-      ).map{ case (result, tspCost) =>
-        val avgAlts: Double = if (alts.isEmpty) 0D else alts.map{case (_, alts) => alts.size}.sum.toDouble / alts.size
-        logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
-        logger.info(s"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost}")
-        result
-      }
+      SelectionAlgorithm
+        .performExhaustiveSearch(
+          alts,
+          roadNetwork,
+          pathToMarginalFlowsFunction,
+          combineFlowsFunction,
+          marginalCostFunction
+        )
+        .map {
+          case (result, tspCost) =>
+            val avgAlts: Double = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+            logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
+            logger.info(s"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost}")
+            result
+        }
     } else {
       // turn path alternatives into vector for faster indexing performance
       val indexedAlts: Map[Request, Vector[Path]] =
@@ -104,15 +107,14 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
           samples = NonNegativeNumber.One,
           startTime = startTime
         )
-        endState <- RandomSamplingSelectionAlgorithm.performRandomSampling(
-          startState,
-          indexedAlts.values,
-          roadNetwork,
-          pathToMarginalFlowsFunction,
-          combineFlowsFunction,
-          marginalCostFunction,
-          terminationFunction,
-          random)
+        endState <- RandomSamplingSelectionAlgorithm.performRandomSampling(startState,
+                                                                           indexedAlts.values,
+                                                                           roadNetwork,
+                                                                           pathToMarginalFlowsFunction,
+                                                                           combineFlowsFunction,
+                                                                           marginalCostFunction,
+                                                                           terminationFunction,
+                                                                           random)
 
       } yield {
 
@@ -126,22 +128,26 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
                 Response(request, idx, alts(idx).map { _.edgeId }, cost)
             }
             .toList
+        val improvement: Cost        = selfishCost - endState.bestOverallCost
+        val averageImprovement: Cost = Cost((selfishCost - endState.bestOverallCost).value / alts.size)
+
 //        val bestCostStr: String = endState.bestOverallCost.toString.padTo(10, ' ')
         logger.info(s"AGENTS: ${responses.length} SAMPLES: ${endState.samples}")
         logger.info(s"COST_EST: BEST ${endState.bestOverallCost}, SELFISH $selfishCost, DIFF ${selfishCost - endState.bestOverallCost}")
 
         // final return value
         SelectionAlgorithm.Result(
-          responses,
-          endState.bestOverallCost,
+          selectedRoutes = responses,
+          estimatedCost = endState.bestOverallCost,
+          selfishCost = selfishCost,
+          improvement = improvement,
+          averageImprovement = averageImprovement,
           endState.samples
         )
       }
     }
   }
 }
-
-
 
 object RandomSamplingSelectionAlgorithm {
 
@@ -161,24 +167,23 @@ object RandomSamplingSelectionAlgorithm {
     * @return
     */
   def performRandomSampling[F[_]: Monad, V, E](
-      state                      : SelectionAlgorithm.SelectionState,
-      indexedAlts                : Iterable[Vector[Path]],
-      roadNetwork                : RoadNetwork[F, V, E],
-      pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
-      combineFlowsFunction       : Iterable[Flow] => Flow,
-      marginalCostFunction       : E => Flow => Cost,
-      terminationFunction        : SelectionState => Boolean,
-      random                     : Random
+    state: SelectionAlgorithm.SelectionState,
+    indexedAlts: Iterable[Vector[Path]],
+    roadNetwork: RoadNetwork[F, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost,
+    terminationFunction: SelectionState => Boolean,
+    random: Random
   ): F[SelectionAlgorithm.SelectionState] = {
 
     if (indexedAlts.size <= 1) {
-      Monad[F].pure{
+      Monad[F].pure {
         state
       }
     } else {
       // encase loop in F[_]-friendly recursion
       state.iterateUntilM { state =>
-
         // randomly pick indices and extract the associated paths
         val (thisRandomSelectionIndices: List[Int], thisRandomSelectionPaths: List[Path]) =
           indexedAlts

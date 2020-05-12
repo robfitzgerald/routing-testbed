@@ -2,7 +2,7 @@
 <!DOCTYPE config SYSTEM "matsim-dtd/config_v2.dtd">
 <config>
     <module name="global">
-        <param value="mercator" name="coordinateSystem"/>
+        <param value="EPSG:3857" name="coordinateSystem"/>
     </module>
     <module name="network">
         <param value="None" name="inputNetworkFile"/>

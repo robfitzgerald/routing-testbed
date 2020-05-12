@@ -39,6 +39,8 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
   marginalCostFunction: EdgeBPR => Flow => Cost,
   kspFilterFunction: KSPFilterFunction,
   useFreeFlowNetworkCostsInPathSearch: Boolean,
+  minimumAverageImprovement: Cost,
+  minBatchSize: Int,
   seed: Long,
   timeLimit: RunTime = RunTime(31536000), // one year.
   limitAltsRuntime: Boolean = true,
@@ -57,7 +59,9 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
       if (useFreeFlowNetworkCostsInPathSearch) e => marginalCostFunction(e)(Flow.Zero)
       else e => marginalCostFunction(e)(e.flow)
 
-    if (reqs.isEmpty) {
+    if (reqs.size < minBatchSize) {
+      val ignoredAgents: String = reqs.map { _.agent }.mkString(",")
+      logger.info(s"ignoring batch with less than the minimum size of $minBatchSize for agents: $ignoredAgents")
       SyncIO { RoutingAlgorithm.Result() }
     } else {
       for {
@@ -89,23 +93,31 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             .selectRoutes(filteredAlts, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
             .unsafeRunSync()
 
-        val selectionResultWithKSPPaths: List[Response] =
-          TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths(
-            selectionResult.selectedRoutes,
-            altsResult.alternatives
+        // minimumAverageImprovement
+        if (math.abs(selectionResult.averageImprovement.value) < minimumAverageImprovement.value) {
+          val ignoredAgents: String = reqs.map { _.agent }.mkString(",")
+          logger.info(
+            s"ignoring batch with avg improvement ${selectionResult.averageImprovement}s less than min required ${minimumAverageImprovement}s for agents: $ignoredAgents")
+          RoutingAlgorithm.Result()
+        } else {
+          val selectionResultWithKSPPaths: List[Response] =
+            TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths(
+              selectionResult.selectedRoutes,
+              altsResult.alternatives
+            )
+
+          val selectionRuntime = RunTime(System.currentTimeMillis) - endOfKspTime
+
+          RoutingAlgorithm.Result(
+            altsResult.alternatives,
+            filteredAlts,
+            selectionResultWithKSPPaths,
+            activeAgentHistory,
+            kspRuntime,
+            selectionRuntime,
+            samples = selectionResult.samples.value
           )
-
-        val selectionRuntime = RunTime(System.currentTimeMillis) - endOfKspTime
-
-        RoutingAlgorithm.Result(
-          altsResult.alternatives,
-          filteredAlts,
-          selectionResultWithKSPPaths,
-          activeAgentHistory,
-          kspRuntime,
-          selectionRuntime,
-          samples = selectionResult.samples.value
-        )
+        }
       }
     }
   }

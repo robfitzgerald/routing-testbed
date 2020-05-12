@@ -148,7 +148,8 @@ object MATSimBatchExperimentApp
 
                           // generate the population
                           MATSimPopulationRunner.generateUniformPopulation(
-                            matsimNetworkFile = matsimConfig.io.matsimNetworkFile,
+                            networkFile = matsimConfig.io.matsimNetworkFile,
+                            polygonFileOption = matsimConfig.io.populationPolygonFile,
                             popFileDestination = variationPopFile,
                             popSize = popSize,
                             adoptionRate = matsimConfig.routing.adoptionRate,
@@ -235,7 +236,8 @@ object MATSimBatchExperimentApp
                         if (!variationPopFile.isFile) {
                           // generate the population
                           MATSimPopulationRunner.generateUniformPopulation(
-                            matsimNetworkFile = matsimConfig.io.matsimNetworkFile,
+                            networkFile = matsimConfig.io.matsimNetworkFile,
+                            polygonFileOption = matsimConfig.io.populationPolygonFile,
                             popFileDestination = variationPopFile,
                             popSize = popSize,
                             adoptionRate = matsimConfig.routing.adoptionRate,

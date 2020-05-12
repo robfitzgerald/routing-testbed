@@ -531,23 +531,54 @@ object MATSimRouteOps extends LazyLogging {
     * @return o-[currentPath]->o-[newPath]-> concatenated, or a message why that failed; along with the index of the current link
     */
   def coalescePath(oldPath: List[Id[Link]], newPath: List[Id[Link]], currentLink: Id[Link]): Either[String, List[Id[Link]]] = {
+    if (oldPath.isEmpty) {
+      Left(s"invariant failed: old path is empty though agent is on network at $currentLink (how did it get there?)")
+    } else if (newPath.isEmpty) {
+      Left("new path is empty")
+    } else {
 
-    newPath.headOption match {
-      case None                 => Left("new path is empty")
-      case Some(replanningLink) =>
-        // step through the old path until the replanning link is reached;
-        // then step through the new path. validate the result.
-        val initialAcc: CoalesceAccumulator = CoalesceAccumulator(currentLink, replanningLink)
-        val traverseLinksKeptFromOldPath: CoalesceAccumulator =
-          oldPath.takeWhile(_ != replanningLink).foldLeft(initialAcc) { _.addLink(_) }
-        if (traverseLinksKeptFromOldPath.currentLinkIdxSeen.isEmpty) {
-          Left("didn't see current link when traversing old path to the replanning link")
-        } else {
-          val traverseNewPath: CoalesceAccumulator =
-            newPath.foldLeft(traverseLinksKeptFromOldPath) { _.addLink(_) }
-          traverseNewPath.result
-        }
+      // construct the path prefix using everything in the old path before we see the head of the new path
+      oldPath.takeWhile(_ != newPath.head) match {
+        case Nil =>
+          Left(s"new path origin ${newPath.head} not found on old path")
+        case pathPrefix =>
+          val coalescedPath: List[Id[Link]] = pathPrefix ++ newPath
+          if (!coalescedPath.contains(currentLink)) {
+            Left("old path and new path when combined at root of new path no longer contain the current link")
+          } else if (coalescedPath.lengthCompare(coalescedPath.toSet.size) != 0) {
+            Left("coalesced path contains a loop")
+          } else {
+            Right(coalescedPath)
+          }
+      }
     }
+//    oldPath match {
+//      case Nil =>
+//        Left(s"invariant failed: old path is empty though agent is on network at $currentLink (how did it get there?)")
+//      case _ =>
+//        newPath.headOption match {
+//          case None =>
+//            Left("new path is empty")
+//          case Some(newPathHead) =>
+//
+//        }
+//        newPath.dropWhile(_ != currentLink).headOption match {
+//          case None                 => Left("new path is empty")
+//          case Some(replanningLink) =>
+//            // step through the old path until the replanning link is reached;
+//            // then step through the new path. validate the result.
+//            val initialAcc: CoalesceAccumulator = CoalesceAccumulator(currentLink, replanningLink)
+//            val traverseLinksKeptFromOldPath: CoalesceAccumulator =
+//              oldPath.takeWhile(_ != replanningLink).foldLeft(initialAcc) { _.addLink(_) }
+//            if (traverseLinksKeptFromOldPath.currentLinkIdxSeen.isEmpty) {
+//              Left("didn't see current link when traversing old path to the replanning link")
+//            } else {
+//              val traverseNewPath: CoalesceAccumulator =
+//                newPath.foldLeft(traverseLinksKeptFromOldPath) { _.addLink(_) }
+//              traverseNewPath.result
+//            }
+//        }
+//    }
   }
 
 //  /**

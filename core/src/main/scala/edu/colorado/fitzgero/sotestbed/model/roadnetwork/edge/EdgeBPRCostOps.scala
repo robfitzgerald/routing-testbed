@@ -6,25 +6,26 @@ object EdgeBPRCostOps {
   // based on default values from literature
   val BPRCostFunctionWithBookCoefficients: EdgeBPR => Cost = costFunction(0.15, 4.0)
 
-  def costFunction(alpha: Double, beta: Double): EdgeBPR => Cost = {
-    edge: EdgeBPR => {
+  def costFunction(alpha: Double, beta: Double): EdgeBPR => Cost = { edge: EdgeBPR =>
+    {
       marginalCostFunction(alpha, beta)(edge)(edge.flow)
     }
   }
 
-  def freeFlowCostFunction: EdgeBPR => Cost = {
-    edge: EdgeBPR => {
+  def freeFlowCostFunction: EdgeBPR => Cost = { edge: EdgeBPR =>
+    {
       Cost(edge.freeFlowTravelTime.value)
     }
   }
 
-  def marginalCostFunction(alpha: Double, beta: Double): EdgeBPR => Flow => Cost = {
-    edge: EdgeBPR => {
-      flow: Flow => {
-        val term1 = edge.freeFlowTravelTime.value
-        val term2 = alpha * edge.freeFlowTravelTime.value
-        val term3 = math.pow(flow.value / edge.capacity.value, beta)
-        Cost(term1 + term2 * term3)
+  def marginalCostFunction(alpha: Double, beta: Double): EdgeBPR => Flow => Cost = { edge: EdgeBPR =>
+    { flow: Flow =>
+      {
+        val term1    = edge.freeFlowTravelTime.value
+        val term2    = alpha * edge.freeFlowTravelTime.value
+        val term3    = math.pow((flow.value + edge.flow.value) / edge.capacity.value, beta)
+        val costFlow = Cost(term1 + term2 * term3)
+        costFlow
       }
     }
   }

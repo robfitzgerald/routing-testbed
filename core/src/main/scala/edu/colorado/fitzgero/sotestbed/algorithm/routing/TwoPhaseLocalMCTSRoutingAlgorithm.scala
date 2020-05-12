@@ -23,6 +23,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
   * @param limitSelectionRuntime
   * @tparam V vertex type
   * @tparam E edge type
+  * @deprecated replaced with ksp filter version
   */
 class TwoPhaseLocalMCTSRoutingAlgorithm[V, E](
   altPathsAlgorithm: KSPAlgorithm[SyncIO, V, E],

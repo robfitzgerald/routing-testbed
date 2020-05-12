@@ -9,7 +9,6 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 final case class BatchingManager(
   batchWindow: SimTime,
   requestUpdateCycle: SimTime,
-  minBatchSize: Int,
   batchData: Map[String, RouteRequestData] = Map.empty,
   storedHistory: ActiveAgentHistory = ActiveAgentHistory(),
   mostRecentBatchRequested: SimTime = SimTime.Zero

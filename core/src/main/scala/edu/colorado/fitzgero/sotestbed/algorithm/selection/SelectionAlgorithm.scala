@@ -34,6 +34,9 @@ object SelectionAlgorithm {
   final case class Result(
     selectedRoutes: List[Response] = List.empty,
     estimatedCost: Cost = Cost.Zero,
+    selfishCost: Cost = Cost.Zero,
+    improvement: Cost = Cost.Zero,
+    averageImprovement: Cost = Cost.Zero,
     samples: NonNegativeNumber = NonNegativeNumber.Zero
   )
 
@@ -137,7 +140,7 @@ object SelectionAlgorithm {
       else if (count * pathsPerAgent.head > threshold) false
       else _combinations(pathsPerAgent.tail, count * pathsPerAgent.head)
     }
-    _combinations(paths.map{ case(_, paths) => paths.length }.toList)
+    _combinations(paths.map { case (_, paths) => paths.length }.toList)
   }
 
   /**
@@ -159,26 +162,24 @@ object SelectionAlgorithm {
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
   ): F[(Result, Cost)] = {
-    if (paths.isEmpty) Monad[F].pure { (Result(), Cost.Zero) }
-    else {
+    if (paths.isEmpty) Monad[F].pure { (Result(), Cost.Zero) } else {
       val startTime: Long = System.currentTimeMillis
 
       // rewrap as a multiset, set up an iterator
       val asMultiSet: Array[Array[List[PathSegment]]] =
-        paths.map{ case (_, paths) => paths.toArray}.toArray
+        paths.map { case (_, paths) => paths.toArray }.toArray
       val iterator: MultiSetIterator[List[PathSegment]] = MultiSetIterator(asMultiSet)
 
       // initialize with the selfish routing selection (wrapped in call to RoadNetwork effect)
-      val selfishIndices: Array[Int] = Array.fill{asMultiSet.length}(0)
-      val selfishPaths: List[Path] = iterator.next().toList
+      val selfishIndices: Array[Int] = Array.fill { asMultiSet.length }(0)
+      val selfishPaths: List[Path]   = iterator.next().toList
       evaluateCostOfSelection(
         selfishPaths,
         roadNetwork,
         pathToMarginalFlowsFunction,
         combineFlowsFunction,
         marginalCostFunction
-      ) map { selfishCost: SelectionCost =>
-
+      ).map { selfishCost: SelectionCost =>
         val initialSelfishSelection: SelectionState = SelectionState(
           bestSelectionIndices = selfishIndices,
           selfishCost.overallCost,
@@ -188,8 +189,8 @@ object SelectionAlgorithm {
         )
 
         // iterate through all combinations
-        val finalStateF: F[SelectionState] = initialSelfishSelection.iterateUntilM{ state: SelectionState =>
-          val thisPaths: List[Path] = iterator.next().toList
+        val finalStateF: F[SelectionState] = initialSelfishSelection.iterateUntilM { state: SelectionState =>
+          val thisPaths: List[Path]   = iterator.next().toList
           val thisIndices: Array[Int] = iterator.pos
           evaluateCostOfSelection(
             thisPaths,
@@ -209,10 +210,12 @@ object SelectionAlgorithm {
               )
             }
           }
-        }{_ => !iterator.hasNext}
+        } { _ =>
+          !iterator.hasNext
+        }
 
         // package the responses associated with the best selection
-        finalStateF.map{ finalState =>
+        finalStateF.map { finalState =>
           val responses: List[Response] =
             paths
               .zip(finalState.bestSelectionIndices)
@@ -223,9 +226,15 @@ object SelectionAlgorithm {
               }
               .toList
 
+          val improvement: Cost        = Cost(finalState.bestOverallCost - selfishCost.overallCost)
+          val averageImprovement: Cost = Cost((finalState.bestOverallCost - selfishCost.overallCost).value / paths.size)
+
           val searchResult: Result = Result(
             selectedRoutes = responses,
             estimatedCost = finalState.bestOverallCost,
+            selfishCost = selfishCost.overallCost,
+            improvement = improvement,
+            averageImprovement = averageImprovement,
             samples = finalState.samples
           )
 

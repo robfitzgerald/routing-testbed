@@ -25,6 +25,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
   * @param limitAltsRuntime
   * @param limitSelectionRuntime
   * @tparam V vertex type
+  * @deprecated replaced w/ ksp filter implementation
   */
 class TwoPhaseLocalMCTSEdgeBPRRoutingAlgorithm[V](
   altPathsAlgorithm: KSPAlgorithm[SyncIO, V, EdgeBPR],

@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchTag
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 sealed trait BatchingFunctionConfig {
@@ -24,9 +25,11 @@ object BatchingFunctionConfig {
     maxY: Double,
     splitFactor: Int,
     batchPathTimeDelay: SimTime,
-    batchType: String // "o", "d", "od"
+    batchType: String // "o", "d", "od", "c", "cd"
   ) extends BatchingFunctionConfig {
     require(splitFactor > 0, "split factor must be positive")
+    require(BatchTag.ValidBatchTags.contains(batchType),
+            s"batching-function.batch-type must be one of ${BatchTag.ValidBatchTags.mkString("{", "|", "}")}")
 
     def build(): batching.BatchingFunction =
       new batching.GreedyCoordinateGridBatching(

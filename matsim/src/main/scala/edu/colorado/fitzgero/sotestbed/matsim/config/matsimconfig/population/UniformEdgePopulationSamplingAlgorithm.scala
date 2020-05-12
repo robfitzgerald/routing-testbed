@@ -16,7 +16,7 @@ import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
 import org.matsim.core.network.NetworkUtils
 
-case class UniformPopSamplingAlgorithm(
+case class UniformEdgePopulationSamplingAlgorithm(
   roadNetwork: LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR],
   matsimNetwork: Network,
   populationSize: Int,
@@ -29,27 +29,27 @@ case class UniformPopSamplingAlgorithm(
 
   val random: Random = seedOption match {
     case Some(seed) => new Random(seed)
-    case None => Random
+    case None       => Random
   }
 
   def generate: List[Agent] = {
 
     val links: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
-    val edgesArray: Array[EdgeId]   = roadNetwork.edges.keys.toArray
-    def randomEdge: EdgeId          = edgesArray(random.nextInt(edgesArray.length))
+    val edgesArray: Array[EdgeId]  = roadNetwork.edges.keys.toArray
+    def randomEdge: EdgeId         = edgesArray(random.nextInt(edgesArray.length))
 
     val secondsBetweenMinAndMaxWorkTime: Int = workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
-    def sampleWorkTime: LocalTime   = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
-    def isSoAgent: Boolean          = random.nextDouble < percentSOAgents
+    def sampleWorkTime: LocalTime            = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
+    def isSoAgent: Boolean                   = random.nextDouble < percentSOAgents
 
     val agents: Seq[Agent] = for {
       uniqueId <- 1 to populationSize
       homeLocation = randomEdge
       homeNode <- links.get(Id.createLinkId(homeLocation.value))
-      homeCoord = homeNode.getCoord
+      homeCoord    = homeNode.getCoord
       workLocation = randomEdge
       workNode <- links.get(Id.createLinkId(workLocation.value))
-      workCoord = workNode.getCoord
+      workCoord    = workNode.getCoord
       agentId      = s"$uniqueId-$homeLocation-$workLocation"
       requestClass = if (isSoAgent) RequestClass.SO() else RequestClass.UE
       workTime     = sampleWorkTime

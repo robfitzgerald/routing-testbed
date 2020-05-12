@@ -4,6 +4,7 @@ import cats.Monad
 import cats.effect.SyncIO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
 sealed trait SelectionAlgorithmConfig {
   def selectionTerminationFunction: SelectionTerminationFunctionConfig
@@ -28,8 +29,13 @@ object SelectionAlgorithmConfig {
   final case class LocalMCTSSelection(
     seed: Long,
     exhaustiveSearchSampleLimit: Int,
+    minimumAverageBatchTravelImprovement: Cost,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
   ) extends SelectionAlgorithmConfig {
+    assert(
+      minimumAverageBatchTravelImprovement.value >= 0,
+      f"local-mcts-selection.minimum-average-batch-travel-improvement must be non-negative but found ${minimumAverageBatchTravelImprovement.value}%.2f"
+    )
 
     def build[V, E](): selection.SelectionAlgorithm[SyncIO, V, E] = {
       // todo:
@@ -40,6 +46,7 @@ object SelectionAlgorithmConfig {
       new selection.mcts.LocalMCTSSelectionAlgorithm[V, E](
         seed,
         exhaustiveSearchSampleLimit,
+        minimumAverageBatchTravelImprovement,
         selectionTerminationFunction.build()
       )
     }

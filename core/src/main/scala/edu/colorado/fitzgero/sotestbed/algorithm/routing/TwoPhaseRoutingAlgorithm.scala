@@ -10,6 +10,21 @@ import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
+/**
+  *
+  * @param altPathsAlgorithm
+  * @param selectionAlgorithm
+  * @param pathToMarginalFlowsFunction
+  * @param combineFlowsFunction
+  * @param marginalCostFunction
+  * @param timeLimit
+  * @param limitAltsRuntime
+  * @param limitSelectionRuntime
+  * @tparam F
+  * @tparam V
+  * @tparam E
+  * @deprecated replaced with ksp filter version
+  */
 class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
   altPathsAlgorithm: KSPAlgorithm[F, V, E],
   selectionAlgorithm: SelectionAlgorithm[F, V, E],

@@ -5,7 +5,6 @@ import cats._
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import cats.implicits._
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, AgentBatchData, BatchingFunction, BatchingManager}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
@@ -85,7 +84,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
 
     for {
       initialSimulatorState <- initializeSimulator(config)
-      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, requestUpdateCycle, minBatchSize))
+      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, requestUpdateCycle))
       result <- _run(initialExperimentState)
     } yield {
       result

@@ -327,7 +327,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                                                                self.qSim,
                                                                minimumReplanningLeadTime,
                                                                minimumRemainingRouteTimeForReplanning) match {
-                          case None => ()
+                          case None =>
+                            ()
                           case Some(reasonableStartEdgeId) =>
                             val currentSimTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
                             val thisRequest: Request =
@@ -496,7 +497,6 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                             .foldLeft(List.empty[AgentBatchData]) {
                               (mobsimAgents, agentData) =>
                                 {
-
                                   val personId: Id[Person] = agentData.personId
                                   agentsInSimulation.get(personId) match {
                                     case None =>
@@ -793,7 +793,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         MATSimRouteOps.coalescePath(agentExperiencedRoute, routingResultPath, currentLinkId) match {
           case Left(reason) =>
             // noop
-            logger.warn(s"[assignRoutes] failed - ${response.request.requestClass} agent ${agentId.toString}'s new route not applied due to: $reason")
+            logger.warn(
+              s"[assignRoutes] failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentSimTime not applied due to: $reason")
 
           case Right(updatedRoute) =>
             // test that the updatedRoute has the currentLinkId at the currentLinkIndex

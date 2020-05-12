@@ -5,8 +5,8 @@ version := "0.1"
 val sVersion = "2.12.10"
 
 lazy val core = project
-  .in(file("core")).
-  settings(
+  .in(file("core"))
+  .settings(
     name := "so-testbed-core",
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
@@ -15,8 +15,8 @@ lazy val core = project
 //  .dependsOn(dabtree)
 
 lazy val matsim = project
-  .in(file("matsim")).
-  settings(
+  .in(file("matsim"))
+  .settings(
     name := "so-testbed-matsim",
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
@@ -34,8 +34,8 @@ lazy val matsim = project
 //  )
 //  .dependsOn(core, matsim)
 
-lazy val scalac =  List(
-  "-language:higherKinds",                   // FP type wizardry
+lazy val scalac = List(
+  "-language:higherKinds", // FP type wizardry
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 //  "-Ypartial-unification"
 )
@@ -47,24 +47,23 @@ lazy val scalac =  List(
 // External Dependencies
 lazy val coreDependencies = List(
   // PURE FP LIBRARY
-  "org.typelevel" %% "cats-core" % "2.0.0",
+  "org.typelevel" %% "cats-core"   % "2.0.0",
   "org.typelevel" %% "cats-effect" % "2.0.0",
-
   // LOGGING SYSTEM
-  "ch.qos.logback" % "logback-classic" % "1.2.3",
-  "com.typesafe.scala-logging" %% "scala-logging" % "3.9.2",
-
+  "ch.qos.logback"             % "logback-classic" % "1.2.3",
+  "com.typesafe.scala-logging" %% "scala-logging"  % "3.9.2",
   // COMMAND LINE PARSING
   "com.monovore" %% "decline" % "1.0.0",
-
   // CONFIG
   "com.github.pureconfig" %% "pureconfig" % "0.12.2",
 //  "com.typesafe" % "config" % "1.3.4",
-
+  // GEOMETRY
+  "org.locationtech.jts" % "jts-core" % "1.16.1",
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
-
-  // TEST
+  // CSV
+  "com.nrinaudo" %% "kantan.csv" % "0.6.0",
+// TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
 )
@@ -77,7 +76,6 @@ lazy val coreDependencies = List(
 //  "org.matsim" % "matsim" % "0.10.1" // most recent official release/tag
 //)
 //lazy val matsimGithubDependency = ProjectRef(uri("https://github.com/matsim-org/matsim.git#master"), "matsim")
-
 
 /////////////////////////// sbt-assembly ///////////////////////////
 
