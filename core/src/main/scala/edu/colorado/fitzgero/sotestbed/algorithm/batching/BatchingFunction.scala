@@ -21,6 +21,6 @@ trait BatchingFunction {
     */
   def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
                                                 activeRouteRequests: List[RouteRequestData],
-                                                currentTime: SimTime): F[Option[List[List[Request]]]]
+                                                currentTime: SimTime): F[Option[List[(String, List[Request])]]]
 
 }

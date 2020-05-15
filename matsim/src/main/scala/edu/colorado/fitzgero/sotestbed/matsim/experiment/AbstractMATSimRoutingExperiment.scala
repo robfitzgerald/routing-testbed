@@ -23,7 +23,7 @@ abstract class AbstractMATSimRoutingExperiment(
   val routingResultFileReport: RoutingReports[SyncIO, Coordinate, EdgeBPR] = routingReports
   val finalReport: MATSimFinalReport                                       = new MATSimFinalReport(finalReportFile)
 
-  override def updateReports(routingResult: List[RoutingAlgorithm.Result],
+  override def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
                              roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
                              currentSimTime: SimTime): SyncIO[Unit] =
     routingResultFileReport.updateReports(routingResult, roadNetwork, currentSimTime)

@@ -55,10 +55,13 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
             (b2, batchRequests) = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
             routeRequestsOpt <- batchingFunction.updateBatchingStrategy(r1, batchRequests, currentSimTime)
             routeRequests = routeRequestsOpt.getOrElse(List.empty)
-            soResults <- routeRequests.traverse { batch =>
-              soRoutingAlgorithm.route(batch, b2.storedHistory, r1)
+            soResults <- routeRequests.traverse {
+              case (batchId, batch) =>
+                soRoutingAlgorithm.route(batch, b2.storedHistory, r1).map { res =>
+                  (batchId, res)
+                }
             }
-            resolvedResults = BatchingManager.resolveRoutingResultBatches(ueResults +: soResults)
+            resolvedResults = BatchingManager.resolveRoutingResultBatches(ueResults +: soResults.map { _._2 })
             e2             <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
             _              <- updateReports(soResults, r1, currentSimTime) // unit is ok here, no modifications to application state
             simulatorState <- getState(e2)

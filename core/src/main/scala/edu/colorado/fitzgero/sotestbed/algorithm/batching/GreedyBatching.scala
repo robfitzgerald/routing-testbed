@@ -24,7 +24,7 @@ case class GreedyBatching(
     */
   def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
                                                 activeRouteRequests: List[RouteRequestData],
-                                                currentTime: SimTime): F[Option[List[List[Request]]]] = {
+                                                currentTime: SimTime): F[Option[List[(String, List[Request])]]] = {
     if (activeRouteRequests.isEmpty) Monad[F].pure {
       None
     } else
@@ -35,7 +35,10 @@ case class GreedyBatching(
           case newRequests =>
             // we have agents that we can replan to add to the nearest possible request time
             Some {
-              BatchSplittingFunction.bySlidingWindow(newRequests, this.maxBatchSize).map { _.map { _.request } }
+              BatchSplittingFunction
+                .bySlidingWindow(newRequests, this.maxBatchSize)
+                .zipWithIndex
+                .map { case (reqs, id) => (id.toString, reqs.map { _.request }) }
             }
         }
       }

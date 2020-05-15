@@ -10,7 +10,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 
 class NoRoutingReporter extends RoutingReports[SyncIO, Coordinate, EdgeBPR] {
 
-  def updateReports(routingResult: List[RoutingAlgorithm.Result],
+  def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
                     roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
                     currentTime: SimTime): SyncIO[Unit] =
     SyncIO { () }

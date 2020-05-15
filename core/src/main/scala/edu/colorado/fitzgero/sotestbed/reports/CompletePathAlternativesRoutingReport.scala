@@ -19,7 +19,7 @@ class CompletePathAlternativesRoutingReport(routingResultFile: File, costFunctio
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
   printWriter.write(CompletePathAlternativesRoutingReport.Header + "\n")
 
-  override def updateReports(routingResults: List[RoutingAlgorithm.Result],
+  override def updateReports(routingResults: List[(String, RoutingAlgorithm.Result)],
                              roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
                              currentSimTime: SimTime): SyncIO[Unit] = SyncIO {
 
@@ -31,7 +31,7 @@ class CompletePathAlternativesRoutingReport(routingResultFile: File, costFunctio
 
     // gather all assets required to create routing report rows
     for {
-      (routingResult, resultIndex) <- routingResults.zipWithIndex
+      ((batchId, routingResult), resultIndex) <- routingResults.zipWithIndex
       batchSize = routingResult.kspResult.size
       response <- routingResult.responses
       request                  = response.request

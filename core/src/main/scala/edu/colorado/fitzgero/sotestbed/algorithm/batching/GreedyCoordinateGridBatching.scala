@@ -36,7 +36,7 @@ class GreedyCoordinateGridBatching(
     */
   def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
                                                 activeRouteRequests: List[RouteRequestData],
-                                                currentTime: SimTime): F[Option[List[List[Request]]]] = Monad[F].pure {
+                                                currentTime: SimTime): F[Option[List[(String, List[Request])]]] = Monad[F].pure {
 
     activeRouteRequests match {
       case Nil =>
@@ -51,6 +51,14 @@ class GreedyCoordinateGridBatching(
           tagger         <- BatchTag.makeBatchTag(tagType, agentBatchData)
           tagged <- tagger match {
 
+            case od: BatchTag.ODTag =>
+              od.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
+                (tag, agentBatchData)
+              }
+            case o: BatchTag.OTag =>
+              o.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
+                (tag, agentBatchData)
+              }
             case cd: BatchTag.CDTag =>
               cd.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
                 (tag, agentBatchData)
@@ -106,8 +114,7 @@ class GreedyCoordinateGridBatching(
           Some {
             toAdd
               .groupBy { case (_, batchId) => batchId }
-              .values
-              .map { _.map { case (data, _) => data.request } }
+              .map { case (batchId, values) => (batchId, values.map { case (data, _) => data.request }) }
               .toList
           }
         }

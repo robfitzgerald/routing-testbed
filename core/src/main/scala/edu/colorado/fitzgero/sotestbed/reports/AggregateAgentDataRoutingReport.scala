@@ -12,12 +12,12 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.reports.RouteReportOps.{DecisionTag, PathType}
 
-class AggregateDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR => Cost) extends RoutingReports[SyncIO, Coordinate, EdgeBPR] {
+class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR => Cost) extends RoutingReports[SyncIO, Coordinate, EdgeBPR] {
 
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
-  printWriter.write(AggregateDataRoutingReport.Header + "\n")
+  printWriter.write(AggregateAgentDataRoutingReport.Header + "\n")
 
-  override def updateReports(routingResults: List[RoutingAlgorithm.Result],
+  override def updateReports(routingResults: List[(String, RoutingAlgorithm.Result)],
                              roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
                              currentSimTime: SimTime): SyncIO[Unit] = SyncIO {
 
@@ -29,7 +29,7 @@ class AggregateDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR 
 
     // gather all assets required to create routing report rows
     for {
-      (routingResult, resultIndex) <- routingResults.zipWithIndex
+      ((batchId, routingResult), resultIndex) <- routingResults.zipWithIndex
       batchSize = routingResult.kspResult.size
       response <- routingResult.responses
       request                  = response.request
@@ -60,7 +60,7 @@ class AggregateDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR 
       val travelTimeExperienced = RouteReportOps.experiencedTravelTime(latestRouteRequestData)
       val travelTimeRemaining   = pathEstTravelTime(path)
 
-      val row = AggregateDataRoutingReport.Row(
+      val row = AggregateAgentDataRoutingReport.Row(
         agentId = request.agent,
         time = currentSimTime,
         decision = decisionNumber,
@@ -90,7 +90,7 @@ class AggregateDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR 
   }
 }
 
-object AggregateDataRoutingReport {
+object AggregateAgentDataRoutingReport {
 
   // header for the route data output file
   val Header: String =

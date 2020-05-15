@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent._
-import edu.colorado.fitzgero.sotestbed.model.numeric.RunTime
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 
 trait RoutingAlgorithm[F[_], V, E] {
@@ -28,6 +28,8 @@ object RoutingAlgorithm {
     agentHistory: ActiveAgentHistory = ActiveAgentHistory(),
     kspRuntime: RunTime = RunTime.Zero,
     selectionRuntime: RunTime = RunTime.Zero,
-    samples: Int = 0
+    travelTimeImprovement: Cost = Cost.Zero,
+    avgTravelTimeImprovement: Cost = Cost.Zero,
+    samples: Int = 0,
   )
 }

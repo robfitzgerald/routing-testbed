@@ -201,7 +201,7 @@ object MATSimConfig {
           */
         def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
           activeRouteRequests: List[RouteRequestData],
-          currentTime: SimTime): F[Option[List[List[Request]]]] = Monad[F].pure{ None }
+          currentTime: SimTime): F[Option[List[(String, List[Request])]]] = Monad[F].pure{ None }
       }
     }
 

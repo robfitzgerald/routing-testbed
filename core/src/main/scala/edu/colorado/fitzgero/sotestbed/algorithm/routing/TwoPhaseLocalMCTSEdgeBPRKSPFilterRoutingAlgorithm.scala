@@ -115,6 +115,8 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             activeAgentHistory,
             kspRuntime,
             selectionRuntime,
+            travelTimeImprovement = selectionResult.improvement,
+            avgTravelTimeImprovement = selectionResult.averageImprovement,
             samples = selectionResult.samples.value
           )
         }
