@@ -17,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
   TwoPhaseRoutingAlgorithm
 }
 import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig.{AggregateData, BatchLearning, CompletePath, Inactive}
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection}
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection, TspSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
@@ -102,6 +102,21 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
                 pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
                 combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
                 marginalCostFunction = systemOptimal.marginalCostFunction.build()
+              )
+            case TspSelection =>
+              // this enables the scenario where UE agents only get one plan, and SO agents receive multiple
+              // selfish routes throughout their day
+              new TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[Coordinate](
+                altPathsAlgorithm = systemOptimal.kspAlgorithm.build(),
+                selectionAlgorithm = TspSelection.build(),
+                pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
+                combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
+                marginalCostFunction = systemOptimal.marginalCostFunction.build(),
+                useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch,
+                minimumAverageImprovement = matsimRunConfig.routing.minimumAverageImprovement,
+                minBatchSize = matsimRunConfig.routing.minBatchSize,
+                kspFilterFunction = systemOptimal.kspFilterFunction.build(),
+                seed = seed
               )
           }
       }

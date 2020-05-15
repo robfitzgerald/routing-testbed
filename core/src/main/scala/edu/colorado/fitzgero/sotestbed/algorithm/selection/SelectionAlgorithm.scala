@@ -226,8 +226,8 @@ object SelectionAlgorithm {
               }
               .toList
 
-          val improvement: Cost        = Cost(finalState.bestOverallCost - selfishCost.overallCost)
-          val averageImprovement: Cost = Cost((finalState.bestOverallCost - selfishCost.overallCost).value / paths.size)
+          val improvement: Cost        = Cost(selfishCost.overallCost - finalState.bestOverallCost)
+          val averageImprovement: Cost = Cost((selfishCost.overallCost - finalState.bestOverallCost).value / paths.size)
 
           val searchResult: Result = Result(
             selectedRoutes = responses,

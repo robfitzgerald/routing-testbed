@@ -1,12 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts
 
-import scala.annotation.tailrec
-import scala.util.Random
-
-import cats.data.OptionT
 import cats.effect.SyncIO
-import cats.{Id, Monad}
-import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
 import cse.bdlab.fitzgero.mcts.algorithm.samplingpolicy.banditfunction.UCT_PedrosoRei
@@ -15,7 +9,7 @@ import cse.bdlab.fitzgero.mcts.core.terminationcriterion.TerminationCriterion
 import cse.bdlab.fitzgero.mcts.core.{ActionSelection, BuiltInRandomGenerator, RandomGenerator, RandomSelection}
 import cse.bdlab.fitzgero.mcts.tree.MCTreePedrosoReiReward
 import cse.bdlab.fitzgero.mcts.variant.PedrosoReiMCTS
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, TrueShortestSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
@@ -41,35 +35,43 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
     if (alts.isEmpty) SyncIO {
       SelectionAlgorithm.Result()
-    } else if (alts.size == 1) SyncIO {
+    } else if (alts.size == 1) {
 
-      // select the true shortest path for this agent
-      val request: Request        = alts.keys.head
-      val requestAlts: List[Path] = alts.values.head
-      requestAlts match {
-        case Nil =>
-          // request had no routes!
-          SelectionAlgorithm.Result()
-        case trueShortestPath :: _ =>
-          // get cost estimate of this route
-          val trueShortestCost: SelectionCost = SelectionAlgorithm
-            .evaluateCostOfSelection(
-              List(trueShortestPath),
-              roadNetwork,
-              pathToMarginalFlowsFunction,
-              combineFlowsFunction,
-              marginalCostFunction
-            )
-            .unsafeRunSync()
-
-          // package result
-          SelectionAlgorithm.Result(
-            selectedRoutes = List(Response(request, 0, trueShortestPath.map { _.edgeId }, trueShortestCost.overallCost)),
-            estimatedCost = trueShortestCost.overallCost,
-            selfishCost = trueShortestCost.overallCost,
-            samples = NonNegativeNumber.One
-          )
-      }
+      TrueShortestSelectionAlgorithm().selectRoutes(
+        alts,
+        roadNetwork,
+        pathToMarginalFlowsFunction,
+        combineFlowsFunction,
+        marginalCostFunction
+      )
+//
+//      // select the true shortest path for this agent
+//      val request: Request        = alts.keys.head
+//      val requestAlts: List[Path] = alts.values.head
+//      requestAlts match {
+//        case Nil =>
+//          // request had no routes!
+//          SelectionAlgorithm.Result()
+//        case trueShortestPath :: _ =>
+//          // get cost estimate of this route
+//          val trueShortestCost: SelectionCost = SelectionAlgorithm
+//            .evaluateCostOfSelection(
+//              List(trueShortestPath),
+//              roadNetwork,
+//              pathToMarginalFlowsFunction,
+//              combineFlowsFunction,
+//              marginalCostFunction
+//            )
+//            .unsafeRunSync()
+//
+//          // package result
+//          SelectionAlgorithm.Result(
+//            selectedRoutes = List(Response(request, 0, trueShortestPath.map { _.edgeId }, trueShortestCost.overallCost)),
+//            estimatedCost = trueShortestCost.overallCost,
+//            selfishCost = trueShortestCost.overallCost,
+//            samples = NonNegativeNumber.One
+//          )
+//      }
     } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
       // problem small enough for an exhaustive search
       SelectionAlgorithm

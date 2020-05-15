@@ -29,24 +29,46 @@ object OSMNetworkImportApp
               help = "well-known CRS authority to apply as a transform to the input data, to a format that reflects meters in distance"
             )
             .withDefault("EPSG:3857") // see https://github.com/matsim-org/matsim-code-examples/wiki/faq-111614359
+        val monteCarloSamplesOpt: Opts[Int] =
+          Opts
+            .option[Int](long = "mcSamples",
+                         short = "n",
+                         help = "number of monte carlo samples of the free flow travel speed to get a lower-bound on travel time, default 50000")
+            .withDefault(50000)
 
-        (srcFileOpt, dstFileOpt, sourceCRSOpt, destinationCRSOpt)
-          .mapN { (srcFile, dstFile, sourceCRS, destinationCRS) =>
-            {
-              println(srcFile.toString)
-              println(dstFile.toString)
-              OSMNetworkLoader.createOSMNetworkWithUTMTransformation(
-                sourceOSMNetworkFile = srcFile,
-                destinationCRS = destinationCRS,
-                destinationFileLocation = Some { dstFile },
-                sourceCRS = sourceCRS
-              ) match {
-                case Left(e) =>
-                  throw e
-                case Right(_) =>
-                  println(s"finished importing, network can be found at $dstFile")
+        val runMonteCarloSamplingOpt: Opts[Boolean] =
+          Opts.flag(long = "runSampling", short = "m", help = "whether to run the monte carlo sampling of travel times, by default true").orTrue
+
+        (srcFileOpt, dstFileOpt, sourceCRSOpt, destinationCRSOpt, monteCarloSamplesOpt, runMonteCarloSamplingOpt)
+          .mapN {
+            (srcFile, dstFile, sourceCRS, destinationCRS, n, runMCSampling) =>
+              {
+                println(srcFile.toString)
+                println(dstFile.toString)
+                OSMNetworkLoader.createOSMNetworkWithUTMTransformation(
+                  sourceOSMNetworkFile = srcFile,
+                  destinationCRS = destinationCRS,
+                  destinationFileLocation = Some { dstFile },
+                  sourceCRS = sourceCRS
+                ) match {
+                  case Left(e) =>
+                    throw e
+                  case Right(_) =>
+                    println(s"finished importing, network can be found at $dstFile")
+
+                    if (runMCSampling) {
+                      MonteCarloTravelTimeLowerBoundsOps.monteCarloTravelTimeLowerBoundSample(srcFile, 0, n) match {
+                        case Left(e) =>
+                          println(f"error while running monte carlo sampling")
+                          throw new RuntimeException(e)
+                        case Right(lowerBound) =>
+                          println(f"monte carlo travel time estimate after $n samples is $lowerBound%.2f")
+                      }
+                    } else {
+                      println(f"no monte carlo sampling value provided, skipping")
+                    }
+                }
               }
-            }
           }
 
       }

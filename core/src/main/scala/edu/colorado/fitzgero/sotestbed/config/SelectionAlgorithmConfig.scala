@@ -4,11 +4,10 @@ import cats.Monad
 import cats.effect.SyncIO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.TrueShortestSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
-sealed trait SelectionAlgorithmConfig {
-  def selectionTerminationFunction: SelectionTerminationFunctionConfig
-}
+sealed trait SelectionAlgorithmConfig
 
 object SelectionAlgorithmConfig {
 
@@ -50,5 +49,9 @@ object SelectionAlgorithmConfig {
         selectionTerminationFunction.build()
       )
     }
+  }
+
+  final case object TspSelection extends SelectionAlgorithmConfig {
+    def build[V, E](): selection.SelectionAlgorithm[SyncIO, V, E] = TrueShortestSelectionAlgorithm.apply[V, E]()
   }
 }
