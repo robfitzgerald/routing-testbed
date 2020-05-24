@@ -17,6 +17,7 @@ object EdgeUpdateFunctionConfig {
   }
 
   final case class FlowRate(bufferTime: SimTime) extends EdgeUpdateFunctionConfig {
+    require(bufferTime > SimTime.Zero, "bufferTime must be positive-valued")
     def build(): (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithFlowRate(bufferTime)
   }
 

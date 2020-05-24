@@ -17,7 +17,7 @@ import org.matsim.api.core.v01.network.{Link, Network}
 import org.matsim.core.network.NetworkUtils
 
 case class UniformEdgePopulationSamplingAlgorithm(
-  roadNetwork: LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR],
+  roadNetwork: LocalAdjacencyListFlowNetwork,
   matsimNetwork: Network,
   populationSize: Int,
   percentSOAgents: Double,

@@ -135,7 +135,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     }
 
     // file system configuration
-    val experimentPath: Path = config.io.experimentDirectory
+    val experimentPath: Path = config.experimentDirectory
     Files.createDirectories(experimentPath)
 
     // matsim configuration
@@ -150,22 +150,21 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     self.controler = new Controler(matsimConfig)
 
     // needs to happen after the controler checks the experiment directory (20200125-is this still true?)
-    val statsFilePath: String = config.io.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
+    val statsFilePath: String = config.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
     runStatsPrintWriter = new PrintWriter(statsFilePath)
     runStatsPrintWriter.write(s"experiment $experimentPath\n\n")
 
-    val agentExperienceFilePath: String = config.io.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
+    val agentExperienceFilePath: String = config.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
     agentExperiencePrintWriter = new PrintWriter(agentExperienceFilePath)
     agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance,replannings\n")
 
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.soAgentReplanningHandler = new SOAgentReplanningHandler(
-      config.pop.agentsUnderControl,
-      config.routing.requestUpdateCycle,
+      config.agentsUnderControl,
       config.routing.maxPathAssignments,
       config.routing.minimumReplanningWaitTime
     )
-    self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler()
+    self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler(config.routing.minNetworkUpdateThreshold)
 
     // track iterations in MATSimProxy
     self.controler.addControlerListener(new IterationStartsListener {
@@ -900,16 +899,19 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   }
 
   /**
-    * gets the road network delta
+    * gets the road network delta if we have reached an update time. clears the
+    * road network delta handler when an update occurs.
+    *
     * @param simulator the simulator state object
-    * @return a list of edge id and marginal flow tuples
+    * @return a list of edge id and marginal flow tuples, which may be empty
     */
   override def getUpdatedEdges(simulator: Simulator): SyncIO[List[(EdgeId, Flow)]] = SyncIO {
-    val updatedEdges: List[(EdgeId, Flow)] = for {
-      (linkId, count) <- roadNetworkDeltaHandler.getDeltas.toList
-      if linkId != null // this happened, no idea why
-    } yield (EdgeId(linkId.toString), Flow(count))
-    roadNetworkDeltaHandler.clear()
+
+    val currentTime = SimTime(self.playPauseSimulationControl.getLocalTime)
+
+    // attempt to grab the deltas. empty if we are restricted by this.minNetworkUpdateThreshold.
+    // if we aren't, we get the deltas and the RoadNetworkDeltaHandler is reset.
+    val updatedEdges: List[(EdgeId, Flow)] = roadNetworkDeltaHandler.getDeltas(currentTime)
 
     updatedEdges
   }
@@ -950,7 +952,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
     * @return a [[SimTime]] object representing time in seconds
     */
   override def getCurrentSimTime(simulator: Simulator): SyncIO[SimTime] = SyncIO {
-    val currentTime = SimTime(playPauseSimulationControl.getLocalTime)
+    val currentTime = SimTime(self.playPauseSimulationControl.getLocalTime)
     logger.debug(s"[getCurrentSimTime] $currentTime")
     currentTime
   }

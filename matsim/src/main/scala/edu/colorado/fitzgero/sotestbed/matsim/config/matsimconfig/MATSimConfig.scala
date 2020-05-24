@@ -16,7 +16,6 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRe
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, BatchingFunction}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, CombineFlowsFunctionConfig, EdgeUpdateFunctionConfig, KSPAlgorithmConfig, KSPFilterFunctionConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, RoutingReportConfig, SelectionAlgorithmConfig}
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime, TravelTimeSeconds}
@@ -28,14 +27,7 @@ final case class MATSimConfig(
   routing: MATSimConfig.Routing,
   population: MATSimConfig.Population,
   algorithm: MATSimConfig.Algorithm
-) {
-
-  /**
-    * converts this scenario to a selfish experiment (no system optimal agents)
-    * @return updated Run configuration
-    */
-  def toSelfishExperiment: MATSimConfig = ???
-}
+)
 
 object MATSimConfig {
 
@@ -59,12 +51,14 @@ object MATSimConfig {
     minimumReplanningLeadTime: TravelTimeSeconds, // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
     minimumReplanningWaitTime: SimTime, // we ignore replanning for agents which have not traveled at least this long between replanning events
     minimumAverageImprovement: Cost,
-    requestUpdateCycle: SimTime,
-    minBatchSize: Int,
-    selfish    : Routing.Selfish
+    minRequestUpdateThreshold: SimTime,  // batching manager state updates
+    minNetworkUpdateThreshold: SimTime,  // road network state updates
+    minBatchSize             : Int,
+    selfish                  : Routing.Selfish
   ) {
     require(minimumAverageImprovement >= Cost.Zero, "matsimConfig.routing.minimumAverageImprovement should be non-negative")
-    require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle should be non-negative")
+    require(minRequestUpdateThreshold >= SimTime.Zero, "matsimConfig.routing.minRequestUpdateThreshold should be non-negative")
+    require(minNetworkUpdateThreshold >= SimTime.Zero, "matsimConfig.routing.minNetworkUpdateThreshold should be non-negative")
   }
 
   object Routing {
@@ -99,66 +93,10 @@ object MATSimConfig {
     populationFile   : File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
     matsimLogLevel   : String = "INFO",
     batchName        : String = System.currentTimeMillis.toString,
-    scenarioData     : Option[ScenarioData] = None,
     outputBaseDirectory: Path = Paths.get("/tmp"),
   ) {
     def batchLoggingDirectory: Path = {
       outputBaseDirectory.resolve(batchName)
-    }
-
-    def experimentLoggingDirectory: Path = {
-      this.scenarioData match {
-        case None => outputBaseDirectory
-        case Some(scenarioData) => scenarioData.toTrialPath(outputBaseDirectory, batchName)
-      }
-    }
-
-    def experimentDirectory: Path = {
-      this.scenarioData match {
-        case None => outputBaseDirectory.resolve(batchName)
-        case Some(scenarioData) => scenarioData.toExperimentPath(outputBaseDirectory, batchName)
-      }
-    }
-  }
-
-  object IO {
-    final case class ScenarioData(
-      algorithm: String,
-      trialNumber      : Int,
-      variationName    : String,
-      headerColumnOrder: List[String],
-      scenarioParameters: Map[String, String]
-    ) {
-      // prints this scenario's run parameters as csv row entries in the correct order
-      def toCSVRow: String =
-        headerColumnOrder
-          .map{ colName => this.scenarioParameters.getOrElse(colName, "") }
-          .mkString(",")
-
-      def toVariationPath(basePath: Path, batchName: String): Path =
-        algorithm match {
-          case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}-logging")
-          case _ =>
-            basePath.resolve(batchName).resolve(variationName)
-        }
-
-      def toTrialPath(basePath: Path, batchName: String): Path =
-        algorithm match {
-          case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}-logging")
-          case _ =>
-            basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString)
-        }
-
-      def toExperimentPath(basePath: Path, batchName: String): Path =
-        algorithm match {
-          case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}")
-          case _ =>
-            basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString).resolve(algorithm)
-        }
-
     }
   }
 

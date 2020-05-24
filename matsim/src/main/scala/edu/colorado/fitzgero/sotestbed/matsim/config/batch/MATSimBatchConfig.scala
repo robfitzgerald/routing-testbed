@@ -7,6 +7,8 @@ import scala.annotation.tailrec
 import scala.util.Try
 
 import com.typesafe.config.{Config, ConfigValueFactory}
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
+import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, KSPAlgorithmConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
 import pureconfig._
 import pureconfig.error.{ConfigReaderFailures, ThrowableFailure}
@@ -32,6 +34,46 @@ object MATSimBatchConfig {
       .map { case (k, v) => s"$k=${v.replaceAll("^[ .]+|\\.+$|\\.(?=[^.]*\\.[^.]*$)|[?\\\\/:;]", "_")}" } // v -> k.replaceAll("[^a-zA-Z0-9._]+", "_")
       .mkString("_")
       .trim
+  }
+
+  /**
+    * just highlighting the most important parameters and returning their values in lexi order
+    * @param config
+    * @return
+    */
+  def createVariationNameV2(config: MATSimConfig, popSize: Int): String = {
+    val populationSize: String = popSize.toString
+    val adoptionRate: String   = config.routing.adoptionRate.toString
+    val batchWindow: String    = config.routing.batchWindow.value.toString
+    val k: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish        => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal => so.kspAlgorithm.k.toString
+    }
+    val theta: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal =>
+        so.kspAlgorithm match {
+          case KSPAlgorithmConfig.SvpLoSync(_, theta, _, _) => theta.value.toString
+        }
+    }
+    val batchingFunction: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal =>
+        so.batchingFunction match {
+          case _: BatchingFunctionConfig.Greedy                    => "0"
+          case bf: BatchingFunctionConfig.GreedyCoordinateGrouping => bf.batchType
+        }
+    }
+    val splitFactor: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal =>
+        so.batchingFunction match {
+          case _: BatchingFunctionConfig.Greedy                    => "0"
+          case bf: BatchingFunctionConfig.GreedyCoordinateGrouping => bf.splitFactor.toString
+        }
+    }
+    val replanningWaitTime: String = config.routing.minimumReplanningWaitTime.value.toString
+    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sf=$splitFactor-rwt=$replanningWaitTime"
   }
 
   final case class Variation(

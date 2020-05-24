@@ -26,9 +26,9 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
+import edu.colorado.fitzgero.sotestbed.util.SummaryStats
 
-case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOption: Option[MATSimConfig.IO.ScenarioData] = None)
-    extends LazyLogging {
+case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
   /**
     * performs a synchronous run of a MATSim simulation from a MATSimConfig
@@ -37,18 +37,19 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
     */
   def run(): Either[io.Serializable, Any] = {
     for {
-      network            <- LocalAdjacencyListFlowNetwork.fromMATSimXML(config.io.matsimNetworkFile, config.routing.batchWindow)
-      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(config.io.populationFile)
+      network            <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimRunConfig.io.matsimNetworkFile, matsimRunConfig.routing.batchWindow)
+      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(matsimRunConfig.io.populationFile)
+      config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {
 
       // wrap config along with MATSim-specific environment values
-      val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, config)
+//      val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, config)
 
-      Files.createDirectories(config.io.experimentDirectory)
+      Files.createDirectories(config.experimentDirectory)
 
       // used by reporting logic
       val costFunction: EdgeBPR => Cost =
-        matsimRunConfig.algorithm match {
+        config.algorithm match {
           case _ @MATSimConfig.Algorithm.Selfish(_) =>
             _: EdgeBPR =>
               Cost.Zero
@@ -59,9 +60,9 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
         }
 
       // how we read reports
-      val routingReportFile: File = new File(config.io.experimentLoggingDirectory.resolve(s"route-${config.algorithm.name}.csv").toString)
+      val routingReportFile: File = new File(config.experimentLoggingDirectory.resolve(s"route-${config.algorithm.name}.csv").toString)
       val routingReporter: RoutingReports[SyncIO, Coordinate, EdgeBPR] =
-        matsimRunConfig.io.routingReportConfig match {
+        config.io.routingReportConfig match {
           case AggregateData => AggregateData.build(routingReportFile, costFunction)
           case CompletePath  => CompletePath.build(routingReportFile, costFunction)
           case BatchLearning => BatchLearning.build(routingReportFile)
@@ -70,11 +71,11 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
 
       // the actual Simulation runner instance
       val experiment = new LocalMATSimRoutingExperiment(
-        new File(config.io.experimentLoggingDirectory.resolve(s"final-${config.algorithm.name}.log").toString),
+        new File(config.experimentLoggingDirectory.resolve(s"final-${config.algorithm.name}.log").toString),
         routingReporter
       )
 
-      val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = matsimRunConfig.algorithm match {
+      val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = config.algorithm match {
         case selfish @ MATSimConfig.Algorithm.Selfish(_) =>
           // need a no-phase dijkstra's algorithm here?
           selfish.build()
@@ -89,8 +90,8 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
                 combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
                 marginalCostFunction = systemOptimal.marginalCostFunction.build(),
                 useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch,
-                minimumAverageImprovement = matsimRunConfig.routing.minimumAverageImprovement,
-                minBatchSize = matsimRunConfig.routing.minBatchSize,
+                minimumAverageImprovement = config.routing.minimumAverageImprovement,
+                minBatchSize = config.routing.minBatchSize,
                 kspFilterFunction = systemOptimal.kspFilterFunction.build(),
                 seed = seed
               )
@@ -113,8 +114,8 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
                 combineFlowsFunction = systemOptimal.combineFlowsFunction.build(),
                 marginalCostFunction = systemOptimal.marginalCostFunction.build(),
                 useFreeFlowNetworkCostsInPathSearch = systemOptimal.useFreeFlowNetworkCostsInPathSearch,
-                minimumAverageImprovement = matsimRunConfig.routing.minimumAverageImprovement,
-                minBatchSize = matsimRunConfig.routing.minBatchSize,
+                minimumAverageImprovement = config.routing.minimumAverageImprovement,
+                minBatchSize = config.routing.minBatchSize,
                 kspFilterFunction = systemOptimal.kspFilterFunction.build(),
                 seed = seed
               )
@@ -122,7 +123,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
       }
 
       val ueRoutingAlgorithm: Option[RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR]] =
-        matsimRunConfig.routing.selfish match {
+        config.routing.selfish match {
           case _: MATSimConfig.Routing.Selfish.MATSim => None
           case MATSimConfig.Routing.Selfish.Dijkstra(pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction) =>
             Some {
@@ -135,34 +136,36 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
         }
 
       val experimentSyncIO: SyncIO[experiment.ExperimentState] =
-        matsimRunConfig.algorithm match {
+        config.algorithm match {
           case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction) =>
             // need a no-batching manager version here? or, a dummy for now?
             experiment.run(
-              config = matsimRunConfig,
+              config = config,
               roadNetwork = network,
               ueRoutingAlgorithm = ueRoutingAlgorithm,
               soRoutingAlgorithm = selfish.build(),
               updateFunction = edgeUpdateFunction.build(),
               batchingFunction = selfish.batchingStub,
-              batchWindow = matsimRunConfig.routing.batchWindow,
-              minBatchSize = matsimRunConfig.routing.minBatchSize,
-              requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
-              doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
+              batchWindow = config.routing.batchWindow,
+              minBatchSize = config.routing.minBatchSize,
+              minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
+              minNetworkUpdateThreshold = config.routing.minNetworkUpdateThreshold,
+              doneRoutingAtSimTime = config.run.endOfRoutingTime,
               selfishOnly = selfish.selfishOnly
             )
           case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
             experiment.run(
-              config = matsimRunConfig,
+              config = config,
               roadNetwork = network,
               ueRoutingAlgorithm = ueRoutingAlgorithm,
               soRoutingAlgorithm = soRoutingAlgorithm,
               updateFunction = systemOptimal.edgeUpdateFunction.build(), // <- comes from same source that will feed routingAlgorithm above
               batchingFunction = systemOptimal.batchingFunction.build(),
-              batchWindow = matsimRunConfig.routing.batchWindow,
-              minBatchSize = matsimRunConfig.routing.minBatchSize,
-              requestUpdateCycle = matsimRunConfig.routing.requestUpdateCycle,
-              doneRoutingAtSimTime = matsimRunConfig.run.endOfRoutingTime,
+              batchWindow = config.routing.batchWindow,
+              minBatchSize = config.routing.minBatchSize,
+              minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
+              minNetworkUpdateThreshold = config.routing.minNetworkUpdateThreshold,
+              doneRoutingAtSimTime = config.run.endOfRoutingTime,
               selfishOnly = systemOptimal.selfishOnly
             )
 
@@ -172,9 +175,18 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
 
       result.error.foreach(e => logger.error(e))
 
+      // try to compute fairness
+      val summaryStats: SummaryStats = MATSimExperimentRunnerOps.fairness(config) match {
+        case Left(error) =>
+          logger.error(s"${error.getClass} ${error.getMessage} ${error.getCause}")
+          SummaryStats()
+        case Right(stats) =>
+          stats
+      }
+
       // let's drop some knowledge at output
       val tripDurationsFile: File =
-        matsimRunConfig.io.experimentDirectory.resolve("ITERS").resolve("it.0").resolve("0.tripdurations.txt").toFile
+        config.experimentDirectory.resolve("ITERS").resolve("it.0").resolve("0.tripdurations.txt").toFile
       val tripDurationsSource = scala.io.Source.fromFile(tripDurationsFile)
       val avgDurRegex: Regex  = "average trip duration: (\\d+\\.\\d+) seconds".r.unanchored
       val avgDuration: String = tripDurationsSource.getLines.mkString("") match {
@@ -184,7 +196,7 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
       tripDurationsSource.close()
 
       val traveldistancestatsFile: File =
-        matsimRunConfig.io.experimentDirectory.resolve("traveldistancestats.txt").toFile
+        config.experimentDirectory.resolve("traveldistancestats.txt").toFile
       val travelDistancesSource = scala.io.Source.fromFile(traveldistancestatsFile)
       val avgDistRegex: Regex   = "(\\d+\\.\\d+)".r.unanchored
       val avgDistance: String = travelDistancesSource.getLines.mkString("") match {
@@ -192,14 +204,14 @@ case class MATSimExperimentRunner(config: MATSimConfig, seed: Long, trialDataOpt
         case _                => ""
       }
 
-      val batchOverviewFile: File          = matsimRunConfig.io.batchLoggingDirectory.resolve("result.csv").toFile
+      val batchOverviewFile: File          = config.io.batchLoggingDirectory.resolve("result.csv").toFile
       val APPEND_MODE: Boolean             = true
       val batchOverviewOutput: PrintWriter = new PrintWriter(new FileOutputStream(batchOverviewFile, APPEND_MODE))
       Try {
-        val parameterColumns: String       = trialDataOption.map { _.toCSVRow }.getOrElse("")
+        val parameterColumns: String       = config.scenarioData.toCSVRow
         val (avgDistMeters, avgDurSeconds) = (avgDistance.toDouble, avgDuration.toDouble)
         val avgSpeedMph: Double            = (avgDistMeters / 1609.0) / (avgDurSeconds / 3600.0)
-        batchOverviewOutput.append(s"$parameterColumns,$avgDuration,$avgDistance,$avgSpeedMph\n")
+        batchOverviewOutput.append(s"$parameterColumns,$avgDuration,$avgDistance,$avgSpeedMph,$summaryStats\n")
       }
       batchOverviewOutput.close()
       "done"

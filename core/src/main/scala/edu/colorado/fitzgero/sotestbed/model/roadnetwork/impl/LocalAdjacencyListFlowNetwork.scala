@@ -10,22 +10,23 @@ import cats.effect.SyncIO
 import edu.colorado.fitzgero.sotestbed.util.XMLParserIgnoresDTD
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}
 
-case class LocalAdjacencyListFlowNetwork[V, E](
-    edges: Map[EdgeId, RoadNetwork.EdgeTriplet[E]],
-    vertices: Map[VertexId, V],
-    adjList: Map[VertexId, Map[EdgeId, VertexId]],
-    revAdjList: Map[VertexId, Map[EdgeId, VertexId]]
-) extends RoadNetwork[SyncIO, V, E] {
+case class LocalAdjacencyListFlowNetwork(
+  edges: Map[EdgeId, RoadNetwork.EdgeTriplet[EdgeBPR]],
+  vertices: Map[VertexId, Coordinate],
+  adjList: Map[VertexId, Map[EdgeId, VertexId]],
+  revAdjList: Map[VertexId, Map[EdgeId, VertexId]]
+) extends RoadNetwork[SyncIO, Coordinate, EdgeBPR] {
 
-  def vertex(vertexId: VertexId): SyncIO[Option[RoadNetwork.VertexIdAndAttribute[V]]] = SyncIO {
+  def vertex(vertexId: VertexId): SyncIO[Option[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
     vertices.get(vertexId).map { attr =>
       RoadNetwork.VertexIdAndAttribute(vertexId, attr)
     }
   }
 
-  def vertices(vertexIds: List[VertexId]): SyncIO[List[RoadNetwork.VertexIdAndAttribute[V]]] = SyncIO {
+  def vertices(vertexIds: List[VertexId]): SyncIO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
     for {
       vertexId <- vertexIds
       attr     <- vertices.get(vertexId)
@@ -34,16 +35,16 @@ case class LocalAdjacencyListFlowNetwork[V, E](
     }
   }
 
-  def edge(edgeId: EdgeId): SyncIO[Option[RoadNetwork.EdgeIdAndAttribute[E]]] = SyncIO {
+  def edge(edgeId: EdgeId): SyncIO[Option[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = SyncIO {
     edges.get(edgeId).map {
       case RoadNetwork.EdgeTriplet(_, _, _, attr) =>
         RoadNetwork.EdgeIdAndAttribute(edgeId, attr)
     }
   }
 
-  def edges(edgeIds: List[EdgeId]): SyncIO[List[RoadNetwork.EdgeIdAndAttribute[E]]] = SyncIO {
+  def edges(edgeIds: List[EdgeId]): SyncIO[List[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = SyncIO {
     for {
-      edgeId                                                <- edgeIds
+      edgeId                                 <- edgeIds
       RoadNetwork.EdgeTriplet(_, _, _, attr) <- edges.get(edgeId)
     } yield {
       RoadNetwork.EdgeIdAndAttribute(edgeId, attr)
@@ -72,60 +73,47 @@ case class LocalAdjacencyListFlowNetwork[V, E](
     }
   }
 
-  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[RoadNetwork.EdgeTriplet[E]]] = SyncIO {
+  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[RoadNetwork.EdgeTriplet[EdgeBPR]]] = SyncIO {
     val lookup: Map[VertexId, Map[EdgeId, VertexId]] = direction match {
       case TraverseDirection.Forward => adjList
       case TraverseDirection.Reverse => revAdjList
     }
     for {
-      neighbors <- lookup.get(vertexId).toList
-      edgeId <- neighbors.keys
+      neighbors   <- lookup.get(vertexId).toList
+      edgeId      <- neighbors.keys
       edgeTriplet <- edges.get(edgeId).toList
     } yield {
       edgeTriplet
     }
   }
 
-  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (E, Flow) => E): SyncIO[LocalAdjacencyListFlowNetwork[V, E]] =
-    SyncIO {
+  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (EdgeBPR, Flow) => EdgeBPR): SyncIO[LocalAdjacencyListFlowNetwork] =
+    if (flows.isEmpty) SyncIO { this } else
+      SyncIO {
 
-      val flowsMap: Map[EdgeId, Flow] = flows.toMap
+        val flowsMap: Map[EdgeId, Flow] = flows.toMap
 
-      // update all edges with marginal flows
-      val updatedEdges: Map[EdgeId, RoadNetwork.EdgeTriplet[E]] =
-        this.edges.keys.foldLeft(edges) {
-          case (acc, edgeId) =>
-            val marginalFlow: Flow = flowsMap.get(edgeId) match {
-              case None => Flow.Zero
-              case Some(flow) => flow
-            }
-            acc.get(edgeId) match {
-              case None => acc
-              case Some(edgeTriplet) =>
-                val updatedEdgeTriplet: RoadNetwork.EdgeTriplet[E] =
-                  edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, marginalFlow))
-                acc.updated(edgeId, updatedEdgeTriplet)
-            }
-        }
+        // update all edges with marginal flows
+        val updatedEdges: Map[EdgeId, RoadNetwork.EdgeTriplet[EdgeBPR]] =
+          this.edges.keys.foldLeft(edges) {
+            case (acc, edgeId) =>
+              val marginalFlow: Flow = flowsMap.get(edgeId) match {
+                case None       => Flow.Zero
+                case Some(flow) => flow
+              }
+              acc.get(edgeId) match {
+                case None => acc
+                case Some(edgeTriplet) =>
+                  val updatedEdgeTriplet: RoadNetwork.EdgeTriplet[EdgeBPR] =
+                    edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, marginalFlow))
+                  acc.updated(edgeId, updatedEdgeTriplet)
+              }
+          }
 
-//      // update only the edges provided in the flows argument
-//      val updatedEdges =
-//
-//        flows.foldLeft(edges) {
-//          case (acc, (edgeId, flow)) =>
-//            acc.get(edgeId) match {
-//              case None => acc
-//              case Some(edgeTriplet) =>
-//                val updatedEdgeTriplet =
-//                  edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, flow))
-//                acc.updated(edgeId, updatedEdgeTriplet)
-//            }
-//        }
-
-      this.copy(
-        edges = updatedEdges
-      )
-    }
+        this.copy(
+          edges = updatedEdges
+        )
+      }
 }
 
 object LocalAdjacencyListFlowNetwork {
@@ -154,7 +142,7 @@ object LocalAdjacencyListFlowNetwork {
     * @param networkFile the file location of a network
     * @return either a local adjacency graph representation of a MATSim network, or, reports on failures from parsing
     */
-  final def fromMATSimXML(networkFile: File, batchWindow: SimTime = SimTime(3600)): Either[String, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
+  final def fromMATSimXML(networkFile: File, batchWindow: SimTime = SimTime(3600)): Either[String, LocalAdjacencyListFlowNetwork] = {
     val network: xml.Elem = XML.withSAXParser(XMLParserIgnoresDTD.parser).loadFile(networkFile)
     fromMATSimXML(network, batchWindow)
   }
@@ -164,7 +152,7 @@ object LocalAdjacencyListFlowNetwork {
     * @param network xml tree matching the DTD description of network.xml for MATSim
     * @return either a local adjacency graph representation of a MATSim network, or, reports on failures from parsing
     */
-  final def fromMATSimXML(network: xml.Elem, batchWindow: SimTime): Either[String, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
+  final def fromMATSimXML(network: xml.Elem, batchWindow: SimTime): Either[String, LocalAdjacencyListFlowNetwork] = {
 
     val capacityBatchTimeScale: Double = batchWindow.value / 3600.0
 
@@ -186,14 +174,15 @@ object LocalAdjacencyListFlowNetwork {
     val edgesBuilder = networkFileEdges.foldLeft(EdgesBuilder())((edgesBuilder, link) => {
 
       val linkData: Map[String, String]            = link.attributes.asAttrMap
-      val edgeId: EdgeId                               = EdgeId(linkData("id").toString)
+      val edgeId: EdgeId                           = EdgeId(linkData("id").toString)
       val src: VertexId                            = VertexId(linkData("from").toString)
       val dst: VertexId                            = VertexId(linkData("to").toString)
       val freespeedOption: Option[MetersPerSecond] = linkData.get("freespeed").map(fs => MetersPerSecond(toDoubleWithMinimum(fs, DefaultFreeSpeed)))
 //      val lanesOption: Option[Double]              = linkData.get("permlanes").map(toDoubleWithMinimum(_, DefaultLanes)) // default of 1 lane
-      val lengthOption: Option[Meters]             = linkData.get("length").map(safeDistance(_))
-      val capacityOption: Option[Capacity]         = linkData.get("capacity").map{c => Capacity(toDoubleWithMinimum(c) * capacityBatchTimeScale)}
-
+      val lengthOption: Option[Meters] = linkData.get("length").map(safeDistance(_))
+      val capacityOption: Option[Capacity] = linkData.get("capacity").map { c =>
+        Capacity(toDoubleWithMinimum(c) * capacityBatchTimeScale)
+      }
 
       if (freespeedOption.isEmpty || capacityOption.isEmpty || lengthOption.isEmpty) {
         println(link.toString)
@@ -267,4 +256,3 @@ object LocalAdjacencyListFlowNetwork {
     }
   }
 }
-

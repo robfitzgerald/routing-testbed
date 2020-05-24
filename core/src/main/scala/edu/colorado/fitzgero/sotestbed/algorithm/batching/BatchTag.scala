@@ -8,16 +8,16 @@ sealed trait BatchTag
 
 object BatchTag {
 
-  val ValidBatchTags: Set[String] = Set("origin", "destination", "origin+destination", "current", "current+destination")
+  val ValidBatchTags: Set[String] = Set("o", "d", "od", "c", "cd")
 
   def makeBatchTag(tagType: String, routeRequestData: RouteRequestData): Option[BatchTag] = {
     tagType.trim.toLowerCase match {
-      case "origin"              => Some { OTag(routeRequestData) }
-      case "destination"         => Some { DTag(routeRequestData) }
-      case "origin+destination"  => Some { ODTag(routeRequestData) }
-      case "current"             => Some { CTag(routeRequestData) }
-      case "current+destination" => Some { CDTag(routeRequestData) }
-      case _                     => None
+      case "o"  => Some { OTag(routeRequestData) }
+      case "d"  => Some { DTag(routeRequestData) }
+      case "od" => Some { ODTag(routeRequestData) }
+      case "c"  => Some { CTag(routeRequestData) }
+      case "cd" => Some { CDTag(routeRequestData) }
+      case _    => None
     }
   }
 

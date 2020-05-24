@@ -63,6 +63,7 @@ lazy val coreDependencies = List(
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
   // CSV
   "com.nrinaudo" %% "kantan.csv" % "0.6.0",
+//  "com.nrinaudo" %% "kantan.csv-generic" % "0.6.0",
 // TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"

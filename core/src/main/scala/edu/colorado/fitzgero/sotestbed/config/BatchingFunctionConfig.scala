@@ -28,8 +28,10 @@ object BatchingFunctionConfig {
     batchType: String // "o", "d", "od", "c", "cd"
   ) extends BatchingFunctionConfig {
     require(splitFactor > 0, "split factor must be positive")
-    require(BatchTag.ValidBatchTags.contains(batchType),
-            s"batching-function.batch-type must be one of ${BatchTag.ValidBatchTags.mkString("{", "|", "}")}")
+    require(
+      BatchTag.ValidBatchTags.contains(batchType),
+      s"invalid batching-function.batch-type '$batchType': must be one of ${BatchTag.ValidBatchTags.mkString("{", "|", "}")}"
+    )
 
     def build(): batching.BatchingFunction =
       new batching.GreedyCoordinateGridBatching(

@@ -32,7 +32,8 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
     batchingFunction: BatchingFunction,
     batchWindow: SimTime,
     minBatchSize: Int,
-    requestUpdateCycle: SimTime,
+    minRequestUpdateThreshold: SimTime,
+    minNetworkUpdateThreshold: SimTime,
     doneRoutingAtSimTime: SimTime,
     selfishOnly: Boolean
   ): F[ExperimentState] = {
@@ -87,7 +88,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
 
     for {
       initialSimulatorState <- initializeSimulator(config)
-      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, requestUpdateCycle))
+      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, minRequestUpdateThreshold))
       result <- _run(initialExperimentState)
     } yield {
       result

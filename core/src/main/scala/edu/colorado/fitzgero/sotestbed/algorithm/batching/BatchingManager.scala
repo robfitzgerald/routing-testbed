@@ -8,7 +8,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 final case class BatchingManager(
   batchWindow: SimTime,
-  requestUpdateCycle: SimTime,
+  minRequestUpdateThreshold: SimTime,
   batchData: Map[String, RouteRequestData] = Map.empty,
   storedHistory: ActiveAgentHistory = ActiveAgentHistory(),
   mostRecentBatchRequested: SimTime = SimTime.Zero
@@ -28,15 +28,32 @@ final case class BatchingManager(
     updates.foldLeft(this) { (b, data) =>
       data match {
         case SOAgentArrivalData(agentId) =>
+          // the agent is no longer in the system - remove
           this.copy(
             batchData = b.batchData - agentId,
             storedHistory = b.storedHistory.processArrivalFor(agentId)
           )
         case routeRequestData: RouteRequestData =>
-          this.copy(
-            batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
-            storedHistory = b.storedHistory.processRouteRequestData(routeRequestData)
-          )
+          b.storedHistory.getMostRecentDataFor(routeRequestData.request.agent) match {
+            case None =>
+              // first update, simply apply the update
+              this.copy(
+                batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
+                storedHistory = b.storedHistory.processRouteRequestData(routeRequestData)
+              )
+            case Some(mostRecent) =>
+              // guard against the requestUpdateCycle
+              val canUpdateRequest: Boolean = routeRequestData.timeOfRequest - mostRecent.timeOfRequest > minRequestUpdateThreshold
+              if (canUpdateRequest) {
+                this.copy(
+                  batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
+                  storedHistory = b.storedHistory.processRouteRequestData(routeRequestData)
+                )
+              } else {
+                b
+              }
+          }
+
       }
     }
   }
