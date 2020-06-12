@@ -1,7 +1,8 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-version := "2.0.0"
+val packageVersion = "2.1.0"
+version := packageVersion
 val sVersion = "2.12.10"
 
 lazy val core = project
@@ -18,6 +19,7 @@ lazy val matsim = project
   .in(file("matsim"))
   .settings(
     name := "so-testbed-matsim",
+    version := packageVersion,
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
     matsimAssemblyStrategy,

@@ -176,10 +176,10 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
       result.error.foreach(e => logger.error(e))
 
       // try to compute fairness
-      val summaryStats: SummaryStats = MATSimExperimentRunnerOps.fairness(config) match {
+      val summaryStats: String = MATSimExperimentRunnerOps.fairness(config) match {
         case Left(error) =>
           logger.error(s"${error.getClass} ${error.getMessage} ${error.getCause}")
-          SummaryStats()
+          ""
         case Right(stats) =>
           stats
       }

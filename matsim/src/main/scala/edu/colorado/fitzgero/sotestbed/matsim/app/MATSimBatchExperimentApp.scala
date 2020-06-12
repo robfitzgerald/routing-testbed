@@ -106,7 +106,7 @@ object MATSimBatchExperimentApp
 //                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
 //                      }
                       val batchOverviewHeader: String =
-                        s"configuration,avgTTSecs,avgDistMeters,avgSpeedMph,fairnessMean,fairnessStdev,fairnessSkew,fairnessKurtosis\n"
+                        s"configuration,avgTTSecs,avgDistMeters,avgSpeedMph,${MATSimExperimentRunnerOps.FairnessHeader}\n"
                       batchOverview.write(batchOverviewHeader)
                       batchOverview.close()
                       println(s"created batch overview file at $batchOverviewFile")

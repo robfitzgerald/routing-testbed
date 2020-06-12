@@ -101,7 +101,7 @@ object MATSimBatchConfig {
       } else {
         // override the config at this variation's path with this variation's value
         val (thisPath, thisValue) = variation.head
-        val nextConfig: Config    = config.withValue(thisPath, ConfigValueFactory.fromAnyRef(thisValue))
+        val nextConfig: Config    = config.withValue(thisPath.trim, ConfigValueFactory.fromAnyRef(thisValue.trim))
         appendMetaConfigEntry(nextConfig, variation.tail)
       }
     }
