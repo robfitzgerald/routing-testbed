@@ -52,7 +52,9 @@ class BatchLearningReporter(routingResultFile: File) extends RoutingReports[Sync
     }
   }
 
-  def close(): Unit = printWriter.close()
+  def close(): Unit = {
+    printWriter.close()
+  }
 }
 
 object BatchLearningReporter {

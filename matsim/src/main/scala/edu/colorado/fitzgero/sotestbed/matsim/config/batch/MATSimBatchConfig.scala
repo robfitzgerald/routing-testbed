@@ -76,6 +76,10 @@ object MATSimBatchConfig {
     s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sf=$splitFactor-rwt=$replanningWaitTime"
   }
 
+  def createVariationNameV3(config: MATSimConfig, popSize: Int): String = {
+    config.hashCode().toString
+  }
+
   final case class Variation(
     config: Config,
     configReaderResult: ConfigReader.Result[MATSimConfig],

@@ -56,7 +56,7 @@ object MATSimRunConfig {
     // prints this scenario's run parameters as csv row entries in the correct order
     def toCSVRow: String = algorithm match {
       case "selfish" => s"selfish-$popSize-trial=$trialNumber"
-      case _         => s"$variationName-trial=$trialNumber"
+      case _         => s"$variationName"
     }
     //        headerColumnOrder
     //          .map{ colName => this.scenarioParameters.getOrElse(colName, "") }

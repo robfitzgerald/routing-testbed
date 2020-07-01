@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.1.0"
+val packageVersion = "2.1.1"
 version := packageVersion
 val sVersion = "2.12.10"
 
@@ -49,9 +49,9 @@ lazy val scalac = List(
 // External Dependencies
 lazy val coreDependencies = List(
   // REINFORCEMENT LEARNING LIBRARY
-  "org.deeplearning4j" % "deeplearning4j-core"  % "1.0.0-beta6",
-  "org.nd4j"           % "nd4j-native-platform" % "1.0.0-beta6",
-  "org.deeplearning4j" % "rl4j-api"             % "1.0.0-beta6",
+//  "org.deeplearning4j" % "deeplearning4j-core"  % "1.0.0-beta6",
+//  "org.nd4j"           % "nd4j-native-platform" % "1.0.0-beta6",
+//  "org.deeplearning4j" % "rl4j-api"             % "1.0.0-beta6",
   // PURE FP LIBRARY
   "org.typelevel" %% "cats-core"   % "2.0.0",
   "org.typelevel" %% "cats-effect" % "2.0.0",

@@ -107,9 +107,9 @@ object MATSimExperimentRunnerOps extends LazyLogging {
       val globalStats: Accumulator = optimalRowsGlobal.foldLeft(Accumulator()) { _.addObservation(_) }
       val soOnlyStats: Accumulator = optimalRowsOnlySO.foldLeft(Accumulator()) { _.addObservation(_) }
 
-      val globalHistogramFile = config.experimentLoggingDirectory.resolve("global.hist").toFile
+      val globalHistogramFile = config.experimentLoggingDirectory.resolve("global_hist.csv").toFile
       histogramMe(globalStats.values, globalHistogramFile)
-      val soOnlyHistogramFile = config.experimentLoggingDirectory.resolve("so.hist").toFile
+      val soOnlyHistogramFile = config.experimentLoggingDirectory.resolve("so_hist.csv").toFile
       histogramMe(soOnlyStats.values, soOnlyHistogramFile)
 
       s"$globalStats,$soOnlyStats,$numTrips"
@@ -142,12 +142,15 @@ object MATSimExperimentRunnerOps extends LazyLogging {
       * @return
       */
     def printHistogram(hist: Iterator[((Double, Double), Int)], maxValue: Double): String =
-      hist.map { case ((min, _), count) => s"($min, $count)" }.mkString(" ").concat(s" ($maxValue, 0)")
+      hist.map { case ((min, _), count) => s"$min,$count" }.mkString("bin,count\n", "\n", "\n")
 
     if (xs.nonEmpty) {
-      val histogramData: Iterator[((Double, Double), Int)] = histogram(n_bins = bins, lowerUpperBound = None)(xs)
+      val maxMagnitude: Double                             = math.max(math.abs(xs.min), math.abs(xs.max))
+      val lowerUpperBound: Option[(Double, Double)]        = Some((-maxMagnitude, maxMagnitude))
+      val histogramData: Iterator[((Double, Double), Int)] = histogram(n_bins = bins, lowerUpperBound = lowerUpperBound)(xs)
       val maxValue: Double                                 = xs.max
       val output: String                                   = printHistogram(histogramData, maxValue)
+
       Try {
         val pw: PrintWriter = new PrintWriter(file)
         pw.write(output)

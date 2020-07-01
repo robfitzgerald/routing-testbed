@@ -200,7 +200,7 @@ object MATSimBatchExperimentApp
                       trial <- 0 until trials
                       seed = trial + batchSeed
 //                      variationName = MATSimBatchConfig.createVariationName(variationHint)
-                      variationName = MATSimBatchConfig.createVariationNameV2(confWithBatchName, popSize)
+                      variationName = MATSimBatchConfig.createVariationNameV3(confWithBatchName, popSize)
                       scenarioData = MATSimRunConfig.ScenarioData(
                         algorithm = confWithBatchName.algorithm.name,
                         variationName = variationName,

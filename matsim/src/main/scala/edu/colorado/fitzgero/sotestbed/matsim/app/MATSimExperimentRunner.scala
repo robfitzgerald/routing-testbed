@@ -16,7 +16,6 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
   TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm,
   TwoPhaseRoutingAlgorithm
 }
-import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig.{AggregateData, BatchLearning, CompletePath, Inactive}
 import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection, TspSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
@@ -26,7 +25,6 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
-import edu.colorado.fitzgero.sotestbed.util.SummaryStats
 
 case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
@@ -38,7 +36,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
   def run(): Either[io.Serializable, Any] = {
     for {
       network            <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimRunConfig.io.matsimNetworkFile, matsimRunConfig.routing.batchWindow)
-      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(matsimRunConfig.io.populationFile)
+      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(matsimRunConfig.io.populationFile, matsimRunConfig.routing.adoptionRate)
       config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {
 
@@ -60,14 +58,8 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
         }
 
       // how we read reports
-      val routingReportFile: File = new File(config.experimentLoggingDirectory.resolve(s"route-${config.algorithm.name}.csv").toString)
       val routingReporter: RoutingReports[SyncIO, Coordinate, EdgeBPR] =
-        config.io.routingReportConfig match {
-          case AggregateData => AggregateData.build(routingReportFile, costFunction)
-          case CompletePath  => CompletePath.build(routingReportFile, costFunction)
-          case BatchLearning => BatchLearning.build(routingReportFile)
-          case Inactive      => Inactive.build()
-        }
+        config.io.routingReportConfig.build(matsimRunConfig.experimentLoggingDirectory, costFunction)
 
       // the actual Simulation runner instance
       val experiment = new LocalMATSimRoutingExperiment(
@@ -172,6 +164,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
         }
 
       val result: experiment.ExperimentState = experimentSyncIO.unsafeRunSync()
+      experiment.close()
 
       result.error.foreach(e => logger.error(e))
 
