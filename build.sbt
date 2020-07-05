@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.1.1"
+val packageVersion = "2.1.3"
 version := packageVersion
 val sVersion = "2.12.10"
 
@@ -63,7 +63,8 @@ lazy val coreDependencies = List(
   // CONFIG
   "com.github.pureconfig" %% "pureconfig" % "0.12.2",
 //  "com.typesafe" % "config" % "1.3.4",
-  // GEOMETRY
+  // GIS
+  "org.locationtech.proj4j" % "proj4j" % "1.1.1",
 //  "org.locationtech.jts" % "jts-core" % "1.16.1",
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",

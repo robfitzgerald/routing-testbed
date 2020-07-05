@@ -156,7 +156,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
     val agentExperienceFilePath: String = config.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
     agentExperiencePrintWriter = new PrintWriter(agentExperienceFilePath)
-    agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance,replannings\n")
+    agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance,replannings,WKT\n")
 
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.soAgentReplanningHandler = new SOAgentReplanningHandler(
@@ -418,9 +418,10 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       val travelTime: Int = playPauseSimulationControl.getLocalTime.toInt - departureTime
                       val requestClass: RequestClass =
                         if (soAgentReplanningHandler.isUnderControl(agentId)) RequestClass.SO() else RequestClass.UE
-                      val replannings: Int = soAgentReplanningHandler.getReplanningCountForAgent(agentId).getOrElse(0)
+                      val replannings: Int   = soAgentReplanningHandler.getReplanningCountForAgent(agentId).getOrElse(0)
+                      val linestring: String = MATSimRouteToLineString(agentExperiencedRoute, qSim).getOrElse("LINESTRING EMPTY")
 
-                      val row: String = s"$agentId,$requestClass,$departureTime,$travelTime,$distance,$replannings\n"
+                      val row: String = s"$agentId,$requestClass,$departureTime,$travelTime,$distance,$replannings,$linestring\n"
 
                       agentExperiencePrintWriter.append(row)
 

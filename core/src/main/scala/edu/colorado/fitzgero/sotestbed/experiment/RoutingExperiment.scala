@@ -63,8 +63,12 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
                 }
             }
             resolvedResults = BatchingManager.resolveRoutingResultBatches(ueResults +: soResults.map { _._2 })
-            e2             <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
-            _              <- updateReports(soResults, r1, currentSimTime) // unit is ok here, no modifications to application state
+            e2 <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
+            //            ueForReports = ueResults.responses.map { response =>
+            //              ("ue", response)
+            //            }
+            dataForReports = ("ue", ueResults) +: soResults
+            _              <- updateReports(dataForReports, r1, currentSimTime) // unit is ok here, no modifications to application state
             simulatorState <- getState(e2)
           } yield {
             simulatorState match {

@@ -21,6 +21,7 @@ final case class MATSimRunConfig(
   def experimentDirectory: Path = {
     scenarioData.toExperimentPath(io.outputBaseDirectory, io.batchName)
   }
+
 }
 
 object MATSimRunConfig {

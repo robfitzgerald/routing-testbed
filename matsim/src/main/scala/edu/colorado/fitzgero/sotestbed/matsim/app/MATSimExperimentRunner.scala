@@ -40,9 +40,6 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
       config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {
 
-      // wrap config along with MATSim-specific environment values
-//      val matsimRunConfig: MATSimRunConfig = MATSimRunConfig(agentsUnderControl, config)
-
       Files.createDirectories(config.experimentDirectory)
 
       // used by reporting logic
