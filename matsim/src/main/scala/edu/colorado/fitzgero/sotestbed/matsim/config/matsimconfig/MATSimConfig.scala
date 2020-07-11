@@ -90,6 +90,8 @@ object MATSimConfig {
     populationPolygonFile: Option[File],
     matsimConfigFile : File,
     routingReportConfig: RoutingReportConfig,
+    heatmapLogCycleMinutes: Int = 15,
+    heatmapH3Resolution: Int = 9,
     populationFile   : File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
     matsimLogLevel   : String = "INFO",
     batchName        : String = System.currentTimeMillis.toString,
@@ -115,10 +117,13 @@ object MATSimConfig {
       */
     def name: String
     def selfishOnly: Boolean
+    def edgeUpdateFunction: EdgeUpdateFunctionConfig
+    def marginalCostFunction: MarginalCostFunctionConfig
   }
   object Algorithm {
     final case class Selfish(
-      edgeUpdateFunction: EdgeUpdateFunctionConfig
+      edgeUpdateFunction: EdgeUpdateFunctionConfig,
+      marginalCostFunction: MarginalCostFunctionConfig,
     ) extends Algorithm {
       override def name: String = "selfish"
       override def selfishOnly: Boolean = true

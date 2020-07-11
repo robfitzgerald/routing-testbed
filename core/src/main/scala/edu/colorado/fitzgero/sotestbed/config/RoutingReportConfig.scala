@@ -12,14 +12,12 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports._
 
-sealed trait RoutingReportConfig {
-  def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR]
-}
+sealed trait RoutingReportConfig
 
 object RoutingReportConfig {
   final case object Inactive extends RoutingReportConfig {
 
-    def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR] = new NoRoutingReporter()
+    def build(): RoutingReports[SyncIO, Coordinate, EdgeBPR] = new NoRoutingReporter()
   }
 
   final case object CompletePath extends RoutingReportConfig {
@@ -39,9 +37,20 @@ object RoutingReportConfig {
 
   final case object BatchLearning extends RoutingReportConfig {
 
-    def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
+    def build(outputDirectory: Path): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
       val batchLearningFilePath: Path = outputDirectory.resolve("batchLearning.csv")
       new BatchLearningReporter(batchLearningFilePath.toFile)
+    }
+  }
+
+  final case object Heatmap extends RoutingReportConfig {
+
+    def build(outputDirectory: Path,
+              logCycle: SimTime,
+              h3Resolution: Int,
+              network: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
+              costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
+      AvgSpeedHeatmapReport(outputDirectory, logCycle, h3Resolution, network, costFunction)
     }
   }
 
@@ -49,13 +58,17 @@ object RoutingReportConfig {
 
     def build(
       outputDirectory: Path,
+      logCycle: SimTime,
+      h3Resolution: Int,
+      network: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
       costFunction: EdgeBPR => Cost
     ): RoutingReports[SyncIO, Coordinate, EdgeBPR] = new RoutingReports[SyncIO, Coordinate, EdgeBPR] {
 
       val reporters: List[RoutingReports[SyncIO, Coordinate, EdgeBPR]] = List(
         CompletePath.build(outputDirectory, costFunction),
         AggregateData.build(outputDirectory, costFunction),
-        BatchLearning.build(outputDirectory, costFunction)
+        BatchLearning.build(outputDirectory),
+        Heatmap.build(outputDirectory, logCycle, h3Resolution, network, costFunction)
       )
 
       def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],

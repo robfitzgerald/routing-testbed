@@ -12,6 +12,7 @@ import com.monovore.decline._
 import com.typesafe.config.{Config, ConfigFactory}
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
+import edu.colorado.fitzgero.sotestbed.matsim.reporting.{PerformanceMetrics, PerformanceMetricsOps}
 import pureconfig.ConfigSource
 
 object MATSimBatchExperimentApp
@@ -105,8 +106,7 @@ object MATSimBatchExperimentApp
 //                        case None    => ""
 //                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
 //                      }
-                      val batchOverviewHeader: String =
-                        s"configuration,avgTTSecs,avgDistMeters,avgSpeedMph,${MATSimExperimentRunnerOps.FairnessHeader}\n"
+                      val batchOverviewHeader: String = s"configuration,${PerformanceMetrics.Header}\n"
                       batchOverview.write(batchOverviewHeader)
                       batchOverview.close()
                       println(s"created batch overview file at $batchOverviewFile")

@@ -11,23 +11,29 @@ import kantan.csv.ops._
 
 object MATSimNetworkOps {
 
-  final case class NetworkStats(totalLengths: Double, speeds: Map[Double, Int]) {
+  final case class NetworkStats(numLinks: Int, totalLengths: Double, maxLength: Double, speeds: Map[Double, Int]) {
     override def toString: String =
       f"""
-         |total link lengths: $totalLengths%.2f
+         |total  link lengths: $totalLengths%.2f meters
+         |average link length: ${totalLengths / numLinks}%.2f meters
+         |max     link length: $maxLength%.2f meters
          |speed data:
          |${speeds.mkString("  ", ",\n  ", "")}
          |""".stripMargin
   }
 
   def networkStats(network: Network): NetworkStats = {
-    val totalLengths =
-      network.getLinks.asScala.map { _._2.getLength }.sum
+    val numLinks: Int = network.getLinks.size
+    val lengths: List[Double] =
+      network.getLinks.asScala.map { _._2.getLength }.toList
+    val totalLengths      = lengths.sum
+    val maxLength: Double = lengths.max
+
     val speeds: Map[Double, Int] =
       network.getLinks.asScala.toMap
         .groupBy { _._2.getFreespeed }
         .map { case (speed, links) => (speed, links.size) }
-    NetworkStats(totalLengths, speeds)
+    NetworkStats(numLinks, totalLengths, maxLength, speeds)
   }
 
   final case class CountOfCommonEdges(commonEdges: Int, edgesOnlyInA: Int, edgesOnlyInB: Int, lengthDiff: Double, freespeedDiff: Double) {

@@ -35,7 +35,7 @@ case class UniformEdgePopulationSamplingAlgorithm(
   def generate: List[Agent] = {
 
     val links: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
-    val edgesArray: Array[EdgeId]  = roadNetwork.edges.keys.toArray
+    val edgesArray: Array[EdgeId]  = roadNetwork.edgesMap.keys.toArray
     def randomEdge: EdgeId         = edgesArray(random.nextInt(edgesArray.length))
 
     val secondsBetweenMinAndMaxWorkTime: Int = workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay

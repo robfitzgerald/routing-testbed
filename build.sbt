@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.1.3"
+val packageVersion = "2.1.4"
 version := packageVersion
 val sVersion = "2.12.10"
 
@@ -23,9 +23,17 @@ lazy val matsim = project
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
     matsimAssemblyStrategy,
-    libraryDependencies ++= coreDependencies // ++ matsimDependencies
+    resolvers ++= matsimRepository,
+    libraryDependencies ++= coreDependencies ++ matsimDependencies
   )
   .dependsOn(core)
+
+lazy val matsimRepository = Seq(
+  "MATSim release repository".at("http://dl.bintray.com/matsim/matsim"),
+  "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/"),
+//  "Open Source Geospatial Foundation Repository".at("http://download.osgeo.org/webdav/geotools/"),
+//  "OpenGeo Maven Repository".at("http://repo.opengeo.org")
+)
 
 //lazy val matsimSpark = project
 //  .in(file("matsim-spark"))
@@ -41,10 +49,6 @@ lazy val scalac = List(
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 //  "-Ypartial-unification"
 )
-
-// Internal Dependencies
-//lazy val dabtree = ProjectRef(uri("https://github.com/robfitzgerald/dabtree.git#master"), "dabtree")
-//RootProject(uri("https://github.com/robfitzgerald/dabtree.git"))
 
 // External Dependencies
 lazy val coreDependencies = List(
@@ -65,6 +69,7 @@ lazy val coreDependencies = List(
 //  "com.typesafe" % "config" % "1.3.4",
   // GIS
   "org.locationtech.proj4j" % "proj4j" % "1.1.1",
+  "com.uber"                % "h3"     % "3.0.3",
 //  "org.locationtech.jts" % "jts-core" % "1.16.1",
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
@@ -80,9 +85,10 @@ lazy val coreDependencies = List(
 //  "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided"
 //)
 
-//lazy val matsimDependencies = List(
-//  "org.matsim" % "matsim" % "0.10.1" // most recent official release/tag
-//)
+lazy val matsimDependencies = List(
+  "org.geotools" % "gt-main" % "21.5",
+  "org.matsim"   % "matsim"  % "12.0" // most recent official release/tag
+)
 //lazy val matsimGithubDependency = ProjectRef(uri("https://github.com/matsim-org/matsim.git#master"), "matsim")
 
 /////////////////////////// sbt-assembly ///////////////////////////

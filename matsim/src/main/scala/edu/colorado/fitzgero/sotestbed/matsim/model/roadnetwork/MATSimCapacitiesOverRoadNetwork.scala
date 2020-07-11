@@ -37,7 +37,7 @@ object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
       val edgeLookup: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
 
       // update edge attributes with the MATSim network capacity value
-      val (result, errors) = roadNetwork.edges.values.foldLeft((roadNetwork, List.empty[String])) { (acc, edgeTriplet) =>
+      val (result, errors) = roadNetwork.edgesMap.values.foldLeft((roadNetwork, List.empty[String])) { (acc, edgeTriplet) =>
         val (rn, errors) = acc
         edgeTriplet.attr match {
           case edgeBPR: EdgeBPR =>
@@ -51,7 +51,7 @@ object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
                 val updatedEdgeTriplet: EdgeTriplet[EdgeBPR] = edgeTriplet.copy(attr = updatedEdgeBPR)
                 val updatedRoadNetwork: LocalAdjacencyListFlowNetwork =
                   rn.copy(
-                    edges = rn.edges.updated(edgeTriplet.edgeId, updatedEdgeTriplet)
+                    edgesMap = rn.edgesMap.updated(edgeTriplet.edgeId, updatedEdgeTriplet)
                   )
                 (updatedRoadNetwork, errors)
 

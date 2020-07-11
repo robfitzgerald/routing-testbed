@@ -14,50 +14,58 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}
 
 case class LocalAdjacencyListFlowNetwork(
-  edges: Map[EdgeId, RoadNetwork.EdgeTriplet[EdgeBPR]],
-  vertices: Map[VertexId, Coordinate],
+  edgesMap: Map[EdgeId, RoadNetwork.EdgeTriplet[EdgeBPR]],
+  verticesMap: Map[VertexId, Coordinate],
   adjList: Map[VertexId, Map[EdgeId, VertexId]],
   revAdjList: Map[VertexId, Map[EdgeId, VertexId]]
 ) extends RoadNetwork[SyncIO, Coordinate, EdgeBPR] {
 
   def vertex(vertexId: VertexId): SyncIO[Option[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
-    vertices.get(vertexId).map { attr =>
+    verticesMap.get(vertexId).map { attr =>
       RoadNetwork.VertexIdAndAttribute(vertexId, attr)
     }
+  }
+
+  def vertices: SyncIO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
+    verticesMap.map { case (vertexId, attr) => RoadNetwork.VertexIdAndAttribute(vertexId, attr) }.toList
   }
 
   def vertices(vertexIds: List[VertexId]): SyncIO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
     for {
       vertexId <- vertexIds
-      attr     <- vertices.get(vertexId)
+      attr     <- verticesMap.get(vertexId)
     } yield {
       RoadNetwork.VertexIdAndAttribute(vertexId, attr)
     }
   }
 
   def edge(edgeId: EdgeId): SyncIO[Option[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = SyncIO {
-    edges.get(edgeId).map {
+    edgesMap.get(edgeId).map {
       case RoadNetwork.EdgeTriplet(_, _, _, attr) =>
         RoadNetwork.EdgeIdAndAttribute(edgeId, attr)
     }
   }
 
+  def edgeTriplets: SyncIO[List[RoadNetwork.EdgeTriplet[EdgeBPR]]] = SyncIO {
+    edgesMap.values.toList
+  }
+
   def edges(edgeIds: List[EdgeId]): SyncIO[List[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = SyncIO {
     for {
       edgeId                                 <- edgeIds
-      RoadNetwork.EdgeTriplet(_, _, _, attr) <- edges.get(edgeId)
+      RoadNetwork.EdgeTriplet(_, _, _, attr) <- edgesMap.get(edgeId)
     } yield {
       RoadNetwork.EdgeIdAndAttribute(edgeId, attr)
     }
   }
 
-  def hasVertex(vertexId: VertexId): SyncIO[Boolean] = SyncIO { vertices.isDefinedAt(vertexId) }
+  def hasVertex(vertexId: VertexId): SyncIO[Boolean] = SyncIO { verticesMap.isDefinedAt(vertexId) }
 
-  def hasEdge(edgeId: EdgeId): SyncIO[Boolean] = SyncIO { edges.isDefinedAt(edgeId) }
+  def hasEdge(edgeId: EdgeId): SyncIO[Boolean] = SyncIO { edgesMap.isDefinedAt(edgeId) }
 
-  def source(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edges.get(edgeId).map { _.src } }
+  def source(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edgesMap.get(edgeId).map { _.src } }
 
-  def destination(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edges.get(edgeId).map { _.dst } }
+  def destination(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edgesMap.get(edgeId).map { _.dst } }
 
   def incidentEdges(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[EdgeId]] = SyncIO {
     direction match {
@@ -81,7 +89,7 @@ case class LocalAdjacencyListFlowNetwork(
     for {
       neighbors   <- lookup.get(vertexId).toList
       edgeId      <- neighbors.keys
-      edgeTriplet <- edges.get(edgeId).toList
+      edgeTriplet <- edgesMap.get(edgeId).toList
     } yield {
       edgeTriplet
     }
@@ -95,7 +103,7 @@ case class LocalAdjacencyListFlowNetwork(
 
         // update all edges with marginal flows
         val updatedEdges: Map[EdgeId, RoadNetwork.EdgeTriplet[EdgeBPR]] =
-          this.edges.keys.foldLeft(edges) {
+          this.edgesMap.keys.foldLeft(edgesMap) {
             case (acc, edgeId) =>
               val marginalFlow: Flow = flowsMap.get(edgeId) match {
                 case None       => Flow.Zero
@@ -111,7 +119,7 @@ case class LocalAdjacencyListFlowNetwork(
           }
 
         this.copy(
-          edges = updatedEdges
+          edgesMap = updatedEdges
         )
       }
 }

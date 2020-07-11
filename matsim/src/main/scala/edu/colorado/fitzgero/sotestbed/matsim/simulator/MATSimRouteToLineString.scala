@@ -47,6 +47,8 @@ object MATSimRouteToLineString {
     def _unpack(remaining: List[Id[Link]] = path, resultOpt: Option[List[ProjCoordinate]] = Some(List.empty)): Option[List[ProjCoordinate]] = {
       resultOpt.flatMap { result =>
         remaining match {
+          case Nil =>
+            throw new IllegalArgumentException(s"assuming user provided a path that is greater than two, this state shouldn't be possible")
           case last :: Nil =>
             linkIdToCoords(last, qSim).map { theseCoords =>
               theseCoords ::: result

@@ -5,7 +5,6 @@ import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.Files
 
 import scala.util.Try
-import scala.util.matching.Regex
 
 import cats.effect.SyncIO
 
@@ -16,11 +15,13 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
   TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm,
   TwoPhaseRoutingAlgorithm
 }
+import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig
 import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCTSSelection, RandomSamplingSelection, TspSelection}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
+import edu.colorado.fitzgero.sotestbed.matsim.reporting.PerformanceMetricsOps
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
@@ -43,20 +44,36 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
       Files.createDirectories(config.experimentDirectory)
 
       // used by reporting logic
-      val costFunction: EdgeBPR => Cost =
-        config.algorithm match {
-          case _ @MATSimConfig.Algorithm.Selfish(_) =>
-            _: EdgeBPR =>
-              Cost.Zero
-          case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
-            val marginalCostFn: EdgeBPR => Flow => Cost = systemOptimal.marginalCostFunction.build()
-            edgeBPR: EdgeBPR =>
-              marginalCostFn(edgeBPR)(Flow.Zero)
-        }
+      val costFunction: EdgeBPR => Cost = {
+        val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
+        edgeBPR: EdgeBPR =>
+          marginalCostFn(edgeBPR)(Flow.Zero)
+      }
 
       // how we read reports
       val routingReporter: RoutingReports[SyncIO, Coordinate, EdgeBPR] =
-        config.io.routingReportConfig.build(matsimRunConfig.experimentLoggingDirectory, costFunction)
+        config.io.routingReportConfig match {
+          case RoutingReportConfig.Inactive =>
+            RoutingReportConfig.Inactive.build()
+          case RoutingReportConfig.AggregateData =>
+            RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, costFunction)
+          case RoutingReportConfig.BatchLearning =>
+            RoutingReportConfig.BatchLearning.build(config.experimentLoggingDirectory)
+          case RoutingReportConfig.CompletePath =>
+            RoutingReportConfig.CompletePath.build(config.experimentLoggingDirectory, costFunction)
+          case RoutingReportConfig.Heatmap =>
+            RoutingReportConfig.Heatmap.build(config.experimentLoggingDirectory,
+                                              SimTime.minute(config.io.heatmapLogCycleMinutes),
+                                              config.io.heatmapH3Resolution,
+                                              network,
+                                              costFunction)
+          case RoutingReportConfig.AllReporting =>
+            RoutingReportConfig.AllReporting.build(config.experimentLoggingDirectory,
+                                                   SimTime.minute(config.io.heatmapLogCycleMinutes),
+                                                   config.io.heatmapH3Resolution,
+                                                   network,
+                                                   costFunction)
+        }
 
       // the actual Simulation runner instance
       val experiment = new LocalMATSimRoutingExperiment(
@@ -65,7 +82,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
       )
 
       val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = config.algorithm match {
-        case selfish @ MATSimConfig.Algorithm.Selfish(_) =>
+        case selfish @ MATSimConfig.Algorithm.Selfish(_, _) =>
           // need a no-phase dijkstra's algorithm here?
           selfish.build()
         case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
@@ -126,7 +143,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
 
       val experimentSyncIO: SyncIO[experiment.ExperimentState] =
         config.algorithm match {
-          case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction) =>
+          case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction, _) =>
             // need a no-batching manager version here? or, a dummy for now?
             experiment.run(
               config = config,
@@ -165,46 +182,25 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
 
       result.error.foreach(e => logger.error(e))
 
-      // try to compute fairness
-      val summaryStats: String = MATSimExperimentRunnerOps.fairness(config) match {
-        case Left(error) =>
-          logger.error(s"${error.getClass} ${error.getMessage} ${error.getCause}")
-          ""
-        case Right(stats) =>
-          stats
+      // try to compute summary statistics from agentExperience files
+      val performanceMetricsResult = for {
+        performanceMetrics <- PerformanceMetricsOps.computePerformanceMetrics(config)
+        batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
+        appendMode        = true
+        batchOverviewOutput <- Try { new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode)) }.toEither
+      } yield {
+        val parameterColumns: String = config.scenarioData.toCSVRow
+        batchOverviewOutput.append(s"$parameterColumns,$performanceMetrics\n")
+        batchOverviewOutput.close()
       }
 
-      // let's drop some knowledge at output
-      val tripDurationsFile: File =
-        config.experimentDirectory.resolve("ITERS").resolve("it.0").resolve("0.tripdurations.txt").toFile
-      val tripDurationsSource = scala.io.Source.fromFile(tripDurationsFile)
-      val avgDurRegex: Regex  = "average trip duration: (\\d+\\.\\d+) seconds".r.unanchored
-      val avgDuration: String = tripDurationsSource.getLines.mkString("") match {
-        case avgDurRegex(g1) => g1
-        case _               => ""
+      performanceMetricsResult match {
+        case Left(e) =>
+          logger.error(s"${e.getCause} ${e.getMessage}\n${e.getStackTrace}")
+          s"${e.getCause} ${e.getMessage}\n${e.getStackTrace}"
+        case Right(_) =>
+          "done."
       }
-      tripDurationsSource.close()
-
-      val traveldistancestatsFile: File =
-        config.experimentDirectory.resolve("traveldistancestats.txt").toFile
-      val travelDistancesSource = scala.io.Source.fromFile(traveldistancestatsFile)
-      val avgDistRegex: Regex   = "(\\d+\\.\\d+)".r.unanchored
-      val avgDistance: String = travelDistancesSource.getLines.mkString("") match {
-        case avgDistRegex(g1) => g1
-        case _                => ""
-      }
-
-      val batchOverviewFile: File          = config.io.batchLoggingDirectory.resolve("result.csv").toFile
-      val APPEND_MODE: Boolean             = true
-      val batchOverviewOutput: PrintWriter = new PrintWriter(new FileOutputStream(batchOverviewFile, APPEND_MODE))
-      Try {
-        val parameterColumns: String       = config.scenarioData.toCSVRow
-        val (avgDistMeters, avgDurSeconds) = (avgDistance.toDouble, avgDuration.toDouble)
-        val avgSpeedMph: Double            = (avgDistMeters / 1609.0) / (avgDurSeconds / 3600.0)
-        batchOverviewOutput.append(s"$parameterColumns,$avgDuration,$avgDistance,$avgSpeedMph,$summaryStats\n")
-      }
-      batchOverviewOutput.close()
-      "done"
     }
   }
 }

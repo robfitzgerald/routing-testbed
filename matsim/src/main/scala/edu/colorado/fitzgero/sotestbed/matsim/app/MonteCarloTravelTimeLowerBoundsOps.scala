@@ -15,7 +15,7 @@ object MonteCarloTravelTimeLowerBoundsOps {
     for {
       roadNetwork <- LocalAdjacencyListFlowNetwork.fromMATSimXML(network.toFile)
       dijkstrasSearch = DijkstraSearch.edgeOrientedShortestPath(roadNetwork, EdgeBPRCostOps.freeFlowCostFunction) _
-      edgeIds         = roadNetwork.edges.keys.toArray
+      edgeIds         = roadNetwork.edgesMap.keys.toArray
     } yield {
       val random: Random = new Random(seed)
       val sumOfTravelTimes: Double = (1 to n).foldLeft(0.0) { (acc, i) =>
