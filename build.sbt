@@ -81,15 +81,10 @@ lazy val coreDependencies = List(
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
 )
 
-//lazy val matsimSparkDependencies = List(
-//  "org.apache.spark" %% "spark-sql" % "2.4.4" % "provided"
-//)
-
 lazy val matsimDependencies = List(
   "org.geotools" % "gt-main" % "21.5",
   "org.matsim"   % "matsim"  % "12.0" // most recent official release/tag
 )
-//lazy val matsimGithubDependency = ProjectRef(uri("https://github.com/matsim-org/matsim.git#master"), "matsim")
 
 /////////////////////////// sbt-assembly ///////////////////////////
 
@@ -99,10 +94,15 @@ lazy val matsimAssemblyStrategy = Seq(
   mainClass in assembly := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
   test in assembly := {},
   assemblyMergeStrategy in assembly := {
-//    case "META-INF/sun-jaxb.episode"                   => MergeStrategy.concat
-//    case "META-INF/sun-jaxb.episode" => MergeStrategy.discard
-//    case "messages.properties" => MergeStrategy.concat
+
+    // early 2020
     case "tec/uom/se/format/messages.properties" => MergeStrategy.concat
+
+    // 20200711 - switched from lib/ matsim  12.0 jar to maven-loaded matsim 12.0
+    case "META-INF/sun-jaxb.episode"                   => MergeStrategy.first
+    case PathList("META-INF", "org", "apache", "logging", xs @ _*) => MergeStrategy.first
+    case PathList("javax", "validation", xs @ _*)                   => MergeStrategy.first
+    case "module-info.class" => MergeStrategy.discard
     case x =>
       val oldStrategy: String => MergeStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
