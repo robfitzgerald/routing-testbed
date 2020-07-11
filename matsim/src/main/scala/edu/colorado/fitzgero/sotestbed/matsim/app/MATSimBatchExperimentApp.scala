@@ -5,15 +5,16 @@ import java.nio.file.{Files, Path, Paths}
 
 import scala.util.Try
 
-import cats.data.Writer
 import cats.implicits._
 
+import pureconfig._
+import pureconfig.generic.auto._
 import com.monovore.decline._
-import com.typesafe.config.{Config, ConfigFactory}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.{OverallMetrics, PerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
-import edu.colorado.fitzgero.sotestbed.matsim.reporting.{PerformanceMetrics, PerformanceMetricsOps}
-import pureconfig.ConfigSource
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
+import org.matsim.api.core.v01.Id
+import org.matsim.api.core.v01.population.Person
 
 object MATSimBatchExperimentApp
     extends CommandApp(
@@ -106,7 +107,7 @@ object MATSimBatchExperimentApp
 //                        case None    => ""
 //                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
 //                      }
-                      val batchOverviewHeader: String = s"configuration,${PerformanceMetrics.Header}\n"
+                      val batchOverviewHeader: String = s"configuration,${OverallMetrics.Header},${PerformanceMetrics.Header}\n"
                       batchOverview.write(batchOverviewHeader)
                       batchOverview.close()
                       println(s"created batch overview file at $batchOverviewFile")
@@ -225,12 +226,17 @@ object MATSimBatchExperimentApp
 
                         Files.createDirectories(matsimRunConfig.experimentLoggingDirectory)
 
-                        // todo: save the config to a file. posted to stacko:
-                        //  https://stackoverflow.com/questions/60119481/standardized-method-for-writing-an-arbitrary-typesafe-config-to-a-hocon-file
+                        implicit val matsimPersonIdWriter: ConfigWriter[Id[Person]] = ConfigWriter[String].contramap[Id[Person]](_.toString)
+                        val configValue                                             = ConfigWriter[MATSimRunConfig].to(matsimRunConfig)
+                        val configString                                            = configValue.render()
+                        val configOutputFile: File                                  = matsimRunConfig.experimentLoggingDirectory.resolve("configuration.json").toFile
+                        val configOutputPW: PrintWriter                             = new PrintWriter(configOutputFile)
+                        configOutputPW.write(configString)
+                        configOutputPW.close()
 
                         val variationOutput: String           = variationHint.mkString("\n")
                         val variationOutputFile: File         = matsimRunConfig.experimentLoggingDirectory.resolve("variation.txt").toFile
-                        val variationPrintWriter: PrintWriter = new PrintWriter(variationOutputFile.toString)
+                        val variationPrintWriter: PrintWriter = new PrintWriter(variationOutputFile)
                         variationPrintWriter.write(variationOutput)
                         variationPrintWriter.close()
 

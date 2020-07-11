@@ -371,7 +371,8 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                         mobsimAgent            <- self.qSim.getAgents.asScala.get(personId)
                         leg                    <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
                         completePathsForPerson <- self.completePathStore.get(personId)
-                        pathFromPathStore      <- completePathsForPerson.get(DepartureTime(leg.getDepartureTime.toInt))
+                        departureTime          <- DepartureTime.getLegDepartureTime(leg)
+                        pathFromPathStore      <- completePathsForPerson.get(departureTime)
 
                         // checks that there IS a path, and that it's reasonable to assign here
                         if MATSimRouteOps.completePathHasAtLeastTwoLinks(pathFromPathStore)
@@ -407,15 +408,15 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                     val agentId: Id[Person] = event.getPersonId
 
                     for {
-                      mobsimAgent <- self.qSim.getAgents.asScala.get(agentId)
-                      leg         <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
-                      departureTime         = leg.getDepartureTime.toInt
+                      mobsimAgent   <- self.qSim.getAgents.asScala.get(agentId)
+                      leg           <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
+                      departureTime <- DepartureTime.getLegDepartureTime(leg)
                       agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                       distance <- MATSimRouteOps.distanceOfPath(agentExperiencedRoute, qSim)
                     } {
 
                       // record the agent experience
-                      val travelTime: Int = playPauseSimulationControl.getLocalTime.toInt - departureTime
+                      val travelTime: Int = playPauseSimulationControl.getLocalTime.toInt - departureTime.value
                       val requestClass: RequestClass =
                         if (soAgentReplanningHandler.isUnderControl(agentId)) RequestClass.SO() else RequestClass.UE
                       val replannings: Int   = soAgentReplanningHandler.getReplanningCountForAgent(agentId).getOrElse(0)
@@ -447,10 +448,10 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                         // attach this path, keyed by departure time, to the complete list
                         completePathStore.get(agentId) match {
                           case None =>
-                            val thisPath: Map[DepartureTime, List[Id[Link]]] = Map(DepartureTime(departureTime) -> agentExperiencedRoute)
+                            val thisPath: Map[DepartureTime, List[Id[Link]]] = Map(departureTime -> agentExperiencedRoute)
                             completePathStore.update(agentId, thisPath)
                           case Some(alreadyHasPaths) =>
-                            completePathStore.update(agentId, alreadyHasPaths.updated(DepartureTime(departureTime), agentExperiencedRoute))
+                            completePathStore.update(agentId, alreadyHasPaths.updated(departureTime, agentExperiencedRoute))
                         }
                       }
                     }
@@ -778,12 +779,12 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         routingResultPath = MATSimRouteOps.convertToMATSimPath(response.path)
         mobsimAgent <- agentsInSimulation.get(Id.createPersonId(response.request.agent))
         mobsimAgentCurrentRouteLinkIdIndex = WithinDayAgentUtils.getCurrentRouteLinkIdIndex(mobsimAgent)
-        leg <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
+        leg           <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
+        departureTime <- DepartureTime.getLegDepartureTime(leg)
         if MATSimRouteOps.confirmPathIsValid(routingResultPath, self.qSim) // todo: report invalid paths
       } {
 
         // extract the mobsim agent data
-        val departureTime                         = DepartureTime(leg.getDepartureTime.toInt)
         val agentId: Id[Person]                   = mobsimAgent.getId
         val currentLinkId: Id[Link]               = mobsimAgent.getCurrentLinkId
         val agentExperiencedRoute: List[Id[Link]] = MATSimRouteOps.convertToCompleteRoute(leg)

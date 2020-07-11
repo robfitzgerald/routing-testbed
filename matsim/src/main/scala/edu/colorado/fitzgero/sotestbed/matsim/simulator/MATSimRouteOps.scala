@@ -75,7 +75,7 @@ object MATSimRouteOps extends LazyLogging {
   def getLegFromPlanByDepartureTime(plan: Plan, departureTime: DepartureTime): Option[Leg] = {
     plan.getPlanElements.asScala.toList
       .find { l =>
-        l.isInstanceOf[Leg] && l.asInstanceOf[Leg].getDepartureTime.toInt == departureTime.value
+        l.isInstanceOf[Leg] && DepartureTime.getLegDepartureTime(l.asInstanceOf[Leg]).contains(departureTime)
       }
       .map { _.asInstanceOf[Leg] }
   }

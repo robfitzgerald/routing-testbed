@@ -20,7 +20,7 @@ import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCT
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
-import edu.colorado.fitzgero.sotestbed.matsim.reporting.PerformanceMetricsOps
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.{OverallMetrics, PerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
@@ -184,13 +184,14 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
 
       // try to compute summary statistics from agentExperience files
       val performanceMetricsResult = for {
-        performanceMetrics <- PerformanceMetricsOps.computePerformanceMetrics(config)
+        overallMetrics     <- OverallMetrics(config)
+        performanceMetrics <- PerformanceMetrics.computePerformanceMetrics(config)
         batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
         appendMode        = true
         batchOverviewOutput <- Try { new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode)) }.toEither
       } yield {
         val parameterColumns: String = config.scenarioData.toCSVRow
-        batchOverviewOutput.append(s"$parameterColumns,$performanceMetrics\n")
+        batchOverviewOutput.append(s"$parameterColumns,$overallMetrics,$performanceMetrics\n")
         batchOverviewOutput.close()
       }
 
