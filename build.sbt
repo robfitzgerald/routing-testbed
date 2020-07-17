@@ -23,12 +23,19 @@ lazy val matsim = project
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
     matsimAssemblyStrategy,
-    resolvers ++= matsimRepository,
+    resolvers ++= matsimResolvers,
     libraryDependencies ++= coreDependencies ++ matsimDependencies
   )
   .dependsOn(core)
 
-lazy val matsimRepository = Seq(
+//lazy val coreResolvers = Seq(
+//  Resolver.url(
+//    "idio",
+//    url("http://dl.bintray.com/idio/sbt-plugins")
+//  )(Resolver.ivyStylePatterns)
+//)
+
+lazy val matsimResolvers = Seq(
   "MATSim release repository".at("http://dl.bintray.com/matsim/matsim"),
   "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/"),
 //  "Open Source Geospatial Foundation Repository".at("http://download.osgeo.org/webdav/geotools/"),
@@ -88,6 +95,7 @@ lazy val matsimDependencies = List(
 
 /////////////////////////// sbt-assembly ///////////////////////////
 
+
 lazy val matsimAssemblyStrategy = Seq(
   mainClass in (Compile, run) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
   mainClass in (Compile, packageBin) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
@@ -99,10 +107,10 @@ lazy val matsimAssemblyStrategy = Seq(
     case "tec/uom/se/format/messages.properties" => MergeStrategy.concat
 
     // 20200711 - switched from lib/ matsim  12.0 jar to maven-loaded matsim 12.0
-    case "META-INF/sun-jaxb.episode"                   => MergeStrategy.first
-    case PathList("META-INF", "org", "apache", "logging", xs @ _*) => MergeStrategy.first
-    case PathList("javax", "validation", xs @ _*)                   => MergeStrategy.first
-    case "module-info.class" => MergeStrategy.discard
+    case "META-INF/sun-jaxb.episode"                         => MergeStrategy.first
+    case PathList(ps @ _*) if ps.last == "Log4j2Plugins.dat" => MergeStrategy.discard
+    case PathList("javax", "validation", xs @ _*)            => MergeStrategy.first
+    case "module-info.class"                                 => MergeStrategy.discard
     case x =>
       val oldStrategy: String => MergeStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)

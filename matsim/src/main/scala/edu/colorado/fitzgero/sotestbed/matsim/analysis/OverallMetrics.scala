@@ -4,6 +4,7 @@ import java.io.File
 
 import scala.util.Try
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
 import kantan.csv._
 import kantan.csv.ops._
@@ -13,18 +14,23 @@ case class OverallMetrics(
   distanceMiles: Double = 0.0,
   speedMph: Double = 0.0,
   count: Int = 0
-) {
+) extends LazyLogging {
 
   def add(row: AgentExperienceRow): OverallMetrics = {
-    val rowDistMiles         = row.distance / 1609.0
-    val rowTravelTimeMinutes = row.travelTime / 60.0
-    val rowSpeedMph          = (row.distance / row.travelTime) * (3600.0 / 1609.0)
-    this.copy(
-      travelTimeMinutes = this.travelTimeMinutes + rowTravelTimeMinutes,
-      distanceMiles = this.distanceMiles + rowDistMiles,
-      speedMph = this.speedMph + rowSpeedMph,
-      count = this.count + 1
-    )
+    if (row.travelTime == 0.0) {
+      logger.warn("encountered 0.0 mph speed, skipping")
+      this
+    } else {
+      val rowDistMiles         = row.distance / 1609.0
+      val rowTravelTimeMinutes = row.travelTime / 60.0
+      val rowSpeedMph          = (row.distance / row.travelTime) * (3600.0 / 1609.0)
+      this.copy(
+        travelTimeMinutes = this.travelTimeMinutes + rowTravelTimeMinutes,
+        distanceMiles = this.distanceMiles + rowDistMiles,
+        speedMph = this.speedMph + rowSpeedMph,
+        count = this.count + 1
+      )
+    }
   }
 
   def avg: OverallMetrics = this.copy(
@@ -72,7 +78,9 @@ object OverallMetrics {
       // accumulate the rows into a summation
       val overallMetrics: OverallMetrics =
         agentExperienceRows.foldLeft(OverallMetrics()) {
-          case (acc, (_, row)) => acc.add(row)
+          case (acc, (_, row)) =>
+            val updated = acc.add(row)
+            updated
         }
 
       // average the summed values

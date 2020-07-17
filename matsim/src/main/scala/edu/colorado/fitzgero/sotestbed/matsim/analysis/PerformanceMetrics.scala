@@ -4,6 +4,7 @@ import java.io.File
 
 import scala.util.Try
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
 import kantan.csv._
 import kantan.csv.ops._
@@ -19,19 +20,6 @@ case class PerformanceMetrics(
   metricsSampledRatio: Double = 0.0
 ) {
 
-  def avg: PerformanceMetrics = PerformanceMetrics(
-    ttDiffMin = this.ttDiffMin / count,
-    ttDiffNorm = this.ttDiffNorm / count,
-    distDiffMiles = this.distDiffMiles / count,
-    distDiffNorm = this.distDiffNorm / count,
-    speedDiffMph = this.speedDiffMph / count,
-    speedDiffNorm = this.speedDiffNorm / count,
-    count
-  )
-
-  def addMetricsSampledPct(metricsSampledRatio: Double): PerformanceMetrics =
-    this.copy(metricsSampledRatio = metricsSampledRatio)
-
   override def toString: String = {
     val ttDiffNormString: String     = PerformanceMetrics.ratioToPercent(ttDiffNorm)
     val distDiffNormString: String   = PerformanceMetrics.ratioToPercent(distDiffNorm)
@@ -42,7 +30,7 @@ case class PerformanceMetrics(
 
 }
 
-object PerformanceMetrics {
+object PerformanceMetrics extends LazyLogging {
   val Header: String = "ttDiffMin,ttDiffNorm,distDiffMiles,distDiffNorm,speedDiffMph,speedDiffNorm,metricsSamplePct"
 
   def ratioToPercent(n: Double): String = f"${n * 100.0}%.2f%%"
@@ -55,7 +43,7 @@ object PerformanceMetrics {
     * @param config the matsim config for an optimal experiment
     * @return performance metrics
     */
-  def computePerformanceMetrics(config: MATSimRunConfig): Either[Exception, PerformanceMetrics] = {
+  def fromConfig(config: MATSimRunConfig): Either[Exception, PerformanceMetrics] = {
     val selfishConfig: MATSimRunConfig =
       config.copy(scenarioData = config.scenarioData.copy(algorithm = "selfish"))
     val selfishAgentExperienceFile: File =
@@ -63,7 +51,7 @@ object PerformanceMetrics {
     val optimalAgentExperienceFile: File =
       config.experimentLoggingDirectory.resolve("agentExperience.csv").toFile
 
-    computePerformanceMetrics(selfishAgentExperienceFile, optimalAgentExperienceFile)
+    fromFiles(selfishAgentExperienceFile, optimalAgentExperienceFile)
   }
 
   /**
@@ -73,7 +61,10 @@ object PerformanceMetrics {
     * @param thisAgentExperienceFile
     * @return
     */
-  def computePerformanceMetrics(referenceAgentExperienceFile: File, thisAgentExperienceFile: File): Either[Exception, PerformanceMetrics] = {
+  def fromFiles(referenceAgentExperienceFile: File,
+                thisAgentExperienceFile: File,
+                soAgentsOnly: Boolean = false,
+                disimprovedAgentsOnly: Boolean = false): Either[Exception, PerformanceMetrics] = {
 
     implicit val dec: HeaderDecoder[AgentExperienceRow] = AgentExperienceRow.headerDecoder
 
@@ -95,30 +86,78 @@ object PerformanceMetrics {
           }
           .toMap
 
+      case class Acc(
+        ttS: Double = 0.0,
+        ttO: Double = 0.0,
+        distS: Double = 0.0,
+        distO: Double = 0.0,
+        speedS: Double = 0.0,
+        speedO: Double = 0.0,
+        count: Int = 0
+      ) {
+        def add(ttS: Double, ttO: Double, distS: Double, distO: Double, speedS: Double, speedO: Double): Acc = {
+          this.copy(
+            ttS = this.ttS + ttS,
+            ttO = this.ttO + ttO,
+            distS = this.distS + distS,
+            distO = this.distO + distO,
+            speedS = this.speedS + speedS,
+            speedO = this.speedO + speedO,
+            count = this.count + 1
+          )
+        }
+
+        def avgTravelTimeDiff: Double      = if (count == 0.0) 0 else (ttO - ttS) / count
+        def avgTravelTimeDiffRatio: Double = if (ttS == 0.0) 0 else (ttO - ttS) / ttS
+        def avgDistanceDiff: Double        = if (count == 0.0) 0 else (distO - distS) / count
+        def avgDistanceDiffRatio: Double   = if (distS == 0.0) 0 else (distO - distS) / distS
+        def avgSpeedDiff: Double           = if (count == 0.0) 0 else (speedO - speedS) / count
+        def avgSpeedDiffRatio: Double      = if (speedS == 0.0) 0 else (speedO - speedS) / speedS
+      }
+
       // sum up each measure
-      val diffsAccum: PerformanceMetrics =
-        optimalRows.foldLeft(PerformanceMetrics()) {
+      val diffsAccum: Acc =
+        optimalRows.foldLeft(Acc()) {
           case (acc, (agentTimeIndex, optimalRow)) =>
             selfishRows.get(agentTimeIndex) match {
               case None =>
                 acc
               case Some(selfishRow) =>
-                val speedO = (optimalRow.distance / optimalRow.travelTime) * (3600.0 / 1609.0)
-                val speedS = (selfishRow.distance / selfishRow.travelTime) * (3600.0 / 1609.0)
-                acc.copy(
-                  ttDiffMin = acc.ttDiffMin + (optimalRow.travelTime - selfishRow.travelTime) / 60.0,
-                  ttDiffNorm = acc.ttDiffNorm + (optimalRow.travelTime - selfishRow.travelTime) / selfishRow.travelTime,
-                  distDiffMiles = acc.distDiffMiles + (optimalRow.distance - selfishRow.distance) / 1609.0,
-                  distDiffNorm = acc.distDiffNorm + (optimalRow.distance - selfishRow.distance) / selfishRow.distance,
-                  speedDiffMph = acc.speedDiffMph + math.min(speedO - speedS, SpeedUpperBoundMph),
-                  speedDiffNorm = acc.speedDiffNorm + (speedO - speedS) / speedS,
-                  count = acc.count + 1
-                )
+                if (optimalRow.travelTime == 0.0 || selfishRow.travelTime == 0.0) {
+                  logger.warn("encountered infinite mph speed, skipping")
+                  acc
+                } else if (soAgentsOnly && optimalRow.requestClass == "ue") {
+                  acc
+                } else {
+                  val ttS: Double                    = selfishRow.travelTime / 60.0
+                  val ttO: Double                    = optimalRow.travelTime / 60.0
+                  val travelTimeWasImproved: Boolean = ttO < ttS
+                  val distS: Double                  = selfishRow.distance / 1609.0
+                  val distO: Double                  = optimalRow.distance / 1609.0
+                  val speedO: Double                 = (optimalRow.distance / optimalRow.travelTime) * (3600.0 / 1609.0)
+                  val speedS: Double                 = (selfishRow.distance / selfishRow.travelTime) * (3600.0 / 1609.0)
+
+                  if (disimprovedAgentsOnly && travelTimeWasImproved) {
+                    acc
+                  } else {
+                    val updated = acc.add(ttS, ttO, distS, distO, speedS, speedO)
+                    updated
+                  }
+                }
             }
         }
 
-      // results
-      val diffsAveraged: PerformanceMetrics = diffsAccum.avg.addMetricsSampledPct(diffsAccum.count.toDouble / selfishRows.size.toDouble)
+      // convert accumulated sums into averages
+      val diffsAveraged: PerformanceMetrics = PerformanceMetrics(
+        ttDiffMin = diffsAccum.avgTravelTimeDiff,
+        ttDiffNorm = diffsAccum.avgTravelTimeDiffRatio,
+        distDiffMiles = diffsAccum.avgDistanceDiff,
+        distDiffNorm = diffsAccum.avgDistanceDiffRatio,
+        speedDiffMph = diffsAccum.avgSpeedDiff,
+        speedDiffNorm = diffsAccum.avgSpeedDiffRatio,
+        count = diffsAccum.count,
+        metricsSampledRatio = diffsAccum.count.toDouble / selfishRows.size.toDouble
+      )
 
       diffsAveraged
 

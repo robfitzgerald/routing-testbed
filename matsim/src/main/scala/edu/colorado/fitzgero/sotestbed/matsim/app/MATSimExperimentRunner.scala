@@ -185,7 +185,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
       // try to compute summary statistics from agentExperience files
       val performanceMetricsResult = for {
         overallMetrics     <- OverallMetrics(config)
-        performanceMetrics <- PerformanceMetrics.computePerformanceMetrics(config)
+        performanceMetrics <- PerformanceMetrics.fromConfig(config)
         batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
         appendMode        = true
         batchOverviewOutput <- Try { new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode)) }.toEither
