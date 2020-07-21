@@ -35,7 +35,6 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
     minRequestUpdateThreshold: SimTime,
     minNetworkUpdateThreshold: SimTime,
     doneRoutingAtSimTime: SimTime,
-    selfishOnly: Boolean
   ): F[ExperimentState] = {
 
     def _run(startState: ExperimentState): F[ExperimentState] = {
@@ -48,9 +47,7 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
             edges           <- getUpdatedEdges(e1)
             r1              <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
             batchDataUpdate <- getAgentsNewlyAvailableForReplanning(e1)
-            (ueRequests, soUpdate) = batchDataUpdate.partition { payload =>
-              selfishOnly || BatchingManager.splitUEFromSO(payload)
-            }
+            (ueRequests, soUpdate) = batchDataUpdate.partition { BatchingManager.splitUEFromSO }
             ueResults <- RoutingExperiment.runUE(ueRoutingAlgorithm, ueRequests, r1)
             b1                  = b0.updateAgentBatchData(soUpdate)
             (b2, batchRequests) = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
@@ -114,8 +111,10 @@ object RoutingExperiment {
       case _ => None
     }
     ueRoutingAlgorithm.map { _.route(ueRouteRequests, ActiveAgentHistory.NoHistory, roadNetwork) } match {
-      case None         => Monad[F].pure { RoutingAlgorithm.Result() }
-      case Some(result) => result
+      case None =>
+        Monad[F].pure { RoutingAlgorithm.Result() }
+      case Some(result) =>
+        result
     }
   }
 }

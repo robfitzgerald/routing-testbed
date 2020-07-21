@@ -108,7 +108,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
 
           val selectionRuntime = RunTime(System.currentTimeMillis) - endOfKspTime
 
-          RoutingAlgorithm.Result(
+          val result = RoutingAlgorithm.Result(
             altsResult.alternatives,
             filteredAlts,
             selectionResultWithKSPPaths,
@@ -119,6 +119,8 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             avgTravelTimeImprovement = selectionResult.averageImprovement,
             samples = selectionResult.samples.value
           )
+
+          result
         }
       }
     }

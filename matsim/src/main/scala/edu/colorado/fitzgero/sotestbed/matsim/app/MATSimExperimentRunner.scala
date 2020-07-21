@@ -36,15 +36,17 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
     */
   def run(): Either[io.Serializable, Any] = {
     for {
-      network            <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimRunConfig.io.matsimNetworkFile, matsimRunConfig.routing.batchWindow)
-      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(matsimRunConfig.io.populationFile, matsimRunConfig.routing.adoptionRate)
+      network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimRunConfig.io.matsimNetworkFile, matsimRunConfig.routing.batchWindow)
+      agentsUnderControlPercentage = if (matsimRunConfig.algorithm.isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
+      else matsimRunConfig.routing.adoptionRate
+      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(matsimRunConfig.io.populationFile, agentsUnderControlPercentage)
       config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {
 
       Files.createDirectories(config.experimentDirectory)
 
       // used by reporting logic
-      val costFunction: EdgeBPR => Cost = {
+      val edgeFlowCostFunction: EdgeBPR => Cost = {
         val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
         edgeBPR: EdgeBPR =>
           marginalCostFn(edgeBPR)(Flow.Zero)
@@ -56,23 +58,23 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
           case RoutingReportConfig.Inactive =>
             RoutingReportConfig.Inactive.build()
           case RoutingReportConfig.AggregateData =>
-            RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, costFunction)
+            RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, edgeFlowCostFunction)
           case RoutingReportConfig.BatchLearning =>
             RoutingReportConfig.BatchLearning.build(config.experimentLoggingDirectory)
           case RoutingReportConfig.CompletePath =>
-            RoutingReportConfig.CompletePath.build(config.experimentLoggingDirectory, costFunction)
+            RoutingReportConfig.CompletePath.build(config.experimentLoggingDirectory, edgeFlowCostFunction)
           case RoutingReportConfig.Heatmap =>
             RoutingReportConfig.Heatmap.build(config.experimentLoggingDirectory,
                                               SimTime.minute(config.io.heatmapLogCycleMinutes),
                                               config.io.heatmapH3Resolution,
                                               network,
-                                              costFunction)
+                                              edgeFlowCostFunction)
           case RoutingReportConfig.AllReporting =>
             RoutingReportConfig.AllReporting.build(config.experimentLoggingDirectory,
                                                    SimTime.minute(config.io.heatmapLogCycleMinutes),
                                                    config.io.heatmapH3Resolution,
                                                    network,
-                                                   costFunction)
+                                                   edgeFlowCostFunction)
         }
 
       // the actual Simulation runner instance
@@ -130,7 +132,8 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
 
       val ueRoutingAlgorithm: Option[RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR]] =
         config.routing.selfish match {
-          case _: MATSimConfig.Routing.Selfish.MATSim => None
+          case _: MATSimConfig.Routing.Selfish.MATSim =>
+            None
           case MATSimConfig.Routing.Selfish.Dijkstra(pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction) =>
             Some {
               SelfishSyncRoutingBPR(
@@ -149,7 +152,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
               config = config,
               roadNetwork = network,
               ueRoutingAlgorithm = ueRoutingAlgorithm,
-              soRoutingAlgorithm = selfish.build(),
+              soRoutingAlgorithm = soRoutingAlgorithm,
               updateFunction = edgeUpdateFunction.build(),
               batchingFunction = selfish.batchingStub,
               batchWindow = config.routing.batchWindow,
@@ -157,7 +160,6 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
               minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
               minNetworkUpdateThreshold = config.routing.minNetworkUpdateThreshold,
               doneRoutingAtSimTime = config.run.endOfRoutingTime,
-              selfishOnly = selfish.selfishOnly
             )
           case systemOptimal: MATSimConfig.Algorithm.SystemOptimal =>
             experiment.run(
@@ -172,9 +174,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
               minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
               minNetworkUpdateThreshold = config.routing.minNetworkUpdateThreshold,
               doneRoutingAtSimTime = config.run.endOfRoutingTime,
-              selfishOnly = systemOptimal.selfishOnly
             )
-
         }
 
       val result: experiment.ExperimentState = experimentSyncIO.unsafeRunSync()

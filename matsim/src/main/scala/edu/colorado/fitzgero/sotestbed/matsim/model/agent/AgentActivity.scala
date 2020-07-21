@@ -22,7 +22,9 @@ object AgentActivity {
     coord: Coord,
     endTime: LocalTime
   ) extends AgentActivity {
-    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value}  x={coord.getX.toString} y={coord.getY.toString} end_time={endTime.format(MATSimTextTimeFormat)}/>
+
+    def toXML: xml.Elem =
+      <activity type={activityType.toString} link={location.value}  x={coord.getX.toString} y={coord.getY.toString} end_time={endTime.format(MATSimTextTimeFormat)}/>
   }
 
   final case class Activity(
@@ -30,9 +32,11 @@ object AgentActivity {
     location: EdgeId,
     coord: Coord,
     startTime: LocalTime,
-    endTime: LocalTime,
+    duration: LocalTime,
   ) extends AgentActivity {
-    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString} end_time={endTime.format(MATSimTextTimeFormat)}/>
+
+    def toXML: xml.Elem =
+      <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString} max_dur={duration.format(MATSimTextTimeFormat)}/>
   }
 
   final case class FinalActivity(
@@ -43,4 +47,3 @@ object AgentActivity {
     def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString}/>
   }
 }
-

@@ -167,26 +167,26 @@ object MATSimBatchExperimentApp
                             case Right(_) =>
                               ()
                           }
+                        }
 
-                          // run experiment
-                          val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimRunConfig, trial + batchSeed)
+                        // run experiment
+                        val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimRunConfig, trial + batchSeed)
 
-                          Try {
-                            experiment.run()
-                          }.toEither match {
-                            case Left(e) =>
-                              println(s"trial $trial exit with fatal error $e")
-                              batchLogger.write(s"$trial,${e.toString}\n")
-                            case Right(result) =>
-                              result match {
-                                case Left(e) =>
-                                  println(s"trial $trial exit with handled error")
-                                  batchLogger.write(s"$trial,${e.toString}\n")
-                                case Right(_) =>
-                                  println(s"trial $trial exited normally")
-                                  batchLogger.write(s"$trial,${matsimRunConfig.experimentDirectory}\n")
-                              }
-                          }
+                        Try {
+                          experiment.run()
+                        }.toEither match {
+                          case Left(e) =>
+                            println(s"trial $trial exit with fatal error $e")
+                            batchLogger.write(s"$trial,${e.toString}\n")
+                          case Right(result) =>
+                            result match {
+                              case Left(e) =>
+                                println(s"trial $trial exit with handled error")
+                                batchLogger.write(s"$trial,${e.toString}\n")
+                              case Right(_) =>
+                                println(s"trial $trial exited normally")
+                                batchLogger.write(s"$trial,${matsimRunConfig.experimentDirectory}\n")
+                            }
                         }
                       }
                     }

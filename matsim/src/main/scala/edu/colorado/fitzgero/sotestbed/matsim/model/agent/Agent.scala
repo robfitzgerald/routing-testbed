@@ -8,7 +8,6 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 final case class Agent(
   id: String,
-  requestClass: RequestClass,
   activities: List[AgentActivityPair],
 ) {
 
@@ -48,11 +47,12 @@ final case class Agent(
       remainingActivities = Agent.xmlForRemainingActivities(this)
     } yield {
 
+      //        <attributes>
+      //          <attribute name="requestClass" class={this.requestClass.toString}/>
+      //        </attributes>
+
       <person id={this.id}>
-        <attributes>
-          <attribute name="requestClass" class={this.requestClass.toString}/>
-        </attributes>
-        <plan>
+        <plan selected="yes" score="100">
           {startActivity}{remainingActivities}
         </plan>
       </person>

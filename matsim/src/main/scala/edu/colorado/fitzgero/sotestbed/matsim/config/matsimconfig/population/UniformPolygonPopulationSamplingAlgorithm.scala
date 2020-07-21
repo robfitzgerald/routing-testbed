@@ -25,7 +25,7 @@ case class UniformPolygonPopulationSamplingAlgorithm(
   networkSRID: Int,
   matsimNetwork: Network,
   populationSize: Int,
-  percentSOAgents: Double,
+//  percentSOAgents: Double,
   workActivityMinTime: LocalTime,
   workActivityMaxTime: LocalTime,
   workDurationHours: Int,
@@ -66,7 +66,7 @@ case class UniformPolygonPopulationSamplingAlgorithm(
 
     val secondsBetweenMinAndMaxWorkTime: Int = workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
     def sampleWorkTime: LocalTime            = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
-    def isSoAgent: Boolean                   = random.nextDouble < percentSOAgents
+//    def isSoAgent: Boolean                   = random.nextDouble < percentSOAgents
 
     val agents: Seq[Agent] = for {
       uniqueId <- 1 to populationSize
@@ -75,16 +75,16 @@ case class UniformPolygonPopulationSamplingAlgorithm(
       homeCoord    = homeNode.getCoord
       workLocation = randomEdge
       workNode <- links.get(Id.createLinkId(workLocation.value))
-      workCoord    = workNode.getCoord
-      agentId      = s"$uniqueId-$homeLocation-$workLocation"
-      requestClass = if (isSoAgent) RequestClass.SO() else RequestClass.UE
-      workTime     = sampleWorkTime
-      homeEndTime  = if (workTime.isAfter(LocalTime.parse("01:00:00"))) workTime.minusHours(1) else LocalTime.MIN
+      workCoord = workNode.getCoord
+      agentId   = s"$uniqueId-$homeLocation-$workLocation"
+//      requestClass = if (isSoAgent) RequestClass.SO() else RequestClass.UE
+      workTime    = sampleWorkTime
+      homeEndTime = if (workTime.isAfter(LocalTime.parse("01:00:00"))) workTime.minusHours(1) else LocalTime.MIN
     } yield {
 
       val agent = Agent(
         agentId,
-        requestClass,
+//        requestClass,
         List(
           AgentActivityPair(
             FirstActivity(

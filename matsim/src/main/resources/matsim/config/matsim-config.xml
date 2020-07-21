@@ -19,14 +19,21 @@
         <param value="qsim" name="mobsim"/>
         <param value="" name="snapshotFormat"/>
     </module>
+    <module name="TimeAllocationMutator">
+        <param name="mutationAffectsDuration" value="false"/>
+    </module>
     <module name="strategy" >
-        <param name="Module_1" value="ChangeExpBeta" />
-        <param name="ModuleProbability_1" value="0.9" />
+        <param name="maxAgentPlanMemorySize" value="1" />
+        <param name="Module_1" value="BestScore" />
+        <param name="ModuleProbability_1" value="1.0" />
 
-        <param name="Module_2" value="ReRoute" />
-        <param name="ModuleProbability_2" value="0.1" />
+<!--        <param name="Module_2" value="ReRoute" />-->
+<!--        <param name="ModuleProbability_2" value="0.1" />-->
 
-        <param name="fractionOfIterationsToDisableInnovation" value="0.8" />
+<!--        <param name="fractionOfIterationsToDisableInnovation" value="0.8" />-->
+    </module>
+    <module name="planscalcroute" >
+        <param name="routingRandomness" value="0.0" />
     </module>
     <module name="planCalcScore">
         <param name="learningRate" value="0.0"/>

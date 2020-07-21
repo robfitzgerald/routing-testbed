@@ -305,10 +305,13 @@ object MATSimRouteOps extends LazyLogging {
                 )
               }
             }
-        for {
+
+        val result: Option[EdgeId] = for {
           possibleStartPoint <- search.startPoint
           if minimumRemainingRouteTimeForReplanning < search.estimatedRemainingTravelTime
         } yield EdgeId(possibleStartPoint.toString)
+
+        result
     }
   }
 

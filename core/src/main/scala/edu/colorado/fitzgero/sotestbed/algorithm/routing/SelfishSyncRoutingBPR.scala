@@ -10,8 +10,8 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionCost
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork, TraverseDirection}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork, TraverseDirection}
 
 case class SelfishSyncRoutingBPR[V](
   marginalCostFunction: EdgeBPR => Flow => Cost, // Likely EdgeBPRCostOps.marginalCostFunction
@@ -78,12 +78,14 @@ case class SelfishSyncRoutingBPR[V](
         }
       }.toMap
 
-      RoutingAlgorithm.Result(
+      val result = RoutingAlgorithm.Result(
         kspResult = alternatives,
         responses = successfulRouteResponses,
         kspRuntime = RunTime.Zero,
         selectionRuntime = RunTime.Zero,
       )
+
+      result
     }
   }
 }
