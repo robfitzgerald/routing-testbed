@@ -11,15 +11,46 @@ import kantan.csv.ops._
 
 object MATSimNetworkOps {
 
-  final case class NetworkStats(numLinks: Int, totalLengths: Double, maxLength: Double, speeds: Map[Double, Int]) {
+  final case class NetworkStats(numLinks: Int, totalLengths: Double, maxLength: Double, avgSpeed: Double, speeds: Map[Double, Int]) {
     override def toString: String =
       f"""
          |total  link lengths: $totalLengths%.2f meters
          |average link length: ${totalLengths / numLinks}%.2f meters
          |max     link length: $maxLength%.2f meters
+         |average link speed:  ${avgSpeed / numLinks}%.2f mph 
          |speed data:
-         |${speeds.mkString("  ", ",\n  ", "")}
+         |$speedStats2
          |""".stripMargin
+
+    def speedStats2: String = {
+      val total = speeds.values.foldLeft(0) {
+        _ + _
+      }
+      speeds
+        .map {
+          case (speed, count) =>
+            val asMph: Int = (speed * (3600.0 / 1609.0)).toInt
+            asMph -> count
+        }
+        .groupBy { case (speed, _) => speed }
+        .map {
+          case (speed, counts) =>
+            val percent = (counts.values.sum / total.toDouble) * 100.0
+            f"$speed mph: $percent%.2f%%"
+        }
+        .mkString("\n")
+    }
+
+//    def speedStats: String = {
+//      val total = speeds.values.foldLeft(0) { _ + _ }
+//      val statStrings = speeds.map {
+//        case (speed, count) =>
+//          val asMph: Double = speed * (3600.0 / 1609.0)
+//          f"$speed%.2f meters/sec | $asMph%.2f mph | $count | ${(count.toDouble / total.toDouble) * 100.0}%.2f %%"
+//      }
+//      statStrings.mkString("\n")
+//    }
+
   }
 
   def networkStats(network: Network): NetworkStats = {
@@ -29,11 +60,14 @@ object MATSimNetworkOps {
     val totalLengths      = lengths.sum
     val maxLength: Double = lengths.max
 
+    val avgSpeed: Double = network.getLinks.asScala.values.foldLeft(0.0) { (acc, link) =>
+      acc + link.getFreespeed * (3600.0 / 1609.0)
+    }
     val speeds: Map[Double, Int] =
       network.getLinks.asScala.toMap
         .groupBy { _._2.getFreespeed }
         .map { case (speed, links) => (speed, links.size) }
-    NetworkStats(numLinks, totalLengths, maxLength, speeds)
+    NetworkStats(numLinks, totalLengths, maxLength, avgSpeed, speeds)
   }
 
   final case class CountOfCommonEdges(commonEdges: Int, edgesOnlyInA: Int, edgesOnlyInB: Int, lengthDiff: Double, freespeedDiff: Double) {

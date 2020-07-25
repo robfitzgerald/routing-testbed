@@ -1,10 +1,11 @@
 package edu.colorado.fitzgero.sotestbed.matsim.app
 
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+
 import cats.implicits._
 
 import com.monovore.decline._
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.{OverallMetrics, PerformanceMetrics}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.AgentExperienceOps
 
 /**
   * takes one or two agentExperience.csv files and produces top-level
@@ -15,49 +16,51 @@ object AgentExperienceBatchApp
       name = "Agent Experience Batch App",
       header = "top-level stats for experimental results",
       main = {
+
         val dirOpt: Opts[Path] =
           Opts.option[Path](long = "directory", short = "d", help = "compute outcomes from data in this directory")
-        val soOnlyOpt: Opts[Boolean]          = Opts.flag("so-only", help = "only observe SO agents").orFalse
-        val disimprovedOnlyOpt: Opts[Boolean] = Opts.flag("disimproved-only", help = "only stats of agents with worse travel time").orFalse
 
-        (dirOpt, soOnlyOpt, disimprovedOnlyOpt).mapN {
-          case (dir, soOnly, disimprovedOnly) =>
+        val refFileNameOpt: Opts[String] =
+          Opts.option[String](long = "reference", short = "r", help = "name of file to build comparative statistics against")
+
+        (dirOpt, refFileNameOpt).mapN {
+          case (dir, refFileName) =>
             // load all files in the directory
 
-            if (!dir.toFile.isDirectory) {
-              throw new IllegalArgumentException(s"$dir is not a directory")
+            AgentExperienceOps.collectMetrics(dir, refFileName) match {
+              case Left(e) =>
+                throw e
+              case Right(completeMetrics) =>
+                val rows         = AgentExperienceOps.createFromUngroupedMetricResults(completeMetrics)
+                val csvRows      = rows.map { _._1 }
+                val allPlotData  = rows.map { _._2 }
+                val winPct       = rows.map { _._3 }
+                val losePct      = rows.map { _._4 }
+                val losePlotData = rows.map { _._5 }
+
+                // print csv to stdout
+                println("\nCSV REPORT\n")
+                println(AgentExperienceOps.AggregateOutputHeader)
+                for { row <- csvRows } { println(row) }
+
+                // print coords to stdout
+                val (ttCoordsAll, distCoordsAll) = AgentExperienceOps.toLaTeXPlots(allPlotData)
+                val (ttCoordsL, distCoordsL)     = AgentExperienceOps.toLaTeXPlots(losePlotData)
+                val (winCoords, loseCoords)      = AgentExperienceOps.toLaTeXWinLosePlot(allPlotData)
+                println("\n LaTeX PLOTS\n")
+                println("\ntt-all")
+                println(ttCoordsAll)
+                println("\ndist-all")
+                println(distCoordsAll)
+                println("\nwin-all")
+                println(winCoords)
+                println("\nlose-all")
+                println(loseCoords)
+                println("\ntt-lose")
+                println(ttCoordsL)
+                println("\ndist-lose")
+                println(distCoordsL)
             }
-
-            println(f"node,file,${OverallMetrics.Header},${PerformanceMetrics.Header}")
-
-            val outerResult: List[Unit] = for {
-              subDir <- dir.toFile.listFiles.toList.filter { _.isDirectory }.sorted
-              nodeName = subDir.getName // cluster node name
-            } yield {
-
-              val selfishFile = Paths.get(subDir.toString).resolve("selfish.csv").toFile
-
-              val innerResult: List[Either[Exception, String]] = for {
-                optimalFile <- subDir.listFiles.toList.sorted
-                fileName = optimalFile.getName.substring(0, optimalFile.getName.length - 4) // hack to remove ".csv"
-              } yield
-                for {
-                  overallMetrics     <- OverallMetrics(optimalFile)
-                  performanceMetrics <- PerformanceMetrics.fromFiles(selfishFile, optimalFile, soOnly, disimprovedOnly)
-                } yield f"$nodeName,$fileName,$overallMetrics,$performanceMetrics"
-
-              for {
-                r <- innerResult
-              } {
-                r match {
-                  case Left(e) =>
-                    println(s"Agent Experience App failure: ${e.getClass} ${e.getMessage} ${e.getCause}")
-                  case Right(row) =>
-                    println(f"$row")
-                }
-              }
-            }
-
         }
       }
     )

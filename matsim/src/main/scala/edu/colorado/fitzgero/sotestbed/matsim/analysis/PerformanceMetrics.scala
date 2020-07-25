@@ -31,7 +31,16 @@ case class PerformanceMetrics(
 }
 
 object PerformanceMetrics extends LazyLogging {
+
   val Header: String = "ttDiffMin,ttDiffNorm,distDiffMiles,distDiffNorm,speedDiffMph,speedDiffNorm,metricsSamplePct"
+
+  def headerWithPrefix(prefix: String): String =
+    Header
+      .split(",")
+      .map { colName =>
+        f"$prefix$colName"
+      }
+      .mkString(",")
 
   def ratioToPercent(n: Double): String = f"${n * 100.0}%.2f%%"
 
@@ -63,8 +72,9 @@ object PerformanceMetrics extends LazyLogging {
     */
   def fromFiles(referenceAgentExperienceFile: File,
                 thisAgentExperienceFile: File,
-                soAgentsOnly: Boolean = false,
-                disimprovedAgentsOnly: Boolean = false): Either[Exception, PerformanceMetrics] = {
+                reportImprovedAgents: Boolean = true,
+                reportDisImprovedAgents: Boolean = true,
+                soAgentsOnly: Boolean = false): Either[Exception, PerformanceMetrics] = {
 
     implicit val dec: HeaderDecoder[AgentExperienceRow] = AgentExperienceRow.headerDecoder
 
@@ -137,11 +147,12 @@ object PerformanceMetrics extends LazyLogging {
                   val speedO: Double                 = (optimalRow.distance / optimalRow.travelTime) * (3600.0 / 1609.0)
                   val speedS: Double                 = (selfishRow.distance / selfishRow.travelTime) * (3600.0 / 1609.0)
 
-                  if (disimprovedAgentsOnly && travelTimeWasImproved) {
-                    acc
-                  } else {
+                  // report only results we are interested in
+                  if (reportImprovedAgents && travelTimeWasImproved || reportDisImprovedAgents && !travelTimeWasImproved) {
                     val updated = acc.add(ttS, ttO, distS, distO, speedS, speedO)
                     updated
+                  } else {
+                    acc
                   }
                 }
             }

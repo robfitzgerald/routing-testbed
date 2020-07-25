@@ -16,7 +16,7 @@ case class OverallMetrics(
   count: Int = 0
 ) extends LazyLogging {
 
-  def add(row: AgentExperienceRow): OverallMetrics = {
+  def +(row: AgentExperienceRow): OverallMetrics = {
     if (row.travelTime == 0.0) {
       logger.warn("encountered 0.0 mph speed, skipping")
       this
@@ -79,7 +79,7 @@ object OverallMetrics {
       val overallMetrics: OverallMetrics =
         agentExperienceRows.foldLeft(OverallMetrics()) {
           case (acc, (_, row)) =>
-            val updated = acc.add(row)
+            val updated = acc.+(row)
             updated
         }
 
