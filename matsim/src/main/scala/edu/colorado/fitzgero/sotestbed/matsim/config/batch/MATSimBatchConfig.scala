@@ -72,7 +72,9 @@ object MATSimBatchConfig {
           case bf: BatchingFunctionConfig.GreedyCoordinateGrouping => bf.splitFactor.toString
         }
     }
-    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sf=$splitFactor"
+    val maxPathAssignments: String    = config.routing.maxPathAssignments.toString
+    val minReplanningWaitTime: String = config.routing.minimumReplanningWaitTime.value.toString
+    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sf=$splitFactor-mP=$maxPathAssignments-mRWT=$minReplanningWaitTime"
   }
 
   def createVariationNameV3(config: MATSimConfig, popSize: Int): String = {

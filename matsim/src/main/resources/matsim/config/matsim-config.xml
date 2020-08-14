@@ -7,9 +7,9 @@
     <module name="network">
         <param value="None" name="inputNetworkFile"/>
     </module>
-    <module name="qsim">
-        <param name="trafficDynamics" value="kinematicWaves"/>
-    </module>
+<!--    <module name="qsim">-->
+<!--        <param name="trafficDynamics" value="kinematicWaves"/>-->
+<!--    </module>-->
     <module name="plans">
         <param value="None" name="inputPlansFile"/>
     </module>

@@ -44,34 +44,6 @@ class LocalMCTSSelectionAlgorithm[V, E](
         combineFlowsFunction,
         marginalCostFunction
       )
-//
-//      // select the true shortest path for this agent
-//      val request: Request        = alts.keys.head
-//      val requestAlts: List[Path] = alts.values.head
-//      requestAlts match {
-//        case Nil =>
-//          // request had no routes!
-//          SelectionAlgorithm.Result()
-//        case trueShortestPath :: _ =>
-//          // get cost estimate of this route
-//          val trueShortestCost: SelectionCost = SelectionAlgorithm
-//            .evaluateCostOfSelection(
-//              List(trueShortestPath),
-//              roadNetwork,
-//              pathToMarginalFlowsFunction,
-//              combineFlowsFunction,
-//              marginalCostFunction
-//            )
-//            .unsafeRunSync()
-//
-//          // package result
-//          SelectionAlgorithm.Result(
-//            selectedRoutes = List(Response(request, 0, trueShortestPath.map { _.edgeId }, trueShortestCost.overallCost)),
-//            estimatedCost = trueShortestCost.overallCost,
-//            selfishCost = trueShortestCost.overallCost,
-//            samples = NonNegativeNumber.One
-//          )
-//      }
     } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
       // problem small enough for an exhaustive search
       SelectionAlgorithm
@@ -291,11 +263,6 @@ class LocalMCTSSelectionAlgorithm[V, E](
         val numAltsForNextPerson: Int = alts(state.length).length
         val action: Int               = random.nextInt(numAltsForNextPerson)
         val newState: Array[Int]      = addToState(state, action)
-        if (numAltsForNextPerson == action) {
-          newState
-        }
-//        logger.debug(s"old state: ${state.mkString("[", ", ", "]")} - new state: ${newState.mkString("[", ", ", "]")}")
-//        logger.debug(s"agent ${state.length} selected action ${action} from $numAltsForNextPerson alts")
 
         newState
       }
