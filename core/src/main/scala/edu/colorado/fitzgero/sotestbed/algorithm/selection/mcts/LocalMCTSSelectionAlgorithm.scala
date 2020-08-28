@@ -155,6 +155,7 @@ class LocalMCTSSelectionAlgorithm[V, E](
     override var globalBestSimulation: BigDecimal    = BigDecimal(trueShortestPathSelectionCost.overallCost.value)
     override var globalWorstSimulation: BigDecimal   = BigDecimal(trueShortestPathSelectionCost.overallCost.value)
     override var bestSolution: Array[Int]            = trueShortestPaths
+    val searchSpaceSize: BigDecimal                  = BigDecimal(altsInternal.map { _.length }.product)
 
     var bestAgentCosts: List[Cost] = trueShortestPathSelectionCost.agentPathCosts
 
@@ -223,6 +224,7 @@ class LocalMCTSSelectionAlgorithm[V, E](
                 Cost(globalBestSimulation.toDouble),
                 pedrosoRei.bestAgentCosts,
                 samples,
+                searchSpaceSize,
                 startTime
               )
 

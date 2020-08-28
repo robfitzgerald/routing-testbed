@@ -85,6 +85,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
   var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData]            = collection.mutable.ListBuffer.empty
   var runStatsPrintWriter: PrintWriter                                                          = _
   var agentExperiencePrintWriter: PrintWriter                                                   = _
+  var agentPathPrintWriter: PrintWriter                                                         = _
 
   // matsim variables
   var controler: Controler                                      = _
@@ -156,7 +157,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
 
     val agentExperienceFilePath: String = config.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
     agentExperiencePrintWriter = new PrintWriter(agentExperienceFilePath)
-    agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance,replannings,WKT\n")
+    agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance,replannings\n")
+
+    val agentPathFilePath: String = config.experimentLoggingDirectory.resolve(s"agentPath.csv").toString
+    agentPathPrintWriter = new PrintWriter(agentPathFilePath)
+    agentPathPrintWriter.write("agentId,WKT\n")
 
     // initialize intermediary data structures holding data between route algorithms + simulation
     self.soAgentReplanningHandler = new SOAgentReplanningHandler(
@@ -224,6 +229,7 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
       def notifyShutdown(shutdownEvent: ShutdownEvent): Unit = {
         runStatsPrintWriter.close()
         agentExperiencePrintWriter.close()
+        agentPathPrintWriter.close()
       }
     })
 
@@ -454,9 +460,11 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
                       }
                       val linestring: String = MATSimRouteToLineString(agentExperiencedRoute, qSim).getOrElse("LINESTRING EMPTY")
 
-                      val row: String = s"$agentId,$requestClass,$departureTime,$travelTimeSeconds,$distance,$replannings,$linestring\n"
+                      val agentExperienceRow: String = s"$agentId,$requestClass,$departureTime,$travelTimeSeconds,$distance,$replannings\n"
+                      val agentPathRow: String       = s"$agentId,$linestring\n"
 
-                      agentExperiencePrintWriter.append(row)
+                      agentExperiencePrintWriter.append(agentExperienceRow)
+                      agentPathPrintWriter.append(agentPathRow)
 
                       // considerations only for SO agents under control
                       if (//!self.onlySelfishAgents &&

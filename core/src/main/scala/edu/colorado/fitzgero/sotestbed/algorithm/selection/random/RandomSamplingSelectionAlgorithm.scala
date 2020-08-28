@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.algorithm.selection
+package edu.colorado.fitzgero.sotestbed.algorithm.selection.random
 
 import scala.util.Random
 
@@ -6,6 +6,7 @@ import cats.Monad
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
@@ -14,15 +15,14 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
   seed: Long,
   exhaustiveSearchSampleLimit: Int,
-  terminationFunction: SelectionState => Boolean
+  terminationFunction: SelectionState => Boolean,
+  selectionAcceptanceFunction: SelectionAlgorithm.Result => Boolean,
 ) extends SelectionAlgorithm[F, V, E]
     with LazyLogging {
 
   import SelectionAlgorithm._
 
   val random: Random = new Random(seed)
-
-  case class EdgeAndMarginalFlow(edgeId: EdgeId, flow: Flow)
 
   def selectRoutes(
     alts: Map[Request, List[Path]],
@@ -67,12 +67,21 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
           combineFlowsFunction,
           marginalCostFunction
         )
-        .map {
+        .flatMap {
           case (result, tspCost) =>
-            val avgAlts: Double = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-            logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
-            logger.info(s"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost}")
-            result
+            if (selectionAcceptanceFunction(result)) {
+              val avgAlts: Double = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+              logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
+              logger.info(s"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost}")
+              Monad[F].pure {
+                result
+              }
+            } else {
+              logger.info(s"dismissing result due to selection acceptance policy")
+              Monad[F].pure {
+                SelectionAlgorithm.Result()
+              }
+            }
         }
     } else {
       // turn path alternatives into vector for faster indexing performance
@@ -99,22 +108,24 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       // run iterative sampling using selfish as the start state
       for {
         selfishCostPayload <- selfishAssignmentCostF
-        selfishCost = selfishCostPayload.overallCost
+        selfishCost     = selfishCostPayload.overallCost
+        searchSpaceSize = BigDecimal(indexedAlts.values.map { _.size.toLong }.product)
         startState = SelectionState(
           bestSelectionIndices = selfishAssignmentSelection,
           bestOverallCost = selfishCost,
           agentPathCosts = selfishCostPayload.agentPathCosts,
           samples = NonNegativeNumber.One,
+          searchSpaceSize = searchSpaceSize,
           startTime = startTime
         )
-        endState <- RandomSamplingSelectionAlgorithm.performRandomSampling(startState,
-                                                                           indexedAlts.values,
-                                                                           roadNetwork,
-                                                                           pathToMarginalFlowsFunction,
-                                                                           combineFlowsFunction,
-                                                                           marginalCostFunction,
-                                                                           terminationFunction,
-                                                                           random)
+        endState <- RandomSamplingSelectionOps.performRandomSampling(startState,
+                                                                     indexedAlts.values,
+                                                                     roadNetwork,
+                                                                     pathToMarginalFlowsFunction,
+                                                                     combineFlowsFunction,
+                                                                     marginalCostFunction,
+                                                                     terminationFunction,
+                                                                     random)
 
       } yield {
 
@@ -136,92 +147,24 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
         logger.info(s"COST_EST: BEST ${endState.bestOverallCost}, SELFISH $selfishCost, DIFF ${selfishCost - endState.bestOverallCost}")
 
         // final return value
-        SelectionAlgorithm.Result(
+        val result = SelectionAlgorithm.Result(
           selectedRoutes = responses,
           estimatedCost = endState.bestOverallCost,
           selfishCost = selfishCost,
           improvement = improvement,
           averageImprovement = averageImprovement,
-          endState.samples
-        )
-      }
-    }
-  }
-}
-
-object RandomSamplingSelectionAlgorithm {
-
-  /**
-    * given some sampling state, perform a single random sampling/evaluation, and pass along the best-seen sampling result
-    * @param state up to this point, the best seen selection and it's cost, tracking our search state
-    * @param indexedAlts all alternatives as an indexed structure
-    * @param roadNetwork
-    * @param pathToMarginalFlowsFunction
-    * @param combineFlowsFunction
-    * @param marginalCostFunction
-    * @param terminationFunction
-    * @param random
-    * @tparam F the context for communications between modules
-    * @tparam V vertex attribute type
-    * @tparam E edge attribute type
-    * @return
-    */
-  def performRandomSampling[F[_]: Monad, V, E](
-    state: SelectionAlgorithm.SelectionState,
-    indexedAlts: Iterable[Vector[Path]],
-    roadNetwork: RoadNetwork[F, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
-    combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost,
-    terminationFunction: SelectionState => Boolean,
-    random: Random
-  ): F[SelectionAlgorithm.SelectionState] = {
-
-    if (indexedAlts.size <= 1) {
-      Monad[F].pure {
-        state
-      }
-    } else {
-      // encase loop in F[_]-friendly recursion
-      state.iterateUntilM { state =>
-        // randomly pick indices and extract the associated paths
-        val (thisRandomSelectionIndices: List[Int], thisRandomSelectionPaths: List[Path]) =
-          indexedAlts
-            .map { alts =>
-              val altSelectionIdx: Int = random.nextInt(alts.length)
-              (altSelectionIdx, alts(altSelectionIdx))
-            }
-            .toList
-            .unzip
-
-        // get cost of this selection
-        val costF: F[SelectionCost] = SelectionAlgorithm.evaluateCostOfSelection(
-          thisRandomSelectionPaths,
-          roadNetwork,
-          pathToMarginalFlowsFunction,
-          combineFlowsFunction,
-          marginalCostFunction
+          endState.samples,
+          ratioOfSearchSpaceExplored = endState.ratioOfSearchSpaceExplored
         )
 
-        // recurse with the best-seen selection
-        for {
-          thisCostPayload <- costF
-          thisCost = thisCostPayload.overallCost
-        } yield {
-          if (state.bestOverallCost < thisCost) {
-            state.copy(samples = state.samples + NonNegativeNumber.One)
-          } else {
-            SelectionAlgorithm.SelectionState(
-              bestSelectionIndices = thisRandomSelectionIndices,
-              bestOverallCost = thisCost,
-              agentPathCosts = thisCostPayload.agentPathCosts,
-              samples = state.samples + NonNegativeNumber.One,
-              state.startTime
-            )
-          }
+        if (selectionAcceptanceFunction(result)) {
+          result
+        } else {
+          logger.info(
+            f"dismissing result due to selection acceptance policy (explored ${result.ratioOfSearchSpaceExplored * 100.0}%.2f%% of search space)")
+          SelectionAlgorithm.Result()
         }
-
-      }(terminationFunction) // terminate with user state evaluation
+      }
     }
   }
 }

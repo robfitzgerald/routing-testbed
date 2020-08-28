@@ -19,7 +19,6 @@ class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V,
                    pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
                    combineFlowsFunction: Iterable[Flow] => Flow,
                    marginalCostFunction: E => Flow => Cost): SyncIO[SelectionAlgorithm.Result] = {
-
     if (alts.isEmpty) {
       SyncIO { SelectionAlgorithm.Result() }
     } else {

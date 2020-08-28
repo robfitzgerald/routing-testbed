@@ -5,6 +5,7 @@ import cats.effect.SyncIO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.TrueShortestSelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.random.RandomSamplingSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
 sealed trait SelectionAlgorithmConfig
@@ -15,13 +16,15 @@ object SelectionAlgorithmConfig {
     seed: Long,
     exhaustiveSearchSampleLimit: Int,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
+    selectionAcceptanceFunction: SelectionAcceptanceFunctionConfig,
   ) extends SelectionAlgorithmConfig {
 
     def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
-      new selection.RandomSamplingSelectionAlgorithm[F, V, E](
+      new RandomSamplingSelectionAlgorithm[F, V, E](
         seed,
         exhaustiveSearchSampleLimit,
-        selectionTerminationFunction.build()
+        selectionTerminationFunction.build(),
+        selectionAcceptanceFunction.build()
       )
     }
   }

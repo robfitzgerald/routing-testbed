@@ -69,8 +69,10 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
             simulatorState <- getState(e2)
           } yield {
             simulatorState match {
-              case Right(newState) => ExperimentState(e2, r1, b2, newState)
-              case Left(error)     => ExperimentState(e2, r1, b2, s0, Some { error })
+              case Right(newState) =>
+                ExperimentState(e2, r1, b2, newState)
+              case Left(error) =>
+                ExperimentState(e2, r1, b2, s0, Some { error })
             }
           }
       } {

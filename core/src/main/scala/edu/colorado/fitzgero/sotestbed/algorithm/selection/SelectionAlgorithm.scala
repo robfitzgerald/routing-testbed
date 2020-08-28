@@ -1,7 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection
 
 import scala.annotation.tailrec
-import scala.util.Try
 
 import cats.Monad
 import cats.implicits._
@@ -31,13 +30,25 @@ abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
 //   - groupings by overlap/visitation to common geo-cells
 
 object SelectionAlgorithm {
+
+  /**
+    * result of applying a selection algorithm
+    *
+    * @param selectedRoutes
+    * @param estimatedCost
+    * @param selfishCost
+    * @param improvement
+    * @param averageImprovement
+    * @param samples
+    */
   final case class Result(
     selectedRoutes: List[Response] = List.empty,
     estimatedCost: Cost = Cost.Zero,
     selfishCost: Cost = Cost.Zero,
     improvement: Cost = Cost.Zero,
     averageImprovement: Cost = Cost.Zero,
-    samples: NonNegativeNumber = NonNegativeNumber.Zero
+    samples: NonNegativeNumber = NonNegativeNumber.Zero,
+    ratioOfSearchSpaceExplored: Double = 0.0
   )
 
   final case class SelectionState(
@@ -45,8 +56,20 @@ object SelectionAlgorithm {
     bestOverallCost: Cost,
     agentPathCosts: List[Cost],
     samples: NonNegativeNumber,
+    searchSpaceSize: BigDecimal,
     startTime: Long
-  )
+  ) {
+
+    /**
+      * # samples proportional to search space, bounded by [0, 1]
+      * @return ratio of search space explored. may not be exact in the case of random sampling
+      */
+    def ratioOfSearchSpaceExplored: Double = {
+      val ratio        = (BigDecimal(samples.value) / searchSpaceSize).toDouble
+      val boundedRatio = math.max(math.min(ratio, 1.0), 0.0)
+      boundedRatio
+    }
+  }
 
   final case class SelectionCost(
     overallCost: Cost = Cost.Zero,
@@ -171,8 +194,9 @@ object SelectionAlgorithm {
       val iterator: MultiSetIterator[List[PathSegment]] = MultiSetIterator(asMultiSet)
 
       // initialize with the selfish routing selection (wrapped in call to RoadNetwork effect)
-      val selfishIndices: Array[Int] = Array.fill { asMultiSet.length }(0)
-      val selfishPaths: List[Path]   = iterator.next().toList
+      val selfishIndices: Array[Int]  = Array.fill { asMultiSet.length }(0)
+      val selfishPaths: List[Path]    = iterator.next().toList
+      val searchSpaceSize: BigDecimal = BigDecimal(paths.values.map { _.size }.product)
       evaluateCostOfSelection(
         selfishPaths,
         roadNetwork,
@@ -185,6 +209,7 @@ object SelectionAlgorithm {
           selfishCost.overallCost,
           selfishCost.agentPathCosts,
           NonNegativeNumber.One,
+          searchSpaceSize = searchSpaceSize,
           startTime
         )
 
