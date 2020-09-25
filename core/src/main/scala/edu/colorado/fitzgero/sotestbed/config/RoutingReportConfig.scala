@@ -35,11 +35,11 @@ object RoutingReportConfig {
     }
   }
 
-  final case object BatchLearning extends RoutingReportConfig {
+  final case object Batch extends RoutingReportConfig {
 
     def build(outputDirectory: Path): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
       val batchLearningFilePath: Path = outputDirectory.resolve("batchLearning.csv")
-      new BatchLearningReporter(batchLearningFilePath.toFile)
+      new BatchReporter(batchLearningFilePath.toFile)
     }
   }
 
@@ -67,7 +67,7 @@ object RoutingReportConfig {
       val reporters: List[RoutingReports[SyncIO, Coordinate, EdgeBPR]] = List(
         CompletePath.build(outputDirectory, costFunction),
         AggregateData.build(outputDirectory, costFunction),
-        BatchLearning.build(outputDirectory),
+        Batch.build(outputDirectory),
         Heatmap.build(outputDirectory, logCycle, h3Resolution, network, costFunction)
       )
 

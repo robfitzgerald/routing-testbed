@@ -35,10 +35,11 @@ case class GreedyBatching(
           case newRequests =>
             // we have agents that we can replan to add to the nearest possible request time
             Some {
-              BatchSplittingFunction
+              val result: List[(String, List[Request])] = BatchSplittingFunction
                 .bySlidingWindow(newRequests, this.maxBatchSize)
                 .zipWithIndex
                 .map { case (reqs, id) => (id.toString, reqs.map { _.request }) }
+              result
             }
         }
       }

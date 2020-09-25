@@ -37,7 +37,7 @@ object OSMNetworkImportApp
             .withDefault(50000)
 
         val runMonteCarloSamplingOpt: Opts[Boolean] =
-          Opts.flag(long = "runSampling", short = "m", help = "whether to run the monte carlo sampling of travel times, by default true").orTrue
+          Opts.flag(long = "runSampling", short = "m", help = "whether to run the monte carlo sampling of travel times, by default true").orFalse
 
         (srcFileOpt, dstFileOpt, sourceCRSOpt, destinationCRSOpt, monteCarloSamplesOpt, runMonteCarloSamplingOpt)
           .mapN {

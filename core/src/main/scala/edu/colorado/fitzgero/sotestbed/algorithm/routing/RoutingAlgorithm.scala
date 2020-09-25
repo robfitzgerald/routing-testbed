@@ -28,8 +28,8 @@ object RoutingAlgorithm {
     agentHistory: ActiveAgentHistory = ActiveAgentHistory(),
     kspRuntime: RunTime = RunTime.Zero,
     selectionRuntime: RunTime = RunTime.Zero,
-    travelTimeImprovement: Cost = Cost.Zero,
-    avgTravelTimeImprovement: Cost = Cost.Zero,
+    travelTimeDiff: Cost = Cost.Zero,
+    meanTravelTimeDiff: Cost = Cost.Zero,
     samples: Int = 0,
   )
 }

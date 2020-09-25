@@ -94,10 +94,10 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             .unsafeRunSync()
 
         // minimumAverageImprovement
-        if (math.abs(selectionResult.averageImprovement.value) < minimumAverageImprovement.value) {
+        if (math.abs(selectionResult.averageTravelTimeDiff.value) < minimumAverageImprovement.value) {
           val ignoredAgents: String = reqs.map { _.agent }.mkString(",")
           logger.info(
-            s"ignoring batch with avg improvement ${selectionResult.averageImprovement}s less than min required ${minimumAverageImprovement}s for agents: $ignoredAgents")
+            s"ignoring batch with avg improvement ${selectionResult.averageTravelTimeDiff}s less than min required ${minimumAverageImprovement}s for agents: $ignoredAgents")
           RoutingAlgorithm.Result()
         } else {
           val selectionResultWithKSPPaths: List[Response] =
@@ -115,8 +115,8 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             activeAgentHistory,
             kspRuntime,
             selectionRuntime,
-            travelTimeImprovement = selectionResult.improvement,
-            avgTravelTimeImprovement = selectionResult.averageImprovement,
+            travelTimeDiff = selectionResult.travelTimeDiff,
+            meanTravelTimeDiff = selectionResult.averageTravelTimeDiff,
             samples = selectionResult.samples.value
           )
 

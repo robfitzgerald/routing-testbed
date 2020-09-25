@@ -176,8 +176,9 @@ object MATSimBatchExperimentApp
                           experiment.run()
                         }.toEither match {
                           case Left(e) =>
-                            println(s"trial $trial exit with fatal error $e")
-                            batchLogger.write(s"$trial,${e.toString}\n")
+                            println(
+                              s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}")
+                            batchLogger.write(s"$trial,${e.getClass} ${e.getCause} ${e.getMessage}\n")
                           case Right(result) =>
                             result match {
                               case Left(e) =>
@@ -201,7 +202,7 @@ object MATSimBatchExperimentApp
                       trial <- 0 until trials
                       seed = trial + batchSeed
 //                      variationName = MATSimBatchConfig.createVariationName(variationHint)
-                      variationName = MATSimBatchConfig.createVariationNameV2(confWithBatchName, popSize)
+                      variationName = MATSimBatchConfig.createVariationNameWithFallback(confWithBatchName, popSize, config)
                       scenarioData = MATSimRunConfig.ScenarioData(
                         algorithm = confWithBatchName.algorithm.name,
                         variationName = variationName,
@@ -269,8 +270,9 @@ object MATSimBatchExperimentApp
                           experiment.run()
                         }.toEither match {
                           case Left(e) =>
-                            println(s"trial $trial exit with fatal error $e")
-                            batchLogger.write(s"$trial,${e.toString}\n")
+                            println(
+                              s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}")
+                            batchLogger.write(s"$trial,${e.getClass} ${e.getCause} ${e.getMessage}\n")
                           case Right(result) =>
                             result match {
                               case Left(e) =>

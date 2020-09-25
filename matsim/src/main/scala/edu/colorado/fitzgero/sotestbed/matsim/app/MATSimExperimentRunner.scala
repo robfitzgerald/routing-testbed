@@ -59,8 +59,8 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
             RoutingReportConfig.Inactive.build()
           case RoutingReportConfig.AggregateData =>
             RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, edgeFlowCostFunction)
-          case RoutingReportConfig.BatchLearning =>
-            RoutingReportConfig.BatchLearning.build(config.experimentLoggingDirectory)
+          case RoutingReportConfig.Batch =>
+            RoutingReportConfig.Batch.build(config.experimentLoggingDirectory)
           case RoutingReportConfig.CompletePath =>
             RoutingReportConfig.CompletePath.build(config.experimentLoggingDirectory, edgeFlowCostFunction)
           case RoutingReportConfig.Heatmap =>

@@ -97,24 +97,26 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
         // some logging
         val avgAlts: Double          = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-        val improvement: Cost        = trueShortestPathsCost - bestCost
-        val averageImprovement: Cost = Cost((trueShortestPathsCost - bestCost).value / alts.size)
+        val travelTimeDiff: Cost     = bestCost - trueShortestPathsCost
+        val meanTravelTimeDiff: Cost = Cost((bestCost - trueShortestPathsCost).value / alts.size)
 
         logger.info(f"AGENTS: ${responses.length} AVG_ALTS: $avgAlts%.2f SAMPLES: $samples")
         logger.info(
-          f"COST_EST: BEST $bestCost, SELFISH $trueShortestPathsCost, DIFF ${improvement.value}%.2f AVG_DIFF ${averageImprovement.value}%.2f")
+          f"COST_EST: BEST $bestCost, SELFISH $trueShortestPathsCost, DIFF ${travelTimeDiff.value}%.2f AVG_DIFF ${meanTravelTimeDiff.value}%.2f")
 
         // update local seed
         this.localSeed = mcts.random.nextInt(Int.MaxValue)
 
-        SelectionAlgorithm.Result(
+        val result = SelectionAlgorithm.Result(
           selectedRoutes = responses,
           estimatedCost = bestCost,
           selfishCost = trueShortestPathsCost,
-          improvement = improvement,
-          averageImprovement = averageImprovement,
+          travelTimeDiff = travelTimeDiff,
+          averageTravelTimeDiff = meanTravelTimeDiff,
           samples
         )
+
+        result
       }
   }
 
@@ -155,7 +157,10 @@ class LocalMCTSSelectionAlgorithm[V, E](
     override var globalBestSimulation: BigDecimal    = BigDecimal(trueShortestPathSelectionCost.overallCost.value)
     override var globalWorstSimulation: BigDecimal   = BigDecimal(trueShortestPathSelectionCost.overallCost.value)
     override var bestSolution: Array[Int]            = trueShortestPaths
-    val searchSpaceSize: BigDecimal                  = BigDecimal(altsInternal.map { _.length }.product)
+
+    val searchSpaceSize: BigDecimal = altsInternal.map { paths =>
+      BigDecimal(paths.length)
+    }.product
 
     var bestAgentCosts: List[Cost] = trueShortestPathSelectionCost.agentPathCosts
 
@@ -230,6 +235,13 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
               // "withinComputationalBudget" has the inverse meaning of a terminationFunction ;-)
               val shouldTerminate: Boolean = terminationFunction(selectionState)
+
+              logger.whenDebugEnabled {
+                if (shouldTerminate) {
+                  val timeElapsed = f"${(System.currentTimeMillis - startTime).toDouble / 1000}%.2f"
+                  logger.debug(s"terminating after $samples samples, $timeElapsed seconds")
+                }
+              }
               !shouldTerminate
           }
         }

@@ -7,6 +7,12 @@ sealed trait SelectionAcceptanceFunctionConfig {
 }
 
 object SelectionAcceptanceFunctionConfig {
+
+  final case object AcceptAll extends SelectionAcceptanceFunctionConfig {
+
+    def build(): SelectionAlgorithm.Result => Boolean = (_: SelectionAlgorithm.Result) => true
+  }
+
   final case object DismissCompleteSearches extends SelectionAcceptanceFunctionConfig {
 
     def build(): SelectionAlgorithm.Result => Boolean =

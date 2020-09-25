@@ -13,8 +13,12 @@ object SelectionTerminationFunctionConfig {
     durationMS: Int
   ) extends SelectionTerminationFunctionConfig {
 
-    def build(): SelectionState => Boolean =
-      (state: SelectionState) => state.startTime + durationMS < System.currentTimeMillis
+    def build(): SelectionState => Boolean = { state: SelectionState =>
+      {
+        val endTime: Long = state.startTime + durationMS
+        endTime < System.currentTimeMillis
+      }
+    }
   }
 
   /**
@@ -31,11 +35,18 @@ object SelectionTerminationFunctionConfig {
 
     def build(): SelectionState => Boolean =
       (state: SelectionState) => {
-        val currentCoverage: Double                  = (BigDecimal(state.samples.value) / state.searchSpaceSize).toDouble
-        val endTime: Long                            = state.startTime + durationMS
-        val exceededSearchExplorationTarget: Boolean = targetSearchSpaceExplorationRatio < currentCoverage
-        val exceededComputeBudget: Boolean           = endTime < System.currentTimeMillis
-        exceededSearchExplorationTarget || exceededComputeBudget
+        if (state.searchSpaceSize == BigDecimal(0)) {
+          true
+        } else {
+          val currentCoverage: Double                  = (BigDecimal(state.samples.value) / state.searchSpaceSize).toDouble
+          val endTime: Long                            = state.startTime + durationMS
+          val exceededSearchExplorationTarget: Boolean = targetSearchSpaceExplorationRatio < currentCoverage
+          val exceededComputeBudget: Boolean           = endTime < System.currentTimeMillis
+          if (exceededSearchExplorationTarget || exceededComputeBudget) {
+            println("")
+          }
+          exceededSearchExplorationTarget || exceededComputeBudget
+        }
       }
   }
 }

@@ -37,16 +37,16 @@ object SelectionAlgorithm {
     * @param selectedRoutes
     * @param estimatedCost
     * @param selfishCost
-    * @param improvement
-    * @param averageImprovement
+    * @param travelTimeDiff
+    * @param averageTravelTimeDiff
     * @param samples
     */
   final case class Result(
     selectedRoutes: List[Response] = List.empty,
     estimatedCost: Cost = Cost.Zero,
     selfishCost: Cost = Cost.Zero,
-    improvement: Cost = Cost.Zero,
-    averageImprovement: Cost = Cost.Zero,
+    travelTimeDiff: Cost = Cost.Zero,
+    averageTravelTimeDiff: Cost = Cost.Zero,
     samples: NonNegativeNumber = NonNegativeNumber.Zero,
     ratioOfSearchSpaceExplored: Double = 0.0
   )
@@ -65,9 +65,14 @@ object SelectionAlgorithm {
       * @return ratio of search space explored. may not be exact in the case of random sampling
       */
     def ratioOfSearchSpaceExplored: Double = {
-      val ratio        = (BigDecimal(samples.value) / searchSpaceSize).toDouble
-      val boundedRatio = math.max(math.min(ratio, 1.0), 0.0)
-      boundedRatio
+      if (searchSpaceSize == BigDecimal(0)) {
+        0.0
+      } else {
+        val ratio: Double        = (BigDecimal(samples.value) / searchSpaceSize).toDouble
+        val boundedRatio: Double = math.max(math.min(ratio, 1.0), 0.0)
+        boundedRatio
+
+      }
     }
   }
 
@@ -258,8 +263,8 @@ object SelectionAlgorithm {
             selectedRoutes = responses,
             estimatedCost = finalState.bestOverallCost,
             selfishCost = selfishCost.overallCost,
-            improvement = improvement,
-            averageImprovement = averageImprovement,
+            travelTimeDiff = improvement,
+            averageTravelTimeDiff = averageImprovement,
             samples = finalState.samples
           )
 

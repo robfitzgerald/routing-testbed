@@ -119,7 +119,7 @@ object AggregateAgentDataRoutingReport {
     lon: Double,
   ) {
     override def toString: String = {
-      val spaceExplored: String    = f"${(samples.toDouble / searchSpace) * 100.0}%.2f%%"
+      val spaceExplored: String    = f"${(samples.toDouble / searchSpace) * 100.0}%.20f%%"
       val distanceTraveled: String = f"${(distanceExperienced.value / distanceOverall.value) * 100.0}%.2f%%"
       val latString: String        = LatLonPrecisionFormat.format(lat)
       val lonString: String        = LatLonPrecisionFormat.format(lon)

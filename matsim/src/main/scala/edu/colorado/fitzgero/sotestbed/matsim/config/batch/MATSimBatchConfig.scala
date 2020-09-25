@@ -36,6 +36,14 @@ object MATSimBatchConfig {
       .trim
   }
 
+  def createVariationNameWithFallback(matsimConfig: MATSimConfig, popSize: Int, config: Config): String = {
+    if (config.hasPath("name")) {
+      config.getString("name")
+    } else {
+      createVariationNameV2(matsimConfig, popSize)
+    }
+  }
+
   /**
     * just highlighting the most important parameters and returning their values in lexi order
     * @param config

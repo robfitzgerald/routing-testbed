@@ -139,21 +139,22 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
                 Response(request, idx, alts(idx).map { _.edgeId }, cost)
             }
             .toList
-        val improvement: Cost        = selfishCost - endState.bestOverallCost
-        val averageImprovement: Cost = Cost((selfishCost - endState.bestOverallCost).value / alts.size)
+        val travelTimeDiff: Cost     = endState.bestOverallCost - selfishCost
+        val meanTravelTimeDiff: Cost = Cost((endState.bestOverallCost - selfishCost).value / alts.size)
 
 //        val bestCostStr: String = endState.bestOverallCost.toString.padTo(10, ' ')
         logger.info(s"AGENTS: ${responses.length} SAMPLES: ${endState.samples}")
-        logger.info(s"COST_EST: BEST ${endState.bestOverallCost}, SELFISH $selfishCost, DIFF ${selfishCost - endState.bestOverallCost}")
+        logger.info(
+          f"COST_EST: BEST ${endState.bestOverallCost}, SELFISH $selfishCost, DIFF ${travelTimeDiff.value}%.2f AVG_DIFF ${meanTravelTimeDiff.value}%.2f")
 
         // final return value
         val result = SelectionAlgorithm.Result(
           selectedRoutes = responses,
           estimatedCost = endState.bestOverallCost,
           selfishCost = selfishCost,
-          improvement = improvement,
-          averageImprovement = averageImprovement,
-          endState.samples,
+          travelTimeDiff = travelTimeDiff,
+          averageTravelTimeDiff = meanTravelTimeDiff,
+          samples = endState.samples,
           ratioOfSearchSpaceExplored = endState.ratioOfSearchSpaceExplored
         )
 
