@@ -717,18 +717,13 @@ trait MATSimSimulator extends SimulatorOps[SyncIO] with LazyLogging { self =>
         logger.debug(s"[advance] called on sim in Running state: advancing one time step from $currentTime to $advanceToSimTime")
 
         self.playPauseSimulationControl.doStep(advanceToSimTime)
-
-//        self.access = Some { self.playPauseSimulationControl.getAccess }
-        // blocks until doStep is completed.
-        val startWait: Long = System.currentTimeMillis
-//        self.access.foreach { _.tryAcquire(self.matsimSemaphoreTimeoutMs, TimeUnit.MILLISECONDS) }
-//        access.release()
-
         val timeAfterAdvance: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
-        val waitDuration: String      = f"${(System.currentTimeMillis - startWait).toDouble / 1000.0}%.2f"
 
-        logger.debug(
-          s"[advance] advanced from $currentTime to $timeAfterAdvance (${timeAfterAdvance - currentTime} seconds) observed in $waitDuration seconds runtime")
+        // flush print writers every 15 minutes of sim time
+        if (timeAfterAdvance.value > 0 && timeAfterAdvance.value % 900 == 0) {
+          self.agentExperiencePrintWriter.flush()
+          self.agentPathPrintWriter.flush()
+        }
 
         val matsimFailure: Boolean                     = self.matsimThreadException.isDefined
         val thisIterationIsFinishedAfterCrank: Boolean = self.playPauseSimulationControl.getLocalTime == Double.MaxValue

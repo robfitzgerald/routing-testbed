@@ -82,7 +82,8 @@ object SelectionAlgorithm {
   )
 
   /**
-    * evaluates the cost of this selection
+    * evaluates the cost of this selection using the user-provided path and cost functions
+    *
     * @param paths a selection of path alternatives
     * @param roadNetwork the current road network conditions
     * @param pathToMarginalFlowsFunction
@@ -100,55 +101,82 @@ object SelectionAlgorithm {
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost,
   ): F[SelectionCost] = {
-    for {
-      edgesMap <- roadNetwork.edges(paths.flatten.map { _.edgeId }).map {
-        _.map { tup =>
-          (tup.edgeId, tup.attribute)
-        }.toMap
+    // set up the list of edges to account for, and a lookup table of edge attributes
+    val allSelectedEdgeIds: List[EdgeId] = paths.flatten.map { _.edgeId } // at this point, not yet distinct! we need to count each occurrence still
+    val edgeIdsWithEdgeValues: F[Map[EdgeId, E]] = roadNetwork.edges(allSelectedEdgeIds).map {
+      _.map { tup =>
+        (tup.edgeId, tup.attribute)
+      }.toMap
+    }
+
+    // use the provided function to convert the provided paths to their flow contributions
+    val flowsByEdgeId: F[List[(EdgeId, Flow)]] = paths.traverse(path => pathToMarginalFlowsFunction(roadNetwork, path)).map { _.flatten }
+
+    val result: F[SelectionCost] = for {
+      edgesMap <- edgeIdsWithEdgeValues
+      costs <- flowsByEdgeId.map { fs =>
+        marginalCostForEdgesWithFlows(fs, edgesMap, combineFlowsFunction, marginalCostFunction)
       }
-      costs <- paths
-        .traverse(path => pathToMarginalFlowsFunction(roadNetwork, path))
-        .map {
-          _.flatten
-            .groupBy { case (edgeId, _) => edgeId }
-            .flatMap {
-              case (edgeId, edgesAndFlows) =>
-                edgesMap
-                  .get(edgeId)
-                  .map { edge: E =>
-                    val flow: Flow = combineFlowsFunction(
-                      edgesAndFlows
-                        .map {
-                          case (_, flow) =>
-                            flow
-                        }
-                    )
-                    val cost: Cost = marginalCostFunction(edge)(flow)
-                    (edgeId, cost)
-                  }
-            }
-            .toMap
-        }
     } yield {
       if (costs.isEmpty) {
         SelectionCost()
       } else {
-        val pathCosts: List[Cost] = for {
-          path <- paths
-        } yield {
-          if (path.isEmpty) Cost.Zero
-          else
-            path.map { seg =>
-              costs(seg.edgeId)
-            }.sum
-        }
+
+        // assign the marginal cost to each edge in each path
+        val pathCosts: List[Cost] = paths
+          .foldLeft(List.empty[Cost]) { (acc, path) =>
+            val pathCost = path.foldLeft(Cost.Zero) { (acc, seg) =>
+              acc + costs.getOrElse(seg.edgeId, Cost.Zero)
+            }
+            pathCost +: acc
+          }
+          .reverse
+
+        val overallCost = pathCosts.sum
 
         SelectionCost(
-          costs.values.sum,
+          overallCost,
           pathCosts
         )
       }
     }
+
+    result
+  }
+
+  /**
+    * computes the marginal cost contribution for each edge
+    *
+    * @param edgeIdsWithFlows
+    * @param edgeLookup
+    * @param combineFlowsFunction
+    * @param marginalCostFunction
+    * @tparam E
+    * @return
+    */
+  def marginalCostForEdgesWithFlows[E](
+    edgeIdsWithFlows: List[(EdgeId, Flow)],
+    edgeLookup: Map[EdgeId, E],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost
+  ): Map[EdgeId, Cost] = {
+
+    val result = for {
+      (edgeId, edgesAndFlows) <- edgeIdsWithFlows.groupBy { case (edgeId, _) => edgeId }
+      edge                    <- edgeLookup.get(edgeId)
+    } yield {
+      val flowsForThisEdge    = edgesAndFlows.map { case (_, flow) => flow }
+      val combinedFlows: Flow = combineFlowsFunction(flowsForThisEdge)
+
+      // let's return the cost difference between the current link cost and the cost when adding these flows
+      val unloadedCost: Cost = marginalCostFunction(edge)(Flow.Zero)
+      val loadedCost: Cost   = marginalCostFunction(edge)(combinedFlows)
+      val marginalCost: Cost = loadedCost - unloadedCost
+
+      (edgeId, marginalCost)
+    }
+
+    result
   }
 
   /**

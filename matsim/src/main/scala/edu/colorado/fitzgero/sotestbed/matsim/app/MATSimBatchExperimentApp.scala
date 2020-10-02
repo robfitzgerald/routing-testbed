@@ -2,6 +2,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.{Files, Path, Paths}
+import java.sql.Timestamp
 
 import scala.util.Try
 
@@ -91,7 +92,7 @@ object MATSimBatchExperimentApp
 
                     val batchLogger: PrintWriter = if (!Files.exists(batchLoggerFile)) {
                       val batchLogger: PrintWriter = new PrintWriter(batchLoggerFile.toFile)
-                      val batchHeader: String      = "trial,message\n"
+                      val batchHeader: String      = "trial,time,message\n"
                       batchLogger.write(batchHeader)
                       println(s"created batch logging file at $batchLoggerFile")
                       batchLogger
@@ -163,7 +164,8 @@ object MATSimBatchExperimentApp
                           ) match {
                             case Left(e) =>
                               println(s"population generation for population-$trial exited with fatal error $e")
-                              batchLogger.write(s"$trial,${e.toString}\n")
+                              val time = new Timestamp(System.currentTimeMillis)
+                              batchLogger.write(s"$trial,$time,${e.toString}\n")
                             case Right(_) =>
                               ()
                           }
@@ -178,15 +180,18 @@ object MATSimBatchExperimentApp
                           case Left(e) =>
                             println(
                               s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}")
-                            batchLogger.write(s"$trial,${e.getClass} ${e.getCause} ${e.getMessage}\n")
+                            val time = new Timestamp(System.currentTimeMillis)
+                            batchLogger.write(s"$trial,$time,${e.getClass} ${e.getCause} ${e.getMessage}\n")
                           case Right(result) =>
                             result match {
                               case Left(e) =>
                                 println(s"trial $trial exit with handled error")
-                                batchLogger.write(s"$trial,${e.toString}\n")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${e.toString}\n")
                               case Right(_) =>
                                 println(s"trial $trial exited normally")
-                                batchLogger.write(s"$trial,${matsimRunConfig.experimentDirectory}\n")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${matsimRunConfig.experimentDirectory}\n")
                             }
                         }
                       }
@@ -258,7 +263,8 @@ object MATSimBatchExperimentApp
                           ) match {
                             case Left(e) =>
                               println(s"population generation for population-$trial exited with fatal error $e")
-                              batchLogger.write(s"$trial,${e.toString}\n")
+                              val time = new Timestamp(System.currentTimeMillis)
+                              batchLogger.write(s"$trial,$time,${e.toString}\n")
                             case Right(_) =>
                               ()
                           }
@@ -272,15 +278,18 @@ object MATSimBatchExperimentApp
                           case Left(e) =>
                             println(
                               s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}")
-                            batchLogger.write(s"$trial,${e.getClass} ${e.getCause} ${e.getMessage}\n")
+                            val time = new Timestamp(System.currentTimeMillis)
+                            batchLogger.write(s"$trial,$time,${e.getClass} ${e.getCause} ${e.getMessage}\n")
                           case Right(result) =>
                             result match {
                               case Left(e) =>
                                 println(s"trial $trial exit with handled error")
-                                batchLogger.write(s"$trial,${e.toString}\n")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${e.toString}\n")
                               case Right(_) =>
                                 println(s"trial $trial exited normally")
-                                batchLogger.write(s"$trial,${matsimRunConfig.experimentDirectory}\n")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${matsimRunConfig.experimentDirectory}\n")
                             }
                         }
                       }

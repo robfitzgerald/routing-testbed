@@ -198,8 +198,6 @@ class LocalMCTSSelectionAlgorithm[V, E](
           )
           .unsafeRunSync()
 
-//      logger.debug(s"evaluated state ${state.mkString("[", ", ", "]")} with cost ${selectionCost.overallCost}")
-
       // underlying MCTS library will set the bestCost itself, but,
       // we must track the agent path costs ourselves
       if (selectionCost.overallCost < Cost(pedrosoRei.globalBestSimulation.toDouble)) {

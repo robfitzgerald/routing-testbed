@@ -197,8 +197,8 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
 
       performanceMetricsResult match {
         case Left(e) =>
-          logger.error(s"${e.getCause} ${e.getMessage}\n${e.getStackTrace}")
-          s"${e.getCause} ${e.getMessage}\n${e.getStackTrace}"
+          logger.error(s"${e.getCause} ${e.getMessage}\n${e.getStackTrace.mkString("Array(", ", ", ")")}")
+          s"${e.getCause} ${e.getMessage}\n${e.getStackTrace.mkString("Array(", ", ", ")")}"
         case Right(_) =>
           "done."
       }
