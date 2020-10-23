@@ -9,7 +9,7 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfi
 import kantan.csv._
 import kantan.csv.ops._
 
-case class PerformanceMetrics(
+case class AgentPerformanceMetrics(
   ttDiffMin: Double = 0.0,
   ttDiffNorm: Double = 0.0,
   distDiffMiles: Double = 0.0,
@@ -21,16 +21,16 @@ case class PerformanceMetrics(
 ) {
 
   override def toString: String = {
-    val ttDiffNormString: String     = PerformanceMetrics.ratioToPercent(ttDiffNorm)
-    val distDiffNormString: String   = PerformanceMetrics.ratioToPercent(distDiffNorm)
-    val speedDiffNormString: String  = PerformanceMetrics.ratioToPercent(speedDiffNorm)
-    val metricsSampledString: String = PerformanceMetrics.ratioToPercent(metricsSampledRatio)
+    val ttDiffNormString: String     = AgentPerformanceMetrics.ratioToPercent(ttDiffNorm)
+    val distDiffNormString: String   = AgentPerformanceMetrics.ratioToPercent(distDiffNorm)
+    val speedDiffNormString: String  = AgentPerformanceMetrics.ratioToPercent(speedDiffNorm)
+    val metricsSampledString: String = AgentPerformanceMetrics.ratioToPercent(metricsSampledRatio)
     f"$ttDiffMin%.2f,$ttDiffNormString,$distDiffMiles%.2f,$distDiffNormString,$speedDiffMph%.2f,$speedDiffNormString,$metricsSampledString"
   }
 
 }
 
-object PerformanceMetrics extends LazyLogging {
+object AgentPerformanceMetrics extends LazyLogging {
 
   val Header: String = "ttDiffMin,ttDiffNorm,distDiffMiles,distDiffNorm,speedDiffMph,speedDiffNorm,metricsSamplePct"
 
@@ -52,7 +52,7 @@ object PerformanceMetrics extends LazyLogging {
     * @param config the matsim config for an optimal experiment
     * @return performance metrics
     */
-  def fromConfig(config: MATSimRunConfig): Either[Exception, PerformanceMetrics] = {
+  def fromConfig(config: MATSimRunConfig): Either[Exception, AgentPerformanceMetrics] = {
     val selfishConfig: MATSimRunConfig =
       config.copy(scenarioData = config.scenarioData.copy(algorithm = "selfish"))
     val selfishAgentExperienceFile: File =
@@ -74,7 +74,7 @@ object PerformanceMetrics extends LazyLogging {
                 thisAgentExperienceFile: File,
                 reportImprovedAgents: Boolean = true,
                 reportDisImprovedAgents: Boolean = true,
-                soAgentsOnly: Boolean = false): Either[Exception, PerformanceMetrics] = {
+                soAgentsOnly: Boolean = false): Either[Exception, AgentPerformanceMetrics] = {
 
     implicit val dec: HeaderDecoder[AgentExperienceRow] = AgentExperienceRow.headerDecoder
 
@@ -159,7 +159,7 @@ object PerformanceMetrics extends LazyLogging {
         }
 
       // convert accumulated sums into averages
-      val diffsAveraged: PerformanceMetrics = PerformanceMetrics(
+      val diffsAveraged: AgentPerformanceMetrics = AgentPerformanceMetrics(
         ttDiffMin = diffsAccum.avgTravelTimeDiff,
         ttDiffNorm = diffsAccum.avgTravelTimeDiffRatio,
         distDiffMiles = diffsAccum.avgDistanceDiff,

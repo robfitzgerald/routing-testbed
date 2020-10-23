@@ -5,7 +5,7 @@ import java.nio.file.Path
 import cats.implicits._
 
 import com.monovore.decline._
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.{OverallMetrics, PerformanceMetrics}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 
 /**
   * takes one or two agentExperience.csv files and produces top-level
@@ -29,18 +29,18 @@ object AgentExperienceApp
               val result = refFilePathOption match {
                 case None =>
                   for {
-                    overallMetrics <- OverallMetrics(agentExpFilePath.toFile)
+                    overallMetrics <- AgentBaseMetrics(agentExpFilePath.toFile)
                   } yield {
                     println(overallMetrics)
                   }
                 case Some(refFilePath) =>
                   for {
-                    overallMetrics     <- OverallMetrics(agentExpFilePath.toFile)
-                    performanceMetrics <- PerformanceMetrics.fromFiles(refFilePath.toFile, agentExpFilePath.toFile)
+                    overallMetrics     <- AgentBaseMetrics(agentExpFilePath.toFile)
+                    performanceMetrics <- AgentPerformanceMetrics.fromFiles(refFilePath.toFile, agentExpFilePath.toFile)
                   } yield {
-                    println(OverallMetrics.Header)
+                    println(AgentBaseMetrics.Header)
                     println(overallMetrics)
-                    println(PerformanceMetrics.Header)
+                    println(AgentPerformanceMetrics.Header)
                     println(performanceMetrics)
                   }
               }

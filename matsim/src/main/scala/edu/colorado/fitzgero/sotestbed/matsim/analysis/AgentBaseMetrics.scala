@@ -9,14 +9,14 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfi
 import kantan.csv._
 import kantan.csv.ops._
 
-case class OverallMetrics(
+case class AgentBaseMetrics(
   travelTimeMinutes: Double = 0.0,
   distanceMiles: Double = 0.0,
   speedMph: Double = 0.0,
   count: Int = 0
 ) extends LazyLogging {
 
-  def +(row: AgentExperienceRow): OverallMetrics = {
+  def +(row: AgentExperienceRow): AgentBaseMetrics = {
     if (row.travelTime == 0.0) {
       logger.warn("encountered 0.0 mph speed, skipping")
       this
@@ -33,7 +33,7 @@ case class OverallMetrics(
     }
   }
 
-  def avg: OverallMetrics = this.copy(
+  def avg: AgentBaseMetrics = this.copy(
     distanceMiles = this.distanceMiles / this.count,
     speedMph = this.speedMph / this.count,
     travelTimeMinutes = this.travelTimeMinutes / this.count,
@@ -43,7 +43,7 @@ case class OverallMetrics(
   override def toString: String = f"${this.travelTimeMinutes}%.2f,${this.distanceMiles}%.2f,${this.speedMph}%.2f"
 }
 
-object OverallMetrics {
+object AgentBaseMetrics {
 
   val Header = "avgTravelTimeMinutes,avgDistanceMiles,avgSpeedMph"
 
@@ -52,7 +52,7 @@ object OverallMetrics {
     * @param config the config of a simulation which has run
     * @return either an exception, or, the metrics
     */
-  def apply(config: MATSimRunConfig): Either[Exception, OverallMetrics] = {
+  def apply(config: MATSimRunConfig): Either[Exception, AgentBaseMetrics] = {
     apply(config.experimentLoggingDirectory.resolve("agentExperience.csv").toFile)
   }
 
@@ -61,7 +61,7 @@ object OverallMetrics {
     * @param agentExperienceFile the agentExperience.csv file
     * @return either an exception, or, the metrics
     */
-  def apply(agentExperienceFile: File): Either[Exception, OverallMetrics] = {
+  def apply(agentExperienceFile: File): Either[Exception, AgentBaseMetrics] = {
     Try {
 
       implicit val dec: HeaderDecoder[AgentExperienceRow] = AgentExperienceRow.headerDecoder
@@ -76,8 +76,8 @@ object OverallMetrics {
           .toMap
 
       // accumulate the rows into a summation
-      val overallMetrics: OverallMetrics =
-        agentExperienceRows.foldLeft(OverallMetrics()) {
+      val overallMetrics: AgentBaseMetrics =
+        agentExperienceRows.foldLeft(AgentBaseMetrics()) {
           case (acc, (_, row)) =>
             val updated = acc.+(row)
             updated

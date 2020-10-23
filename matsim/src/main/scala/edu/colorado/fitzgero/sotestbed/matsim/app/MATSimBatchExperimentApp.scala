@@ -11,7 +11,7 @@ import cats.implicits._
 import pureconfig._
 import pureconfig.generic.auto._
 import com.monovore.decline._
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.{OverallMetrics, PerformanceMetrics}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
 import org.matsim.api.core.v01.Id
@@ -108,7 +108,7 @@ object MATSimBatchExperimentApp
 //                        case None    => ""
 //                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
 //                      }
-                      val batchOverviewHeader: String = s"configuration,${OverallMetrics.Header},${PerformanceMetrics.Header}\n"
+                      val batchOverviewHeader: String = s"configuration,${AgentBaseMetrics.Header},${AgentPerformanceMetrics.Header}\n"
                       batchOverview.write(batchOverviewHeader)
                       batchOverview.close()
                       println(s"created batch overview file at $batchOverviewFile")

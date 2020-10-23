@@ -20,7 +20,7 @@ import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{LocalMCT
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.{OverallMetrics, PerformanceMetrics}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
@@ -184,8 +184,8 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
 
       // try to compute summary statistics from agentExperience files
       val performanceMetricsResult = for {
-        overallMetrics     <- OverallMetrics(config)
-        performanceMetrics <- PerformanceMetrics.fromConfig(config)
+        overallMetrics     <- AgentBaseMetrics(config)
+        performanceMetrics <- AgentPerformanceMetrics.fromConfig(config)
         batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
         appendMode        = true
         batchOverviewOutput <- Try { new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode)) }.toEither

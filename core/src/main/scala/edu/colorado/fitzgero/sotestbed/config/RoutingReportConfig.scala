@@ -38,7 +38,7 @@ object RoutingReportConfig {
   final case object Batch extends RoutingReportConfig {
 
     def build(outputDirectory: Path): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
-      val batchLearningFilePath: Path = outputDirectory.resolve("batchLearning.csv")
+      val batchLearningFilePath: Path = outputDirectory.resolve("batchData.csv")
       new BatchReporter(batchLearningFilePath.toFile)
     }
   }
