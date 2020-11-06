@@ -9,7 +9,9 @@ case class PGFPlotsData(
   ttNorm: Double,
   ttStdev: Double,
   distNorm: Double,
-  distStdev: Double
+  distStdev: Double,
+  speedNorm: Double,
+  speedStdev: Double
 )
 
 object PGFPlotsData {

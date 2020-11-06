@@ -43,8 +43,8 @@ case class BatchMetrics(
       "0,0,0,0,0,0,0"
     } else {
       f"${batchSize / observations}%.2f,${altPaths / observations}%.2f,${searchSpaceSamples / observations}%.2f" +
-        f",${searchSpaceSize / observations}%.2f,${searchSpaceExplored / observations}%.2f," +
-        f"${soAssignmentPercent / observations}%.2f,$observations"
+        f",${searchSpaceSize / observations}%.2f,${searchSpaceExplored / observations}%.2f%%," +
+        f"${soAssignmentPercent / observations}%.2f%%,$observations"
     }
   }
 }

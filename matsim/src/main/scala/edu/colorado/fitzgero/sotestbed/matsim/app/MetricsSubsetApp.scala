@@ -11,10 +11,10 @@ import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentExperienceOps, Agen
   * takes one or two agentExperience.csv files and produces top-level
   * statistics for travel time, distance, and speed of agents
   */
-object MetricsApp
+object MetricsSubsetApp
     extends CommandApp(
-      name = "Metrics App",
-      header = "agent and batch stats application",
+      name = "Metrics Subset App",
+      header = "a single row combining agent and batch-level stats",
       main = {
 
         val dirOpt: Opts[Path] =
@@ -52,37 +52,28 @@ object MetricsApp
               }
             }
 
-            println("\nCSV TOP-LEVEL AGENT EXPERIENCE REPORT\n")
-            println(AgentExperienceOps.AggregateOutputHeader)
+            println("\nMETRICS SUBSET REPORT\n")
+            val header = s"experimentName,tt,ttσ,speed,speedσ,dist,distσ,${BatchMetrics.Header}"
+            println(header)
             for {
-              (_, csvRows, _) <- result
+              (rawRows, _, batchMetricsList) <- result
             } {
-              for { row <- csvRows } { println(row) }
-            }
+              val batchAgg = batchMetricsList.foldLeft(BatchMetrics()) { _.add(_) }
+              val stats = for {
+                popAggMetrics <- rawRows
+              } yield {
+                //
+                val experimentName = popAggMetrics.allData.experimentName
+                val ttAll          = popAggMetrics.allData.ttNorm
+                val ttσAll         = popAggMetrics.allData.ttStdev
+                val speedAll       = popAggMetrics.allData.speedNorm
+                val speedσAll      = popAggMetrics.allData.speedStdev
+                val distAll        = popAggMetrics.allData.distNorm
+                val distσAll       = popAggMetrics.allData.distStdev
+                f"$experimentName,$ttAll%.2f%%,$ttσAll%.2f%%,$speedAll%.2f%%,$speedσAll%.2f%%,$distAll%.2f%%,$distσAll%.2f%%,${batchAgg.toString}"
+              }
 
-            println("\nCSV DIS-AGGREGATE AGENT EXPERIENCE REPORT\n")
-            println(AgentMetrics.Header)
-            for {
-              (completeMetrics, _, _) <- result
-            } {
-              for { row <- completeMetrics } { println(row) }
-            }
-
-            println("\nCSV BATCH REPORT\n")
-            println(BatchMetrics.Header)
-            for {
-              (_, _, batchMetrics) <- result
-            } {
-              val aggregate = batchMetrics.foldLeft(BatchMetrics()) { _.add(_) }
-              println(aggregate.toString)
-            }
-
-            println("\nCSV DIS-AGGREGATE BATCH REPORT\n")
-            println(BatchMetrics.Header)
-            for {
-              (_, _, batchMetrics) <- result
-            } {
-              for { row <- batchMetrics } { println(row) }
+              println(batchAgg.toString)
             }
         }
       }

@@ -89,7 +89,8 @@ object AgentBaseMetrics {
       avgOverallMetrics
 
     }.toEither.left.map { t =>
-      new Exception(t)
+      val msg = s"failed reading base metrics from file $agentExperienceFile"
+      new Exception(msg, t)
     }
   }
 }

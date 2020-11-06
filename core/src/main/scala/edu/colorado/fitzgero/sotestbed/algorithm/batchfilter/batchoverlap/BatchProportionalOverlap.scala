@@ -22,7 +22,7 @@ object BatchProportionalOverlap {
       PathOverlapLookupType.buildLookup(filteredAlts, pathOverlapLookup)
 
     // create iterable with each edgeId for each request appearing exactly once along with its cost
-    val allAgentsLinks = lookup.values.flatten.toMap
+    val allAgentsLinks: Map[EdgeId, Cost] = lookup.values.flatten.toMap
 
     val result: Iterable[(Request, Double)] = for {
       (request, paths) <- filteredAlts
@@ -35,7 +35,6 @@ object BatchProportionalOverlap {
       } yield {
         otherRequestLinks
       }
-      val otherRequestLookup = otherRequestLinks.flatten.toMap
       val (overlapCost, totalCost) =
         allAgentsLinks.foldLeft((Cost.Zero, Cost.Zero)) {
           case ((overlapAcc, totalAcc), (edgeId, cost)) =>

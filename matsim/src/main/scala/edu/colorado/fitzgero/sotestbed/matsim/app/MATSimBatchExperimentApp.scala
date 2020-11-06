@@ -226,7 +226,7 @@ object MATSimBatchExperimentApp
                         // NOOP - running SO experiments here
                       } else if (Files.isDirectory(matsimRunConfig.experimentDirectory)) {
                         // don't overwrite if already exists
-                        println(s"optimal scenario $variationName run already exists. skipping.")
+                        println(s"optimal scenario $variationName run trial $trial already exists. skipping.")
                         batchLogger.write(s"$trial,$variationName run already exists - skipping\n")
                       } else {
 

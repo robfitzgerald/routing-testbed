@@ -32,11 +32,11 @@ object AgentExperienceBatchApp
                 throw e
               case Right(completeMetrics) =>
                 val rows         = AgentExperienceOps.createFromUngroupedMetricResults(completeMetrics)
-                val csvRows      = rows.map { _._1 }
-                val allPlotData  = rows.map { _._2 }
-                val winPct       = rows.map { _._3 }
-                val losePct      = rows.map { _._4 }
-                val losePlotData = rows.map { _._5 }
+                val csvRows      = rows.map { _.outputString }
+                val allPlotData  = rows.map { _.allData }
+                val winPct       = rows.map { _.winPercent }
+                val losePct      = rows.map { _.losePercent }
+                val losePlotData = rows.map { _.loserData }
 
                 // print csv to stdout
                 println("\nCSV REPORT\n")

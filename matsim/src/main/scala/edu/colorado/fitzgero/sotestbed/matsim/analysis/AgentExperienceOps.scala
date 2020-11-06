@@ -90,9 +90,9 @@ object AgentExperienceOps {
     * @param experimentName the directory name under the base directory we are collecting SO results from
     * @param popSize the population size for the experiments we are analyzing
     * @param trials the number of trials we are collecting
-    * @return
+    * @return for each trial, the AgentMetrics for that trial
     */
-  def collectMetrics2(baseOutputDir: Path, experimentName: String, popSize: Int, trials: Int): Either[Error, List[AgentMetrics]] = {
+  def collectAgentMetrics(baseOutputDir: Path, experimentName: String, popSize: Int, trials: Int): Either[Error, List[AgentMetrics]] = {
 
     if (!baseOutputDir.toFile.isDirectory) {
       Left(new Error(s"$baseOutputDir is not a directory"))
@@ -177,58 +177,12 @@ object AgentExperienceOps {
     * the final row form of an output CSV
     *
     * @param completeMetrics
-    * @return
+    * @return for each experiment name, a population-aggregated metric object
     */
-  def createFromUngroupedMetricResults(completeMetrics: List[AgentMetrics]): List[(String, PGFPlotsData, Double, Double, PGFPlotsData)] = {
-    val result: Iterable[(String, PGFPlotsData, Double, Double, PGFPlotsData)] = for {
+  def createFromUngroupedMetricResults(completeMetrics: List[AgentMetrics]): List[PopulationAggregateMetrics] = {
+    val result: Iterable[PopulationAggregateMetrics] = for {
       (experimentName, group) <- completeMetrics.groupBy { _.experimentName }
-    } yield {
-
-      val trials: Int = group.length
-
-      // overall metrics
-      val (ttMin, ttStdev)       = meanStdev(group.map { _.overallMetrics.travelTimeMinutes })
-      val (distMiles, distStdev) = meanStdev(group.map { _.overallMetrics.distanceMiles })
-      val (speedMph, speedStdev) = meanStdev(group.map { _.overallMetrics.speedMph })
-      val overallMetrics         = f"$ttMin%.4f,$ttStdev%.4f,$distMiles%.4f,$distStdev%.4f,$speedMph%.4f,$speedStdev%.4f"
-
-      // all performance metrics
-      val allPerf: String  = performanceMetricsAgg(group.map { _.allPerformanceMetrics })
-      val winPerf: String  = performanceMetricsAgg(group.map { _.winnerMetrics })
-      val losePerf: String = performanceMetricsAgg(group.map { _.loserMetrics })
-
-      // percent of agents winning/losing
-      val overallCount: Int                                          = group.map { _.allPerformanceMetrics.count }.foldLeft(0) { _ + _ }
-      val winCount: Int                                              = group.map { _.winnerMetrics.count }.foldLeft(0) { _ + _ }
-      val loseCount: Int                                             = group.map { _.loserMetrics.count }.foldLeft(0) { _ + _ }
-      val winPercent: Double                                         = (winCount.toDouble / overallCount.toDouble) * 100.0
-      val losePercent: Double                                        = (loseCount.toDouble / overallCount.toDouble) * 100.0
-      val (ttNormAll, ttNormStdevAll, distNormAll, distNormStdevAll) = performanceMetricsPGFPlotsAgg(group.map { _.allPerformanceMetrics })
-      val (ttNormL, ttNormStdevL, distNormL, distNormStdevL)         = performanceMetricsPGFPlotsAgg(group.map { _.loserMetrics })
-
-      val outputString = f"$experimentName,$trials,$overallMetrics,$winPercent%%,$losePercent%%,$allPerf,$winPerf,$losePerf"
-      val allData = PGFPlotsData(
-        experimentName,
-        winPercent,
-        losePercent,
-        ttNormAll,
-        ttNormStdevAll,
-        distNormAll,
-        distNormStdevAll
-      )
-
-      val loserData = PGFPlotsData(
-        experimentName,
-        winPercent,
-        losePercent,
-        ttNormL,
-        ttNormStdevL,
-        distNormL,
-        distNormStdevL
-      )
-
-      (outputString, allData, winPercent, losePercent, loserData)
-    }
+    } yield PopulationAggregateMetrics.from(experimentName, group)
 
     result.toList
   }
@@ -306,9 +260,10 @@ object AgentExperienceOps {
     * @param xs performance metrics for a common experiment
     * @return specific normalized mean/stdev values
     */
-  def performanceMetricsPGFPlotsAgg(xs: List[AgentPerformanceMetrics]): (Double, Double, Double, Double) = {
-    val (ttDiffNormAll, ttDiffNormStdevAll)     = asPercents(meanStdev(xs.map { _.ttDiffNorm }))
-    val (distDiffNormAll, distDiffNormStdevAll) = asPercents(meanStdev(xs.map { _.distDiffNorm }))
-    (ttDiffNormAll, ttDiffNormStdevAll, distDiffNormAll, distDiffNormStdevAll)
+  def performanceMetricsPGFPlotsAgg(xs: List[AgentPerformanceMetrics]): (Double, Double, Double, Double, Double, Double) = {
+    val (ttDiffNormAll, ttDiffNormStdevAll)       = asPercents(meanStdev(xs.map { _.ttDiffNorm }))
+    val (distDiffNormAll, distDiffNormStdevAll)   = asPercents(meanStdev(xs.map { _.distDiffNorm }))
+    val (speedDiffNormAll, speedDiffNormStdevAll) = asPercents(meanStdev(xs.map { _.speedDiffNorm }))
+    (ttDiffNormAll, ttDiffNormStdevAll, distDiffNormAll, distDiffNormStdevAll, speedDiffNormAll, speedDiffNormStdevAll)
   }
 }
