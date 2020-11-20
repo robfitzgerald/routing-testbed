@@ -22,7 +22,11 @@ import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator.SimulatorState
 import org.apache.log4j.{Level, Logger}
 import org.matsim.api.core.v01.Id
-import org.matsim.api.core.v01.events.handler.{LinkEnterEventHandler, VehicleEntersTrafficEventHandler, VehicleLeavesTrafficEventHandler}
+import org.matsim.api.core.v01.events.handler.{
+  LinkEnterEventHandler,
+  VehicleEntersTrafficEventHandler,
+  VehicleLeavesTrafficEventHandler
+}
 import org.matsim.api.core.v01.events.{LinkEnterEvent, VehicleEntersTrafficEvent, VehicleLeavesTrafficEvent}
 import org.matsim.api.core.v01.network.Link
 import org.matsim.api.core.v01.population.{Activity, Person}
@@ -71,19 +75,23 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
   var selfishAgentRoutesAssigned: Int                  = 0
 
   // simulation state containers and handlers
-  var roadNetworkDeltaHandler: RoadNetworkDeltaHandler                                          = _
-  var soAgentReplanningHandler: SOAgentReplanningHandler                                        = _
-  val completePathStore: collection.mutable.Map[Id[Person], Map[DepartureTime, List[Id[Link]]]] = collection.mutable.Map.empty
-  val departureTimeStore: collection.mutable.Map[Id[Person], DepartureTime]                     = collection.mutable.Map.empty
-  val markForSOPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]]                   = collection.mutable.Map.empty
-  val markForUEPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]]                   = collection.mutable.Map.empty
-  var newSORouteRequests: Option[RouteRequests]                                                 = None
-  var newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]                         = collection.mutable.ListBuffer.empty
-  val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]                          = collection.mutable.Set.empty
-  var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData]            = collection.mutable.ListBuffer.empty
-  var runStatsPrintWriter: PrintWriter                                                          = _
-  var agentExperiencePrintWriter: PrintWriter                                                   = _
-  var agentPathPrintWriter: PrintWriter                                                         = _
+  var roadNetworkDeltaHandler: RoadNetworkDeltaHandler   = _
+  var soAgentReplanningHandler: SOAgentReplanningHandler = _
+
+  val completePathStore: collection.mutable.Map[Id[Person], Map[DepartureTime, List[Id[Link]]]] =
+    collection.mutable.Map.empty
+  val departureTimeStore: collection.mutable.Map[Id[Person], DepartureTime]   = collection.mutable.Map.empty
+  val markForSOPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
+  val markForUEPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
+  var newSORouteRequests: Option[RouteRequests]                               = None
+  var newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]       = collection.mutable.ListBuffer.empty
+  val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]        = collection.mutable.Set.empty
+
+  var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData] =
+    collection.mutable.ListBuffer.empty
+  var runStatsPrintWriter: PrintWriter        = _
+  var agentExperiencePrintWriter: PrintWriter = _
+  var agentPathPrintWriter: PrintWriter       = _
 
   // matsim variables
   var controler: Controler                                      = _
@@ -148,7 +156,8 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
     self.controler = new Controler(matsimConfig)
 
     // needs to happen after the controler checks the experiment directory (20200125-is this still true?)
-    val statsFilePath: String = config.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
+    val statsFilePath: String =
+      config.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
     runStatsPrintWriter = new PrintWriter(statsFilePath)
     runStatsPrintWriter.write(s"experiment $experimentPath\n\n")
 
@@ -180,10 +189,14 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
         self.selfishAgentRoutesAssigned = 0
 
         if (self.markForSOPathOverwrite.nonEmpty) {
-          logger.warn(s"found ${markForSOPathOverwrite.size} agents marked for SO path overwrite which were never transformed into requests")
+          logger.warn(
+            s"found ${markForSOPathOverwrite.size} agents marked for SO path overwrite which were never transformed into requests"
+          )
         }
         if (self.markForUEPathOverwrite.nonEmpty) {
-          logger.warn(s"found ${markForUEPathOverwrite.size} agents marked for UE path overwrite which were never transformed into requests")
+          logger.warn(
+            s"found ${markForUEPathOverwrite.size} agents marked for UE path overwrite which were never transformed into requests"
+          )
         }
 
         self.markForSOPathOverwrite.clear()
@@ -268,9 +281,15 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
 
                       for {
                         mobsimAgent <- self.qSim.getAgents.asScala.get(event.getPersonId)
-                        homeMorningActivity <- WithinDayAgentUtils.getModifiablePlan(mobsimAgent).getPlanElements.asScala.toList.headOption.map {
-                          _.asInstanceOf[Activity]
-                        }
+                        homeMorningActivity <- WithinDayAgentUtils
+                          .getModifiablePlan(mobsimAgent)
+                          .getPlanElements
+                          .asScala
+                          .toList
+                          .headOption
+                          .map {
+                            _.asInstanceOf[Activity]
+                          }
                       } {
                         val planDepartureTime = SimTime(homeMorningActivity.getEndTime.seconds.toInt)
                         val eventTime         = SimTime(event.getTime.toInt)
@@ -293,7 +312,8 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                       // wipe the stored routes, they will be over-written
                       self.completePathStore.remove(event.getPersonId)
 
-                      logger.debug(s"agent ${event.getPersonId} removing stored route in prep for so replanning iteration")
+                      logger
+                        .debug(s"agent ${event.getPersonId} removing stored route in prep for so replanning iteration")
 
                     } else {
 
@@ -336,7 +356,9 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                         experiencedRoute = fullRoute.takeWhile(_ != currentLinkId)
                         remaingingRoute  = fullRoute.dropWhile(_ != currentLinkId)
                         remainingDistance <- MATSimRouteOps.distanceOfPath(remaingingRoute, qSim)
-                        originLinkId      <- fullRoute.dropWhile(_ != currentLinkId).headOption // confirms MATSim currentLinkId is correct
+                        originLinkId <- fullRoute
+                          .dropWhile(_ != currentLinkId)
+                          .headOption // confirms MATSim currentLinkId is correct
                         endLinkId            = leg.getRoute.getEndLinkId
                         requestDepartureTime = SimTime(event.getTime.toInt)
                       } {
@@ -345,17 +367,21 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                         // starts at the link after the current link in the current path
                         // if there is no link after the current link, then originLinkId fails fast
 
-                        MATSimRouteOps.selectRequestOriginLink(fullRoute,
-                                                               originLinkId,
-                                                               endLinkId,
-                                                               self.qSim,
-                                                               self.minimumReplanningLeadTime,
-                                                               self.minimumRemainingRouteTimeForReplanning) match {
+                        MATSimRouteOps.selectRequestOriginLink(
+                          fullRoute,
+                          originLinkId,
+                          endLinkId,
+                          self.qSim,
+                          self.minimumReplanningLeadTime,
+                          self.minimumRemainingRouteTimeForReplanning
+                        ) match {
                           case None =>
-                            val remainingTT: Double = MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
+                            val remainingTT: Double =
+                              MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
 
                             logger.debug(
-                              f"didn't find a reasonable edge to attempt replanning for agent $personId with est. remaining travel time $remainingTT%.2f seconds")
+                              f"didn't find a reasonable edge to attempt replanning for agent $personId with est. remaining travel time $remainingTT%.2f seconds"
+                            )
 
                           case Some(reasonableStartEdgeId) =>
                             val currentSimTime: SimTime = SimTime(event.getTime.toInt)
@@ -368,8 +394,10 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                                 travelMode = TravelMode.Car,
                                 departureTime = requestDepartureTime
                               )
-                            val experiencedEdgeData: List[RouteRequestData.EdgeData]    = MATSimRouteOps.convertRouteToEdgeData(experiencedRoute, qSim)
-                            val edgeDataRemainingRoute: List[RouteRequestData.EdgeData] = MATSimRouteOps.convertRouteToEdgeData(remaingingRoute, qSim)
+                            val experiencedEdgeData: List[RouteRequestData.EdgeData] =
+                              MATSimRouteOps.convertRouteToEdgeData(experiencedRoute, qSim)
+                            val edgeDataRemainingRoute: List[RouteRequestData.EdgeData] =
+                              MATSimRouteOps.convertRouteToEdgeData(remaingingRoute, qSim)
 
                             logger.debug(s"ue agent $personId's matsim-set route: ${fullRoute.mkString("->")}")
 
@@ -391,7 +419,8 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                         self.markForUEPathOverwrite.remove(event.getVehicleId)
                       }
 
-                    } else if (!soReplanningThisIteration && self.markForSOPathOverwrite.isDefinedAt(event.getVehicleId)) {
+                    } else if (!soReplanningThisIteration && self.markForSOPathOverwrite
+                                 .isDefinedAt(event.getVehicleId)) {
 
                       // if we are not replanning, then we want to copy any existing plans for this agent over to MATSim
                       for {
@@ -409,7 +438,9 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                         MATSimRouteOps.assignCompleteRouteToLeg(pathFromPathStore, leg)
 
                         val currentTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
-                        logger.debug(s"$currentTime agent $personId: applying stored route with ${pathFromPathStore.length} edges")
+                        logger.debug(
+                          s"$currentTime agent $personId: applying stored route with ${pathFromPathStore.length} edges"
+                        )
 
                         self.markForSOPathOverwrite.remove(event.getVehicleId)
                       }
@@ -441,22 +472,26 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                       agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                       distance <- MATSimRouteOps.distanceOfPath(agentExperiencedRoute, qSim)
                     } {
-                      val departureTime: DepartureTime = self.departureTimeStore.getOrElse(agentId, DepartureTime(Int.MaxValue))
+                      val departureTime: DepartureTime =
+                        self.departureTimeStore.getOrElse(agentId, DepartureTime(Int.MaxValue))
 
                       // record the agent experience
                       val travelTimeSeconds: Int = event.getTime.toInt - departureTime.value
                       val requestClass: RequestClass =
-                        if (self.soAgentReplanningHandler.isUnderControl(agentId)) RequestClass.SO() else RequestClass.UE
+                        if (self.soAgentReplanningHandler.isUnderControl(agentId)) RequestClass.SO()
+                        else RequestClass.UE
                       val replannings: Int = requestClass match {
                         case _: RequestClass.SO =>
                           self.soAgentReplanningHandler.getReplanningCountForAgent(agentId).getOrElse(0)
                         case RequestClass.UE =>
                           if (self.ueAgentAssignedDijkstraRoute(agentId)) 1 else 0
                       }
-                      val linestring: String = MATSimRouteToLineString(agentExperiencedRoute, qSim).getOrElse("LINESTRING EMPTY")
+                      val linestring: String =
+                        MATSimRouteToLineString(agentExperiencedRoute, qSim).getOrElse("LINESTRING EMPTY")
 
-                      val agentExperienceRow: String = s"$agentId,$requestClass,$departureTime,$travelTimeSeconds,$distance,$replannings\n"
-                      val agentPathRow: String       = s"$agentId,$linestring\n"
+                      val agentExperienceRow: String =
+                        s"$agentId,$requestClass,$departureTime,$travelTimeSeconds,$distance,$replannings\n"
+                      val agentPathRow: String = s"$agentId,$linestring\n"
 
                       agentExperiencePrintWriter.append(agentExperienceRow)
                       agentPathPrintWriter.append(agentPathRow)
@@ -473,19 +508,22 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                         logger.debug(s"triggered for so agent $agentId")
 
                         logger.debug(
-                          s"${SimTime(self.playPauseSimulationControl.getLocalTime)} agent $agentId: storing completed route with ${agentExperiencedRoute.length} edges")
+                          s"${SimTime(self.playPauseSimulationControl.getLocalTime)} agent $agentId: storing completed route with ${agentExperiencedRoute.length} edges"
+                        )
 
-                        logger.info(
+                        logger.debug(
                           s"agent $agentId replanned $replannings times"
                         )
 
                         // attach this path, keyed by departure time, to the complete list
                         completePathStore.get(agentId) match {
                           case None =>
-                            val thisPath: Map[DepartureTime, List[Id[Link]]] = Map(departureTime -> agentExperiencedRoute)
+                            val thisPath: Map[DepartureTime, List[Id[Link]]] =
+                              Map(departureTime -> agentExperiencedRoute)
                             completePathStore.update(agentId, thisPath)
                           case Some(alreadyHasPaths) =>
-                            completePathStore.update(agentId, alreadyHasPaths.updated(departureTime, agentExperiencedRoute))
+                            completePathStore
+                              .update(agentId, alreadyHasPaths.updated(departureTime, agentExperiencedRoute))
                         }
                       }
                     }
@@ -515,7 +553,8 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                       if (endOfRoutingTime <= nextSimTime) {
                         // noop
                         logger.debug(
-                          s"time ${e.getSimulationTime} is beyond end of routing time ${endOfRoutingTime.toString} set in config - no routing will occur")
+                          s"time ${e.getSimulationTime} is beyond end of routing time ${endOfRoutingTime.toString} set in config - no routing will occur"
+                        )
                       } else {
                         // construct an SO batch
 
@@ -536,12 +575,15 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                                   agentsInSimulation.get(personId) match {
                                     case None =>
                                       logger.debug(
-                                        s"agent $agentData that emitted a departure event was not found in QSim - possibly already at destination")
+                                        s"agent $agentData that emitted a departure event was not found in QSim - possibly already at destination"
+                                      )
                                       mobsimAgents
                                     case Some(mobsimAgent) =>
                                       Option(WithinDayAgentUtils.getModifiableCurrentLeg(mobsimAgent)) match {
                                         case None =>
-                                          logger.error(s"agent $agentData that emitted a departure event does not yet have a trip Leg")
+                                          logger.error(
+                                            s"agent $agentData that emitted a departure event does not yet have a trip Leg"
+                                          )
                                           mobsimAgents
                                         case Some(leg) =>
                                           // build Requests for this time step
@@ -550,64 +592,74 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                                           val currentLinkId                            = mobsimAgent.getCurrentLinkId
                                           val endLinkId                                = leg.getRoute.getEndLinkId
                                           val destinationEdgeId                        = EdgeId(endLinkId.toString)
-                                          MATSimRouteOps.selectRequestOriginLink(fullRoute,
-                                                                                 currentLinkId,
-                                                                                 endLinkId,
-                                                                                 self.qSim,
-                                                                                 self.minimumReplanningLeadTime,
-                                                                                 self.minimumRemainingRouteTimeForReplanning) match {
+                                          MATSimRouteOps.selectRequestOriginLink(
+                                            fullRoute,
+                                            currentLinkId,
+                                            endLinkId,
+                                            self.qSim,
+                                            self.minimumReplanningLeadTime,
+                                            self.minimumRemainingRouteTimeForReplanning
+                                          ) match {
                                             case None =>
-                                              val remainingTT = MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
+                                              val remainingTT = MATSimRouteOps
+                                                .estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
 
                                               logger.debug(
-                                                f"didn't find a reasonable edge to attempt replanning for agent $personId with est. remaining travel time $remainingTT%.2f seconds")
+                                                f"didn't find a reasonable edge to attempt replanning for agent $personId with est. remaining travel time $remainingTT%.2f seconds"
+                                              )
                                               soAgentReplanningHandler.incrementNumberFailedRoutingAttempts(personId)
                                               mobsimAgents
                                             case Some(sourceEdgeId) => {
-                                              for {
-                                                departureTime <- soAgentReplanningHandler.getDepartureTimeForAgent(personId).map { t =>
-                                                  SimTime(t.value)
+                                                for {
+                                                  departureTime <- soAgentReplanningHandler
+                                                    .getDepartureTimeForAgent(personId)
+                                                    .map { t => SimTime(t.value) }
+                                                } yield {
+                                                  val thisRequest: Request =
+                                                    Request(
+                                                      agent = personId.toString,
+                                                      origin = sourceEdgeId,
+                                                      destination = destinationEdgeId,
+                                                      requestClass = RequestClass.SO(),
+                                                      travelMode = TravelMode.Car,
+                                                      departureTime = departureTime
+                                                    )
+
+                                                  val experiencedEdgeData: List[RouteRequestData.EdgeData] =
+                                                    MATSimRouteOps
+                                                      .convertExperiencedRouteToEdgeData(experiencedRoute, qSim)
+                                                  val remainingLinkIds: List[Id[Link]] =
+                                                    fullRoute.dropWhile(_ != currentLinkId)
+                                                  val remainingEdgeData: List[RouteRequestData.EdgeData] =
+                                                    MATSimRouteOps.convertRouteToEdgeData(remainingLinkIds, qSim)
+
+                                                  val remainingDistance: Meters =
+                                                    MATSimRouteOps
+                                                      .distanceOfPath(remainingLinkIds, qSim)
+                                                      .getOrElse(Meters.Zero)
+
+                                                  val lastReplanningTime: Option[SimTime] =
+                                                    soAgentReplanningHandler.getMostRecentTimePlannedForAgent(personId)
+
+                                                  val thisAgentBatchingData: AgentBatchData =
+                                                    RouteRequestData(
+                                                      request = thisRequest,
+                                                      timeOfRequest = currentSimTime,
+                                                      experiencedRoute = experiencedEdgeData,
+                                                      remainingRoute = remainingEdgeData,
+                                                      remainingRouteDistance = remainingDistance,
+                                                      lastReplanningTime = lastReplanningTime
+                                                    )
+
+                                                  logger.debug(
+                                                    s"requesting route for agent $personId, o=$sourceEdgeId, d=$destinationEdgeId"
+                                                  )
+                                                  thisAgentBatchingData
                                                 }
-                                              } yield {
-                                                val thisRequest: Request =
-                                                  Request(
-                                                    agent = personId.toString,
-                                                    origin = sourceEdgeId,
-                                                    destination = destinationEdgeId,
-                                                    requestClass = RequestClass.SO(),
-                                                    travelMode = TravelMode.Car,
-                                                    departureTime = departureTime
-                                                  )
-
-                                                val experiencedEdgeData: List[RouteRequestData.EdgeData] =
-                                                  MATSimRouteOps.convertExperiencedRouteToEdgeData(experiencedRoute, qSim)
-                                                val remainingLinkIds: List[Id[Link]] = fullRoute.dropWhile(_ != currentLinkId)
-                                                val remainingEdgeData: List[RouteRequestData.EdgeData] =
-                                                  MATSimRouteOps.convertRouteToEdgeData(remainingLinkIds, qSim)
-
-                                                val remainingDistance: Meters =
-                                                  MATSimRouteOps.distanceOfPath(remainingLinkIds, qSim).getOrElse(Meters.Zero)
-
-                                                val lastReplanningTime: Option[SimTime] =
-                                                  soAgentReplanningHandler.getMostRecentTimePlannedForAgent(personId)
-
-                                                val thisAgentBatchingData: AgentBatchData =
-                                                  RouteRequestData(
-                                                    request = thisRequest,
-                                                    timeOfRequest = currentSimTime,
-                                                    experiencedRoute = experiencedEdgeData,
-                                                    remainingRoute = remainingEdgeData,
-                                                    remainingRouteDistance = remainingDistance,
-                                                    lastReplanningTime = lastReplanningTime
-                                                  )
-
-                                                logger.debug(s"requesting route for agent $personId, o=$sourceEdgeId, d=$destinationEdgeId")
-                                                thisAgentBatchingData
+                                              } match {
+                                                case None                     => mobsimAgents
+                                                case Some(thisAgentBatchData) => thisAgentBatchData +: mobsimAgents
                                               }
-                                            } match {
-                                              case None                     => mobsimAgents
-                                              case Some(thisAgentBatchData) => thisAgentBatchData +: mobsimAgents
-                                            }
 
                                           }
                                       }
@@ -633,7 +685,9 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
 
                           self.newSORouteRequests = Some { payload }
                           routingRequestsUpdatedToTimeStep = SimTime(e.getSimulationTime)
-                          logger.debug(s"at time ${SimTime(e.getSimulationTime)} storing ${payload.requests.length} requests for batch route module")
+                          logger.debug(
+                            s"at time ${SimTime(e.getSimulationTime)} storing ${payload.requests.length} requests for batch route module"
+                          )
                         }
                       }
                     }
@@ -704,7 +758,9 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
           val currentTime: SimTime     = SimTime(self.playPauseSimulationControl.getLocalTime)
           val advanceToSimTime: Double = currentTime.value.toDouble + 0.01 //+ SimTime(2) //+ matsimStepSize
 
-          logger.debug(s"called on sim in Running state: advancing one time step from $currentTime to $advanceToSimTime")
+          logger.debug(
+            s"called on sim in Running state: advancing one time step from $currentTime to $advanceToSimTime"
+          )
 
           self.playPauseSimulationControl.doStep(advanceToSimTime)
           val timeAfterAdvance: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
@@ -715,8 +771,9 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
             self.agentPathPrintWriter.flush()
           }
 
-          val matsimFailure: Boolean                     = self.matsimThreadException.isDefined
-          val thisIterationIsFinishedAfterCrank: Boolean = self.playPauseSimulationControl.getLocalTime == Double.MaxValue
+          val matsimFailure: Boolean = self.matsimThreadException.isDefined
+          val thisIterationIsFinishedAfterCrank: Boolean =
+            self.playPauseSimulationControl.getLocalTime == Double.MaxValue
 
           if (matsimFailure) {
             for {
@@ -817,17 +874,22 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
             case Left(reason) =>
               // noop
               logger.warn(
-                s"failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentSimTime not applied due to: $reason")
+                s"failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentSimTime not applied due to: $reason"
+              )
 
             case Right(updatedRoute) =>
               // test that the updatedRoute has the currentLinkId at the currentLinkIndex
               // otherwise it would cause this agent to have a bad turn logic error.
               Try { updatedRoute(mobsimAgentCurrentRouteLinkIdIndex) }.toEither match {
                 case Left(e) =>
-                  logger.warn(s"tried to check that currentLinkIndex contains currentLink in updatedRoute but failed: $e")
+                  logger.warn(
+                    s"tried to check that currentLinkIndex contains currentLink in updatedRoute but failed: $e"
+                  )
                 case Right(updatedRouteLinkAtCurrentLinkIndex) =>
                   if (updatedRouteLinkAtCurrentLinkIndex != currentLinkId) {
-                    logger.warn(s"composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId")
+                    logger.warn(
+                      s"composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId"
+                    )
 
                   } else {
                     logger.debug(s"updating route for ${response.request.requestClass} agent ${agentId.toString}")
@@ -847,15 +909,22 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                           case None =>
                             completePathStore.update(agentId, Map(departureTime -> updatedRoute)) // in-place
                           case Some(agentAlreadyRecordedInStore) =>
-                            completePathStore.update(agentId, agentAlreadyRecordedInStore.updated(departureTime, updatedRoute)) // in-place
+                            completePathStore.update(
+                              agentId,
+                              agentAlreadyRecordedInStore.updated(departureTime, updatedRoute)
+                            ) // in-place
                         }
 
                         self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
                         self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
                           case None =>
-                            logger.error(s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added")
+                            logger.error(
+                              s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added"
+                            )
                           case Some(numberOfPathAssignments) =>
-                            logger.debug(s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime")
+                            logger.debug(
+                              s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime"
+                            )
                         }
                       case RequestClass.UE =>
                         // record that we assigned this agent a new route plan instead of relied on MATSim's routing
@@ -896,16 +965,26 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
                   logger.info(s"MATSim Simulation exited normally")
                   Right(SimulatorState.Finished)
                 case other =>
-                  Left(IsDoneFailure.FinishingError(
-                    s"while finishing up simulation, MATSimSimulator went from a ${SimulatorState.Finishing} state to a $other state instead of ${SimulatorState.Finished}"))
+                  Left(
+                    IsDoneFailure.FinishingError(
+                      s"while finishing up simulation, MATSimSimulator went from a ${SimulatorState.Finishing} state to a $other state instead of ${SimulatorState.Finished}"
+                    )
+                  )
               }
             } else if (System.currentTimeMillis > timeoutStop) {
-              Left(IsDoneFailure.TimeoutFailure(s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"))
+              Left(
+                IsDoneFailure.TimeoutFailure(
+                  s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"
+                )
+              )
             } else {
               Try { Thread.sleep(1000) } match {
                 case Success(()) => _isDone()
                 case Failure(e) =>
-                  Left(IsDoneFailure.TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}"))
+                  Left(
+                    IsDoneFailure
+                      .TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}")
+                  )
               }
             }
           }
@@ -921,7 +1000,9 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
         }
       case SimulatorState.Running if !t.isAlive =>
         matsimState = SimulatorState.Finished
-        val error = IsDoneFailure.TimeoutFailure(s"MATSim thread is dead but simulation is not finished. MATSim may have had a fatal error.")
+        val error = IsDoneFailure.TimeoutFailure(
+          s"MATSim thread is dead but simulation is not finished. MATSim may have had a fatal error."
+        )
         IO.raiseError(error)
 
       case other =>
@@ -968,7 +1049,8 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
           ueRequests ++ agentsLeftSimulationRequests
         case Some(rr) =>
           logger.debug(
-            s"sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests")
+            s"sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests"
+          )
           val outgoingRequests: List[AgentBatchData] = rr.requests ++ ueRequests ++ agentsLeftSimulationRequests
           self.newSORouteRequests = None
           outgoingRequests

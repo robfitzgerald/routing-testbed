@@ -55,17 +55,16 @@ class LocalMCTSSelectionAlgorithm[V, E](
           combineFlowsFunction,
           marginalCostFunction
         )
-        .map {
-          case (result, tspCost) =>
-            val avgAlts: Double =
-              if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-            logger.info(
-              f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH"
-            )
-            logger.info(
-              f"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost} AVG_DIFF ${(tspCost - result.estimatedCost).value / alts.size}%.2f"
-            )
-            result
+        .map { result =>
+          val avgAlts: Double =
+            if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+          logger.info(
+            f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH"
+          )
+          logger.info(
+            f"COST_EST: BEST ${result.estimatedCost}, SELFISH ${result.selfishCost}, DIFF ${result.estimatedCost - result.selfishCost} AVG_DIFF ${(result.estimatedCost - result.selfishCost).value / alts.size}%.2f"
+          )
+          result
         }
     } else
       IO {

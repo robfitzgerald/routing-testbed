@@ -10,43 +10,41 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.{
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 
-sealed trait BatchOverlapFunctionConfig
+sealed trait BatchOverlapFunctionConfig {
+  def build(): BatchOverlapFunction
+}
 
 object BatchOverlapFunctionConfig {
-
-  final case object NoFilter extends BatchOverlapFunctionConfig
 
   final case class AgentProportional(
     pathOverlapLookupType: PathOverlapLookupType,
     useLinkWeights: Boolean
-  ) {
+  ) extends BatchOverlapFunctionConfig {
 
-    def build(): BatchOverlapFunction = {
+    override def build(): BatchOverlapFunction = {
       val pathOverlapLookup: PathOverlapLookup = pathOverlapLookupType match {
         case PathOverlapLookupType.TSP =>
           PathOverlapLookupType.trueShortestPathLookup(useLinkWeights)
         case PathOverlapLookupType.AllPaths =>
           PathOverlapLookupType.altPathsLookup(useLinkWeights)
       }
-      (alts: Map[Request, List[Path]]) =>
-        AgentProportionalBatchOverlap.from(alts, pathOverlapLookup)
+      (alts: Map[Request, List[Path]]) => AgentProportionalBatchOverlap.from(alts, pathOverlapLookup)
     }
   }
 
   final case class BatchProportional(
     pathOverlapLookupType: PathOverlapLookupType,
     useLinkWeights: Boolean
-  ) {
+  ) extends BatchOverlapFunctionConfig {
 
-    def build(): BatchOverlapFunction = {
+    override def build(): BatchOverlapFunction = {
       val pathOverlapLookup: PathOverlapLookup = pathOverlapLookupType match {
         case PathOverlapLookupType.TSP =>
           PathOverlapLookupType.trueShortestPathLookup(useLinkWeights)
         case PathOverlapLookupType.AllPaths =>
           PathOverlapLookupType.altPathsLookup(useLinkWeights)
       }
-      (alts: Map[Request, List[Path]]) =>
-        BatchProportionalOverlap.from(alts, pathOverlapLookup)
+      (alts: Map[Request, List[Path]]) => BatchProportionalOverlap.from(alts, pathOverlapLookup)
     }
   }
 }

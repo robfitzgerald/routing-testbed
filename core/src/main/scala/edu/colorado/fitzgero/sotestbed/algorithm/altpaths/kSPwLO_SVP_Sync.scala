@@ -21,7 +21,8 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
   val terminationFunction: KSPAlgorithm.AltPathsState => Boolean,
   minBatchSize: Int = 2,
   retainSrcDstEdgesInPaths: Boolean = false
-) extends KSPAlgorithm[F, V, E] with LazyLogging {
+) extends KSPAlgorithm[F, V, E]
+    with LazyLogging {
 
   def generateAlts(
     requests: List[Request],
@@ -35,8 +36,8 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
       // if we do not meet the user-specified minimum batch size, then override
       // with a simple true shortest path search
       val terminationFunctionForThisBatch: KSPAlgorithm.AltPathsState => Boolean =
-        if (requests.length < minBatchSize) {
-          state: KSPAlgorithm.AltPathsState => state.pathsSeen == NonNegativeNumber.One
+        if (requests.length < minBatchSize) { state: KSPAlgorithm.AltPathsState =>
+          state.pathsSeen == NonNegativeNumber.One
         } else {
           terminationFunction
         }
@@ -52,15 +53,12 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
         }
       } yield {
         val avgAlts: Double =
-          if (result.isEmpty) 0D
-          else result.flatMap{case Some(x) => Some(x.alts.size); case None => None}.sum.toDouble / result.size
+          if (result.isEmpty) 0d
+          else result.flatMap { case Some(x) => Some(x.alts.size); case None => None }.sum.toDouble / result.size
 
-        logger.info(f"AVG $avgAlts%2f alts per agent")
+        logger.debug(f"AVG $avgAlts%2f alts per agent")
         KSPAlgorithm.AltPathsResult(
-          result
-            .flatten
-            .map{ case kSPwLO_SVP_Algorithm.SingleSVPResult(req, alts, _) => req -> alts.take(k) }
-            .toMap
+          result.flatten.map { case kSPwLO_SVP_Algorithm.SingleSVPResult(req, alts, _) => req -> alts.take(k) }.toMap
         )
       }
     }

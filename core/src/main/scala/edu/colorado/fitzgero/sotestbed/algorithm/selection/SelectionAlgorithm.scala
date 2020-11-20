@@ -184,14 +184,27 @@ object SelectionAlgorithm {
     * @param threshold the max number of samples allowed for exhaustive search
     * @return
     */
-  def numCombinationsLessThanThreshold(
-    paths: Map[Request, List[Path]],
+  def numCombinationsLessThanThreshold[K, V](
+    paths: Map[K, List[V]],
     threshold: Int
   ): Boolean = {
     @tailrec
     def _combinations(pathsPerAgent: List[Int], count: Int = 1): Boolean = {
       if (pathsPerAgent.isEmpty) true
       else if (count * pathsPerAgent.head > threshold) false
+      else _combinations(pathsPerAgent.tail, count * pathsPerAgent.head)
+    }
+    _combinations(paths.map { case (_, paths) => paths.length }.toList)
+  }
+
+  def numCombinationsGreaterThanThreshold[K, V](
+    paths: Map[K, List[V]],
+    threshold: Int
+  ): Boolean = {
+    @tailrec
+    def _combinations(pathsPerAgent: List[Int], count: Int = 1): Boolean = {
+      if (pathsPerAgent.isEmpty) false
+      else if (count * pathsPerAgent.head > threshold) true
       else _combinations(pathsPerAgent.tail, count * pathsPerAgent.head)
     }
     _combinations(paths.map { case (_, paths) => paths.length }.toList)
@@ -215,8 +228,8 @@ object SelectionAlgorithm {
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): F[(SelectionAlgorithmResult, Cost)] = {
-    if (paths.isEmpty) Monad[F].pure { (SelectionAlgorithmResult(), Cost.Zero) }
+  ): F[SelectionAlgorithmResult] = {
+    if (paths.isEmpty) Monad[F].pure { SelectionAlgorithmResult() }
     else {
       val startTime: Long = System.currentTimeMillis
 
@@ -290,10 +303,11 @@ object SelectionAlgorithm {
             selfishCost = selfishCost.overallCost,
             travelTimeDiff = improvement,
             averageTravelTimeDiff = averageImprovement,
-            samples = finalState.samples
+            samples = finalState.samples,
+            ratioOfSearchSpaceExplored = (finalState.samples.value / searchSpaceSize).toDouble
           )
 
-          (searchResult, selfishCost.overallCost)
+          searchResult
         }
       }
     }.flatten

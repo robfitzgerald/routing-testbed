@@ -8,6 +8,7 @@ import scala.concurrent.duration.Duration
 
 import cats.Monad
 
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import pureconfig._
 import pureconfig.configurable._
 import pureconfig.ConvertHelpers._
@@ -15,7 +16,18 @@ import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, BatchingFunction}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, CombineFlowsFunctionConfig, EdgeUpdateFunctionConfig, KSPAlgorithmConfig, KSPFilterFunctionConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, RoutingReportConfig, SelectionAlgorithmConfig}
+import edu.colorado.fitzgero.sotestbed.config.{
+  BatchFilterFunctionConfig,
+  BatchingFunctionConfig,
+  CombineFlowsFunctionConfig,
+  EdgeUpdateFunctionConfig,
+  KSPAlgorithmConfig,
+  KSPFilterFunctionConfig,
+  MarginalCostFunctionConfig,
+  PathToMarginalFlowsFunctionConfig,
+  RoutingReportConfig,
+  SelectionAlgorithmConfig
+}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime, TravelTimeSeconds}
@@ -49,36 +61,51 @@ object MATSimConfig {
     adoptionRate: Double,
     maxPathAssignments: Int,
     minimumReplanningLeadTime: TravelTimeSeconds, // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
-    minimumReplanningWaitTime: SimTime, // we ignore replanning for agents which have not traveled at least this long between replanning events
+    minimumReplanningWaitTime: SimTime,           // we ignore replanning for agents which have not traveled at least this long between replanning events
     minimumAverageImprovement: Cost,
-    minRequestUpdateThreshold: SimTime,  // batching manager state updates
-    minNetworkUpdateThreshold: SimTime,  // road network state updates
-    minBatchSize             : Int,
-    selfish                  : Routing.Selfish
+    minRequestUpdateThreshold: SimTime, // batching manager state updates
+    minNetworkUpdateThreshold: SimTime, // road network state updates
+    minBatchSize: Int,
+    selfish: Routing.Selfish
   ) {
-    require(minimumAverageImprovement >= Cost.Zero, "matsimConfig.routing.minimumAverageImprovement should be non-negative")
-    require(minRequestUpdateThreshold >= SimTime.Zero, "matsimConfig.routing.minRequestUpdateThreshold should be non-negative")
-    require(minNetworkUpdateThreshold >= SimTime.Zero, "matsimConfig.routing.minNetworkUpdateThreshold should be non-negative")
+    require(
+      minimumAverageImprovement >= Cost.Zero,
+      "matsimConfig.routing.minimumAverageImprovement should be non-negative"
+    )
+    require(
+      minRequestUpdateThreshold >= SimTime.Zero,
+      "matsimConfig.routing.minRequestUpdateThreshold should be non-negative"
+    )
+    require(
+      minNetworkUpdateThreshold >= SimTime.Zero,
+      "matsimConfig.routing.minNetworkUpdateThreshold should be non-negative"
+    )
   }
 
   object Routing {
+
     // how will selfish agents be routed
     sealed trait Selfish {
       def lastIteration: Int
     }
+
     object Selfish {
+
       final case class MATSim(
         lastIteration: Int,
         soRoutingIterationCycle: Int,
-        soFirstIteration: Boolean, // overrides the iteration cycle for so-routing and simply has it run on iteration 0
+        soFirstIteration: Boolean // overrides the iteration cycle for so-routing and simply has it run on iteration 0
       ) extends Selfish {
-        require(soRoutingIterationCycle <= lastIteration,
-          "matsimConfig.routing.selfish.matsim.soRoutingIterationCycle needs to be less than or equal to lastIteration")
+        require(
+          soRoutingIterationCycle <= lastIteration,
+          "matsimConfig.routing.selfish.matsim.soRoutingIterationCycle needs to be less than or equal to lastIteration"
+        )
       }
+
       final case class Dijkstra(
         pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
         combineFlowsFunction: CombineFlowsFunctionConfig,
-        marginalCostFunction: MarginalCostFunctionConfig,
+        marginalCostFunction: MarginalCostFunctionConfig
       ) extends Selfish {
         def lastIteration: Int = 0
       }
@@ -88,15 +115,16 @@ object MATSimConfig {
   final case class IO(
     matsimNetworkFile: File,
     populationPolygonFile: Option[File],
-    matsimConfigFile : File,
+    matsimConfigFile: File,
     routingReportConfig: RoutingReportConfig,
     heatmapLogCycleMinutes: Int = 15,
     heatmapH3Resolution: Int = 9,
-    populationFile   : File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
-    matsimLogLevel   : String = "INFO",
-    batchName        : String = System.currentTimeMillis.toString,
-    outputBaseDirectory: Path = Paths.get("/tmp"),
+    populationFile: File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
+    matsimLogLevel: String = "INFO",
+    batchName: String = System.currentTimeMillis.toString,
+    outputBaseDirectory: Path = Paths.get("/tmp")
   ) {
+
     def batchLoggingDirectory: Path = {
       outputBaseDirectory.resolve(batchName)
     }
@@ -109,6 +137,7 @@ object MATSimConfig {
   )
 
   sealed trait Algorithm {
+
     /**
       * the algorithm name is interpreted from the type of the algorithm (algorithm.type)
       * and the associated file name by the experiment batch runner, in the case of
@@ -120,19 +149,28 @@ object MATSimConfig {
     def edgeUpdateFunction: EdgeUpdateFunctionConfig
     def marginalCostFunction: MarginalCostFunctionConfig
   }
+
   object Algorithm {
+
     final case class Selfish(
       edgeUpdateFunction: EdgeUpdateFunctionConfig,
-      marginalCostFunction: MarginalCostFunctionConfig,
+      marginalCostFunction: MarginalCostFunctionConfig
     ) extends Algorithm {
-      override def name: String = "selfish"
+      override def name: String         = "selfish"
       override def selfishOnly: Boolean = true
 
       def build[F[_]: Monad, V, E](): RoutingAlgorithm[F, V, E] = new RoutingAlgorithm[F, V, E] {
-        def route(requests: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] =
+
+        def route(
+          requests: List[Request],
+          activeAgentHistory: ActiveAgentHistory,
+          roadNetwork: RoadNetwork[F, V, E]
+        ): F[RoutingAlgorithm.Result] =
           throw new IllegalStateException("algorithm.type is selfish, so we shouldn't be doing any routing.")
       }
+
       def batchingStub: BatchingFunction = new BatchingFunction {
+
         /**
           * takes the current batching strategy and any updates about replan-able agents, and spits out an
           * update to that batching strategy
@@ -142,9 +180,11 @@ object MATSimConfig {
           * @param currentTime          the current sim time
           * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
           */
-        def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
+        def updateBatchingStrategy[F[_]: Monad, V, E](
+          roadNetwork: RoadNetwork[F, V, E],
           activeRouteRequests: List[RouteRequestData],
-          currentTime: SimTime): F[Option[List[(String, List[Request])]]] = Monad[F].pure{ None }
+          currentTime: SimTime
+        ): F[Option[List[(String, List[Request])]]] = Monad[F].pure { None }
       }
     }
 
@@ -157,6 +197,7 @@ object MATSimConfig {
       combineFlowsFunction: CombineFlowsFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
       batchingFunction: BatchingFunctionConfig,
+      batchFilterFunction: BatchFilterFunctionConfig,
       kspFilterFunction: KSPFilterFunctionConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {

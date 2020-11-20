@@ -69,26 +69,25 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
           combineFlowsFunction,
           marginalCostFunction
         )
-        .flatMap {
-          case (result, tspCost) =>
-            if (selectionAcceptanceFunction(result)) {
-              val avgAlts: Double =
-                if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-              logger.info(
-                f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH"
-              )
-              logger.info(
-                s"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost}"
-              )
-              Monad[F].pure {
-                result
-              }
-            } else {
-              logger.info(s"dismissing result due to selection acceptance policy")
-              Monad[F].pure {
-                SelectionAlgorithm.SelectionAlgorithmResult()
-              }
+        .flatMap { result =>
+          if (selectionAcceptanceFunction(result)) {
+            val avgAlts: Double =
+              if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+            logger.info(
+              f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH"
+            )
+            logger.info(
+              f"COST_EST: BEST ${result.estimatedCost}, SELFISH ${result.selfishCost}, DIFF ${result.estimatedCost - result.selfishCost} AVG_DIFF ${(result.estimatedCost - result.selfishCost).value / alts.size}%.2f"
+            )
+            Monad[F].pure {
+              result
             }
+          } else {
+            logger.info(s"dismissing result due to selection acceptance policy")
+            Monad[F].pure {
+              SelectionAlgorithm.SelectionAlgorithmResult()
+            }
+          }
         }
     } else {
       // turn path alternatives into vector for faster indexing performance
