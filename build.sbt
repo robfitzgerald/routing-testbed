@@ -36,7 +36,7 @@ lazy val matsim = project
 //)
 
 lazy val matsimResolvers = Seq(
-  "MATSim release repository".at("http://dl.bintray.com/matsim/matsim"),
+  "MATSim release repository".at("https://dl.bintray.com/matsim/matsim"),
   "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/")
 //  "Open Source Geospatial Foundation Repository".at("http://download.osgeo.org/webdav/geotools/"),
 //  "OpenGeo Maven Repository".at("http://repo.opengeo.org")
@@ -90,9 +90,9 @@ lazy val coreDependencies = List(
 )
 
 lazy val matsimDependencies = List(
-  "org.geotools"      % "gt-main"    % "21.5",
-  "org.matsim"        % "matsim"     % "12.0", // most recent official release/tag
-  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
+  "org.geotools" % "gt-main" % "21.5",
+  "org.matsim"   % "matsim"  % "12.0" // most recent official release/tag
+//  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
 )
 
 /////////////////////////// sbt-assembly ///////////////////////////

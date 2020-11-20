@@ -7,10 +7,10 @@ import scala.util.Try
 
 import cats.implicits._
 
-import scalatikz.pgf.plots.Figure
-import scalatikz.pgf.plots.enums.LegendPos
-import scalatikz.pgf.enums.{Color, LineSize}
-import scalatikz.pgf.enums.LineStyle.DASHED
+//import scalatikz.pgf.plots.Figure
+//import scalatikz.pgf.plots.enums.LegendPos
+//import scalatikz.pgf.enums.{Color, LineSize}
+//import scalatikz.pgf.enums.LineStyle.DASHED
 import edu.colorado.fitzgero.sotestbed.util.CombinedError
 
 object AgentExperienceOps {
@@ -290,18 +290,18 @@ object AgentExperienceOps {
       val (loserDist, loserDistσ)   = expNames.flatMap { loserLookup.get(_).map { r => (r.distNorm, r.distStdev) } }.unzip
       val (loserSpeed, loserSpeedσ) = expNames.flatMap { loserLookup.get(_).map { r => (r.speedNorm, r.speedStdev) } }.unzip
 
-      val save = Figure("Experiment")
-        .plot(lineSize = LineSize.THICK, lineColor = Color.BLUE)(domain.zip(allTT))
-        .plot(lineSize = LineSize.THICK, lineColor = Color.ORANGE)(domain.zip(allDist))
-        .plot(lineSize = LineSize.THICK, lineColor = Color.MAGENTA)(domain.zip(allSpeed))
-        .plot(lineSize = LineSize.THICK, lineColor = Color.BLUE, lineStyle = DASHED)(domain.zip(loserTT))
-        .plot(lineSize = LineSize.THICK, lineColor = Color.ORANGE, lineStyle = DASHED)(domain.zip(loserDist))
-        .plot(lineSize = LineSize.THICK, lineColor = Color.MAGENTA, lineStyle = DASHED)(domain.zip(loserSpeed))
-        .havingLegends("TT", "DIST", "SPEED", "TT-NEG", "DIST-NEG", "SPEED-NEG")
-        .havingLegendPos(LegendPos.OUTER_NORTH_EAST)
-        .havingXLabel(s"$$$parameterName$$")
-        .havingYLabel("$Percent$")
-        .show()
+//      val save = Figure("Experiment")
+//        .plot(lineSize = LineSize.THICK, lineColor = Color.BLUE)(domain.zip(allTT))
+//        .plot(lineSize = LineSize.THICK, lineColor = Color.ORANGE)(domain.zip(allDist))
+//        .plot(lineSize = LineSize.THICK, lineColor = Color.MAGENTA)(domain.zip(allSpeed))
+//        .plot(lineSize = LineSize.THICK, lineColor = Color.BLUE, lineStyle = DASHED)(domain.zip(loserTT))
+//        .plot(lineSize = LineSize.THICK, lineColor = Color.ORANGE, lineStyle = DASHED)(domain.zip(loserDist))
+//        .plot(lineSize = LineSize.THICK, lineColor = Color.MAGENTA, lineStyle = DASHED)(domain.zip(loserSpeed))
+//        .havingLegends("TT", "DIST", "SPEED", "TT-NEG", "DIST-NEG", "SPEED-NEG")
+//        .havingLegendPos(LegendPos.OUTER_NORTH_EAST)
+//        .havingXLabel(s"$$$parameterName$$")
+//        .havingYLabel("$Percent$")
+//        .show()
 //        .saveAsJPEG("test.jpg")
 
 //      save match {
