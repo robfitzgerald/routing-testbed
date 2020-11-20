@@ -53,7 +53,8 @@ object MetricsSubsetApp
             }
 
             println("\nMETRICS SUBSET REPORT\n")
-            val header = s"experimentName,tt,ttσ,speed,speedσ,dist,distσ,${BatchMetrics.Header}"
+            val header =
+              s"experimentName,ttAll,ttσAll,speedAll,speedσAll,distAll,distσAll,ttLose,ttσLose,speedLose,speedσLose,distLose,distσLose,${BatchMetrics.Header}"
             println(header)
             for {
               (rawRows, _, batchMetricsList) <- result
@@ -70,11 +71,20 @@ object MetricsSubsetApp
                 val speedσAll      = popAggMetrics.allData.speedStdev
                 val distAll        = popAggMetrics.allData.distNorm
                 val distσAll       = popAggMetrics.allData.distStdev
-                f"$experimentName,$ttAll%.2f%%,$ttσAll%.2f%%,$speedAll%.2f%%,$speedσAll%.2f%%,$distAll%.2f%%,$distσAll%.2f%%,${batchAgg.toString}"
-              }
+                val ttLoser        = popAggMetrics.loserData.ttNorm
+                val ttσLoser       = popAggMetrics.loserData.ttStdev
+                val speedLoser     = popAggMetrics.loserData.speedNorm
+                val speedσLoser    = popAggMetrics.loserData.speedStdev
+                val distLoser      = popAggMetrics.loserData.distNorm
+                val distσLoser     = popAggMetrics.loserData.distStdev
+                val row =
+                  f"$experimentName,$ttAll%.2f%%,$ttσAll%.2f%%,$speedAll%.2f%%,$speedσAll%.2f%%,$distAll%.2f%%,$distσAll%.2f%%,$ttLoser%.2f%%,$ttσLoser%.2f%%,$speedLoser%.2f%%,$speedσLoser%.2f%%,$distLoser%.2f%%,$distσLoser%.2f%%,${batchAgg.toString}"
+                println(row)
 
-              println(batchAgg.toString)
+              }
             }
+//            val rawRows = result.flatMap { _._1 }.toList
+//            AgentExperienceOps.toTikzPlot(rawRows.map { _.allData }, rawRows.map { _.loserData })
         }
       }
     )

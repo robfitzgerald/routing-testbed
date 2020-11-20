@@ -37,7 +37,7 @@ lazy val matsim = project
 
 lazy val matsimResolvers = Seq(
   "MATSim release repository".at("http://dl.bintray.com/matsim/matsim"),
-  "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/"),
+  "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/")
 //  "Open Source Geospatial Foundation Repository".at("http://download.osgeo.org/webdav/geotools/"),
 //  "OpenGeo Maven Repository".at("http://repo.opengeo.org")
 )
@@ -52,7 +52,8 @@ lazy val matsimResolvers = Seq(
 //  .dependsOn(core, matsim)
 
 lazy val scalac = List(
-  "-language:higherKinds", // FP type wizardry
+  "-language:higherKinds",                   // Cats
+  "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 //  "-Ypartial-unification"
 )
@@ -89,12 +90,12 @@ lazy val coreDependencies = List(
 )
 
 lazy val matsimDependencies = List(
-  "org.geotools" % "gt-main" % "21.5",
-  "org.matsim"   % "matsim"  % "12.0" // most recent official release/tag
+  "org.geotools"      % "gt-main"    % "21.5",
+  "org.matsim"        % "matsim"     % "12.0", // most recent official release/tag
+  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
 )
 
 /////////////////////////// sbt-assembly ///////////////////////////
-
 
 lazy val matsimAssemblyStrategy = Seq(
   mainClass in (Compile, run) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),

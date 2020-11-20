@@ -3,7 +3,7 @@ package edu.colorado.fitzgero.sotestbed.reports
 import java.io.{File, PrintWriter}
 import java.text.DecimalFormat
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, SimTime}
@@ -13,15 +13,14 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 import edu.colorado.fitzgero.sotestbed.reports.CompletePathAlternativesRoutingReport.Row
 import edu.colorado.fitzgero.sotestbed.reports.RouteReportOps.{DecisionTag, PathRepresentation, PathType}
 
-class CompletePathAlternativesRoutingReport(routingResultFile: File, costFunction: EdgeBPR => Cost)
-    extends RoutingReports[SyncIO, Coordinate, EdgeBPR] {
+class CompletePathAlternativesRoutingReport(routingResultFile: File, costFunction: EdgeBPR => Cost) extends RoutingReports[IO, Coordinate, EdgeBPR] {
 
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
   printWriter.write(CompletePathAlternativesRoutingReport.Header + "\n")
 
   override def updateReports(routingResults: List[(String, RoutingAlgorithm.Result)],
-                             roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
-                             currentSimTime: SimTime): SyncIO[Unit] = SyncIO {
+                             roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+                             currentSimTime: SimTime): IO[Unit] = IO {
 
     // functions to interpret path space data
     val edgesToCoords: Path => List[Coordinate]   = RouteReportOps.toCoords(roadNetwork)

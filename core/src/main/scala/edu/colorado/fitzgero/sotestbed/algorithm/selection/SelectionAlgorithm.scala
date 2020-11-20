@@ -22,7 +22,7 @@ abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): F[SelectionAlgorithm.Result]
+  ): F[SelectionAlgorithm.SelectionAlgorithmResult]
 }
 
 // hey, here's a few ideas for a SelectionAlgorithm:
@@ -41,7 +41,7 @@ object SelectionAlgorithm {
     * @param averageTravelTimeDiff
     * @param samples
     */
-  final case class Result(
+  final case class SelectionAlgorithmResult(
     selectedRoutes: List[Response] = List.empty,
     estimatedCost: Cost = Cost.Zero,
     selfishCost: Cost = Cost.Zero,
@@ -99,18 +99,18 @@ object SelectionAlgorithm {
     roadNetwork: RoadNetwork[F, V, E],
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost,
+    marginalCostFunction: E => Flow => Cost
   ): F[SelectionCost] = {
     // set up the list of edges to account for, and a lookup table of edge attributes
-    val allSelectedEdgeIds: List[EdgeId] = paths.flatten.map { _.edgeId } // at this point, not yet distinct! we need to count each occurrence still
+    val allSelectedEdgeIds
+      : List[EdgeId] = paths.flatten.map { _.edgeId } // at this point, not yet distinct! we need to count each occurrence still
     val edgeIdsWithEdgeValues: F[Map[EdgeId, E]] = roadNetwork.edges(allSelectedEdgeIds).map {
-      _.map { tup =>
-        (tup.edgeId, tup.attribute)
-      }.toMap
+      _.map { tup => (tup.edgeId, tup.attribute) }.toMap
     }
 
     // use the provided function to convert the provided paths to their flow contributions
-    val flowsByEdgeId: F[List[(EdgeId, Flow)]] = paths.traverse(path => pathToMarginalFlowsFunction(roadNetwork, path)).map { _.flatten }
+    val flowsByEdgeId: F[List[(EdgeId, Flow)]] =
+      paths.traverse(path => pathToMarginalFlowsFunction(roadNetwork, path)).map { _.flatten }
 
     val result: F[SelectionCost] = for {
       edgesMap <- edgeIdsWithEdgeValues
@@ -125,9 +125,7 @@ object SelectionAlgorithm {
         // assign the marginal cost to each edge in each path
         val pathCosts: List[Cost] = paths
           .foldLeft(List.empty[Cost]) { (acc, path) =>
-            val pathCost = path.foldLeft(Cost.Zero) { (acc, seg) =>
-              acc + costs.getOrElse(seg.edgeId, Cost.Zero)
-            }
+            val pathCost = path.foldLeft(Cost.Zero) { (acc, seg) => acc + costs.getOrElse(seg.edgeId, Cost.Zero) }
             pathCost +: acc
           }
           .reverse
@@ -217,8 +215,9 @@ object SelectionAlgorithm {
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): F[(Result, Cost)] = {
-    if (paths.isEmpty) Monad[F].pure { (Result(), Cost.Zero) } else {
+  ): F[(SelectionAlgorithmResult, Cost)] = {
+    if (paths.isEmpty) Monad[F].pure { (SelectionAlgorithmResult(), Cost.Zero) }
+    else {
       val startTime: Long = System.currentTimeMillis
 
       // rewrap as a multiset, set up an iterator
@@ -264,13 +263,11 @@ object SelectionAlgorithm {
                 bestSelectionIndices = thisIndices,
                 bestOverallCost = thisCost.overallCost,
                 agentPathCosts = thisCost.agentPathCosts,
-                samples = state.samples + NonNegativeNumber.One,
+                samples = state.samples + NonNegativeNumber.One
               )
             }
           }
-        } { _ =>
-          !iterator.hasNext
-        }
+        } { _ => !iterator.hasNext }
 
         // package the responses associated with the best selection
         finalStateF.map { finalState =>
@@ -287,7 +284,7 @@ object SelectionAlgorithm {
           val improvement: Cost        = Cost(selfishCost.overallCost - finalState.bestOverallCost)
           val averageImprovement: Cost = Cost((selfishCost.overallCost - finalState.bestOverallCost).value / paths.size)
 
-          val searchResult: Result = Result(
+          val searchResult: SelectionAlgorithmResult = SelectionAlgorithmResult(
             selectedRoutes = responses,
             estimatedCost = finalState.bestOverallCost,
             selfishCost = selfishCost.overallCost,

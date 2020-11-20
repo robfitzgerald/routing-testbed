@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.SelectionRunnerResult
 import edu.colorado.fitzgero.sotestbed.model.agent.{RequestClass, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
@@ -43,7 +44,8 @@ final case class BatchingManager(
               )
             case Some(mostRecent) =>
               // guard against the requestUpdateCycle
-              val canUpdateRequest: Boolean = routeRequestData.timeOfRequest - mostRecent.timeOfRequest > minRequestUpdateThreshold
+              val canUpdateRequest: Boolean =
+                routeRequestData.timeOfRequest - mostRecent.timeOfRequest > minRequestUpdateThreshold
               if (canUpdateRequest) {
                 this.copy(
                   batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
@@ -157,7 +159,11 @@ object BatchingManager {
     * @param currentTime the current sim time
     * @return a list of any entries found to be invalid (hopefully empty!)
     */
-  def listInvalidStrategies[A](newStrategy: Map[SimTime, List[List[A]]], batchWindow: SimTime, currentTime: SimTime): Seq[SimTime] = {
+  def listInvalidStrategies[A](
+    newStrategy: Map[SimTime, List[List[A]]],
+    batchWindow: SimTime,
+    currentTime: SimTime
+  ): Seq[SimTime] = {
     for {
       t <- currentTime until nextValidBatchingTime(batchWindow, currentTime)
       time = SimTime(t)

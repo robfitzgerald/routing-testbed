@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
@@ -25,7 +25,7 @@ object BatchingOps {
 //    path: List[EdgeData],
 //    currentTime: SimTime,
 //    batchPathTimeDelay: SimTime,
-//    roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR]
+//    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
 //  ): Option[Coordinate] = {
 //    if (batchPathTimeDelay == SimTime.Zero) {
 //      // no traversal

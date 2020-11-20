@@ -4,9 +4,9 @@ import java.io
 import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.Files
 
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
@@ -53,7 +53,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
       }
 
       // how we read reports
-      val routingReporter: RoutingReports[SyncIO, Coordinate, EdgeBPR] =
+      val routingReporter: RoutingReports[IO, Coordinate, EdgeBPR] =
         config.io.routingReportConfig match {
           case RoutingReportConfig.Inactive =>
             RoutingReportConfig.Inactive.build()
@@ -83,7 +83,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
         routingReporter
       )
 
-      val soRoutingAlgorithm: RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR] = config.algorithm match {
+      val soRoutingAlgorithm: RoutingAlgorithm[IO, Coordinate, EdgeBPR] = config.algorithm match {
         case selfish @ MATSimConfig.Algorithm.Selfish(_, _) =>
           // need a no-phase dijkstra's algorithm here?
           selfish.build()
@@ -105,7 +105,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
               )
             case rand: RandomSamplingSelection =>
               // other libraries play well
-              new TwoPhaseRoutingAlgorithm[SyncIO, Coordinate, EdgeBPR](
+              new TwoPhaseRoutingAlgorithm[IO, Coordinate, EdgeBPR](
                 altPathsAlgorithm = systemOptimal.kspAlgorithm.build(),
                 selectionAlgorithm = rand.build(),
                 pathToMarginalFlowsFunction = systemOptimal.pathToMarginalFlowsFunction.build(),
@@ -130,7 +130,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
           }
       }
 
-      val ueRoutingAlgorithm: Option[RoutingAlgorithm[SyncIO, Coordinate, EdgeBPR]] =
+      val ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, Coordinate, EdgeBPR]] =
         config.routing.selfish match {
           case _: MATSimConfig.Routing.Selfish.MATSim =>
             None
@@ -144,7 +144,7 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
             }
         }
 
-      val experimentSyncIO: SyncIO[experiment.ExperimentState] =
+      val experimentIO: IO[experiment.ExperimentState] =
         config.algorithm match {
           case selfish @ MATSimConfig.Algorithm.Selfish(edgeUpdateFunction, _) =>
             // need a no-batching manager version here? or, a dummy for now?
@@ -177,25 +177,25 @@ case class MATSimExperimentRunner(matsimRunConfig: MATSimRunConfig, seed: Long) 
             )
         }
 
-      val result: experiment.ExperimentState = experimentSyncIO.unsafeRunSync()
-      experiment.close()
+      Try {
+        val result: experiment.ExperimentState = experimentIO.unsafeRunSync()
+        experiment.close()
 
-      result.error.foreach(e => logger.error(e))
-
-      // try to compute summary statistics from agentExperience files
-      val performanceMetricsResult = for {
-        overallMetrics     <- AgentBaseMetrics(config)
-        performanceMetrics <- AgentPerformanceMetrics.fromConfig(config)
-        batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
-        appendMode        = true
-        batchOverviewOutput <- Try { new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode)) }.toEither
-      } yield {
-        val parameterColumns: String = config.scenarioData.toCSVRow
-        batchOverviewOutput.append(s"$parameterColumns,$overallMetrics,$performanceMetrics\n")
-        batchOverviewOutput.close()
-      }
-
-      performanceMetricsResult match {
+        // try to compute summary statistics from agentExperience files
+        for {
+          overallMetrics     <- AgentBaseMetrics(config)
+          performanceMetrics <- AgentPerformanceMetrics.fromConfig(config)
+          batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
+          appendMode        = true
+          batchOverviewOutput <- Try {
+            new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode))
+          }.toEither
+        } yield {
+          val parameterColumns: String = config.scenarioData.toCSVRow
+          batchOverviewOutput.append(s"$parameterColumns,$overallMetrics,$performanceMetrics\n")
+          batchOverviewOutput.close()
+        }
+      }.toEither match {
         case Left(e) =>
           logger.error(s"${e.getCause} ${e.getMessage}\n${e.getStackTrace.mkString("Array(", ", ", ")")}")
           s"${e.getCause} ${e.getMessage}\n${e.getStackTrace.mkString("Array(", ", ", ")")}"

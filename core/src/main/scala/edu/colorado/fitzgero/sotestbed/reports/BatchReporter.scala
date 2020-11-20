@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.reports
 
 import java.io.{File, PrintWriter}
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
@@ -15,14 +15,14 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
   *
   * @param routingResultFile
   */
-class BatchReporter(routingResultFile: File) extends RoutingReports[SyncIO, Coordinate, EdgeBPR] {
+class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordinate, EdgeBPR] {
 
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
   printWriter.write(BatchReporter.Header + "\n")
 
   def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
-                    roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
-                    currentTime: SimTime): SyncIO[Unit] = SyncIO {
+                    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+                    currentTime: SimTime): IO[Unit] = IO {
 
     for {
       (batchId, batchResult) <- routingResult

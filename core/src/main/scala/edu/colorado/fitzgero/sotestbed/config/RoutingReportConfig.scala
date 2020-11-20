@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.config
 
 import java.nio.file.Path
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
@@ -17,19 +17,19 @@ sealed trait RoutingReportConfig
 object RoutingReportConfig {
   final case object Inactive extends RoutingReportConfig {
 
-    def build(): RoutingReports[SyncIO, Coordinate, EdgeBPR] = new NoRoutingReporter()
+    def build(): RoutingReports[IO, Coordinate, EdgeBPR] = new NoRoutingReporter()
   }
 
   final case object CompletePath extends RoutingReportConfig {
 
-    def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
+    def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[IO, Coordinate, EdgeBPR] = {
       val completePathFilePath: Path = outputDirectory.resolve("completePath.csv")
       new CompletePathAlternativesRoutingReport(completePathFilePath.toFile, costFunction)
     }
   }
   final case object AggregateData extends RoutingReportConfig {
 
-    def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
+    def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[IO, Coordinate, EdgeBPR] = {
       val aggregateDataFilePath: Path = outputDirectory.resolve("aggregateData.csv")
       new AggregateAgentDataRoutingReport(aggregateDataFilePath.toFile, costFunction)
     }
@@ -37,7 +37,7 @@ object RoutingReportConfig {
 
   final case object Batch extends RoutingReportConfig {
 
-    def build(outputDirectory: Path): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
+    def build(outputDirectory: Path): RoutingReports[IO, Coordinate, EdgeBPR] = {
       val batchLearningFilePath: Path = outputDirectory.resolve("batchData.csv")
       new BatchReporter(batchLearningFilePath.toFile)
     }
@@ -48,8 +48,8 @@ object RoutingReportConfig {
     def build(outputDirectory: Path,
               logCycle: SimTime,
               h3Resolution: Int,
-              network: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
-              costFunction: EdgeBPR => Cost): RoutingReports[SyncIO, Coordinate, EdgeBPR] = {
+              network: RoadNetwork[IO, Coordinate, EdgeBPR],
+              costFunction: EdgeBPR => Cost): RoutingReports[IO, Coordinate, EdgeBPR] = {
       AvgSpeedHeatmapReport(outputDirectory, logCycle, h3Resolution, network, costFunction)
     }
   }
@@ -60,11 +60,11 @@ object RoutingReportConfig {
       outputDirectory: Path,
       logCycle: SimTime,
       h3Resolution: Int,
-      network: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
+      network: RoadNetwork[IO, Coordinate, EdgeBPR],
       costFunction: EdgeBPR => Cost
-    ): RoutingReports[SyncIO, Coordinate, EdgeBPR] = new RoutingReports[SyncIO, Coordinate, EdgeBPR] {
+    ): RoutingReports[IO, Coordinate, EdgeBPR] = new RoutingReports[IO, Coordinate, EdgeBPR] {
 
-      val reporters: List[RoutingReports[SyncIO, Coordinate, EdgeBPR]] = List(
+      val reporters: List[RoutingReports[IO, Coordinate, EdgeBPR]] = List(
         CompletePath.build(outputDirectory, costFunction),
         AggregateData.build(outputDirectory, costFunction),
         Batch.build(outputDirectory),
@@ -72,8 +72,8 @@ object RoutingReportConfig {
       )
 
       def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
-                        roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
-                        currentTime: SimTime): SyncIO[Unit] = SyncIO {
+                        roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+                        currentTime: SimTime): IO[Unit] = IO {
         logger.debug(s"begin updating reports at time $currentTime")
         for {
           reporter <- reporters

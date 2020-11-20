@@ -44,9 +44,9 @@ object AgentExperienceBatchApp
                 for { row <- csvRows } { println(row) }
 
                 // print coords to stdout
-                val (ttCoordsAll, distCoordsAll) = AgentExperienceOps.toLaTeXPlots(allPlotData)
-                val (ttCoordsL, distCoordsL)     = AgentExperienceOps.toLaTeXPlots(losePlotData)
-                val (winCoords, loseCoords)      = AgentExperienceOps.toLaTeXWinLosePlot(allPlotData)
+                val (ttCoordsAll, distCoordsAll, _) = AgentExperienceOps.toLaTeXPlots(allPlotData)
+                val (ttCoordsL, distCoordsL, _)     = AgentExperienceOps.toLaTeXPlots(losePlotData)
+                val (winCoords, loseCoords)         = AgentExperienceOps.toLaTeXWinLosePlot(allPlotData)
                 println("\n LaTeX PLOTS\n")
                 println("\ntt-all")
                 println(ttCoordsAll)

@@ -3,7 +3,7 @@ package edu.colorado.fitzgero.sotestbed.reports
 import java.text.DecimalFormat
 
 import cats.data.OptionT
-import cats.effect.SyncIO
+import cats.effect.IO
 import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
@@ -66,8 +66,8 @@ object RouteReportOps {
     }
   }
 
-  def toCoords(roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR])(path: Path): List[Coordinate] = {
-    val asCoordList: List[OptionT[SyncIO, List[Coordinate]]] = for {
+  def toCoords(roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR])(path: Path): List[Coordinate] = {
+    val asCoordList: List[OptionT[IO, List[Coordinate]]] = for {
       (PathSegment(edgeId, _), edgeIdx) <- path.zipWithIndex
       if path.nonEmpty
     } yield
@@ -96,8 +96,8 @@ object RouteReportOps {
     }
   }
 
-  def pathDistance(roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR])(path: Path): Meters = {
-    val asMeters: List[OptionT[SyncIO, Meters]] = for {
+  def pathDistance(roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR])(path: Path): Meters = {
+    val asMeters: List[OptionT[IO, Meters]] = for {
       PathSegment(edgeId, _) <- path
       if path.nonEmpty
     } yield
@@ -112,8 +112,8 @@ object RouteReportOps {
     }
   }
 
-  def pathEstTravelTime(roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR], costFunction: EdgeBPR => Cost)(path: Path): Cost = {
-    val asLinkCosts: List[OptionT[SyncIO, Cost]] = for {
+  def pathEstTravelTime(roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR], costFunction: EdgeBPR => Cost)(path: Path): Cost = {
+    val asLinkCosts: List[OptionT[IO, Cost]] = for {
       PathSegment(edgeId, _) <- path
       if path.nonEmpty
     } yield
@@ -150,7 +150,7 @@ object RouteReportOps {
     result
   }
 
-  def dstCoord(roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR])(edgeId: EdgeId): Option[Coordinate] = {
+  def dstCoord(roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR])(edgeId: EdgeId): Option[Coordinate] = {
     for {
       dstVertexId <- roadNetwork.destination(edgeId).unsafeRunSync()
       dstVertex   <- roadNetwork.vertex(dstVertexId).unsafeRunSync()

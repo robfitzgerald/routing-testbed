@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
 import scala.util.Random
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
@@ -16,7 +16,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 
 /**
   * as the underlying MCTS library enforces/misuses IO, this class accomodates for that
-  * by enforcing the SyncIO dependency and being a proxy for the unsafe run context for
+  * by enforcing the IO dependency and being a proxy for the unsafe run context for
   * the MCTS library.
   *
   * @param altPathsAlgorithm
@@ -32,9 +32,9 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
   * @tparam V vertex type
   */
 class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
-  altPathsAlgorithm: KSPAlgorithm[SyncIO, V, EdgeBPR],
-  selectionAlgorithm: SelectionAlgorithm[SyncIO, V, EdgeBPR],
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[SyncIO, V, EdgeBPR],
+  altPathsAlgorithm: KSPAlgorithm[IO, V, EdgeBPR],
+  selectionAlgorithm: SelectionAlgorithm[IO, V, EdgeBPR],
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, V, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   kspFilterFunction: KSPFilterFunction,
@@ -44,26 +44,29 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
   seed: Long,
   timeLimit: RunTime = RunTime(31536000), // one year.
   limitAltsRuntime: Boolean = true,
-  limitSelectionRuntime: Boolean = true,
-) extends RoutingAlgorithm[SyncIO, V, EdgeBPR]
+  limitSelectionRuntime: Boolean = true
+) extends RoutingAlgorithm[IO, V, EdgeBPR]
     with LazyLogging {
 
   val rng: Random = new Random(seed)
 
-  final override def route(reqs: List[Request],
-                           activeAgentHistory: ActiveAgentHistory,
-                           roadNetwork: RoadNetwork[SyncIO, V, EdgeBPR]): SyncIO[RoutingAlgorithm.Result] = {
-
-    val startTime: RunTime = RunTime(System.currentTimeMillis)
-    val costFunction: EdgeBPR => Cost =
-      if (useFreeFlowNetworkCostsInPathSearch) e => marginalCostFunction(e)(Flow.Zero)
-      else e => marginalCostFunction(e)(e.flow)
+  final override def route(
+    reqs: List[Request],
+    activeAgentHistory: ActiveAgentHistory,
+    roadNetwork: RoadNetwork[IO, V, EdgeBPR]
+  ): IO[RoutingAlgorithm.Result] = {
 
     if (reqs.size < minBatchSize) {
       val ignoredAgents: String = reqs.map { _.agent }.mkString(",")
       logger.info(s"ignoring batch with less than the minimum size of $minBatchSize for agents: $ignoredAgents")
-      SyncIO { RoutingAlgorithm.Result() }
+      IO { RoutingAlgorithm.Result() }
     } else {
+
+      val startTime: RunTime = RunTime(System.currentTimeMillis)
+      val costFunction: EdgeBPR => Cost =
+        if (useFreeFlowNetworkCostsInPathSearch) e => marginalCostFunction(e)(Flow.Zero)
+        else e => marginalCostFunction(e)(e.flow)
+
       for {
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         endOfKspTime = RunTime(System.currentTimeMillis)
@@ -88,16 +91,23 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
             }
         }
 
-        val selectionResult: SelectionAlgorithm.Result =
+        val selectionResult: SelectionAlgorithm.SelectionAlgorithmResult =
           selectionAlgorithm
-            .selectRoutes(filteredAlts, roadNetwork, pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction)
+            .selectRoutes(
+              filteredAlts,
+              roadNetwork,
+              pathToMarginalFlowsFunction,
+              combineFlowsFunction,
+              marginalCostFunction
+            )
             .unsafeRunSync()
 
         // minimumAverageImprovement
         if (math.abs(selectionResult.averageTravelTimeDiff.value) < minimumAverageImprovement.value) {
           val ignoredAgents: String = reqs.map { _.agent }.mkString(",")
           logger.info(
-            s"ignoring batch with avg improvement ${selectionResult.averageTravelTimeDiff}s less than min required ${minimumAverageImprovement}s for agents: $ignoredAgents")
+            s"ignoring batch with avg improvement ${selectionResult.averageTravelTimeDiff}s less than min required ${minimumAverageImprovement}s for agents: $ignoredAgents"
+          )
           RoutingAlgorithm.Result()
         } else {
           val selectionResultWithKSPPaths: List[Response] =

@@ -1,7 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batchfilter
 
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 
 trait BatchFilterFunction {
 
@@ -12,5 +11,5 @@ trait BatchFilterFunction {
     * @param batches the batches with their (filtered) alts
     * @return the filtered result
     */
-  def filter(batches: List[Map[Request, List[Path]]]): List[Map[Request, List[Path]]]
+  def filter(batches: List[AltPathsAlgorithmResult]): List[AltPathsAlgorithmResult]
 }

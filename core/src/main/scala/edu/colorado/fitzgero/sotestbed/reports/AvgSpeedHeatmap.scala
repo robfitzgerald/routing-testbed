@@ -5,7 +5,7 @@ import java.nio.file.Path
 
 import scala.collection.JavaConverters._
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import com.uber.h3core.H3Core
 import com.uber.h3core.util.GeoCoord
@@ -28,7 +28,7 @@ case class AvgSpeedHeatmap(
     * @param currentTime the simulation time
     */
   def appendHeatmapWithTimeWindowedData(
-    currentNetworkState: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
+    currentNetworkState: RoadNetwork[IO, Coordinate, EdgeBPR],
     currentTime: SimTime
   ): Unit = {
     val allObservedSpeedsPerHex: Map[Long, List[Double]] =
@@ -85,7 +85,7 @@ object AvgSpeedHeatmap {
     * @return
     */
   def apply(
-    initialGraph: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
+    initialGraph: RoadNetwork[IO, Coordinate, EdgeBPR],
     loggingDirectory: Path,
     costFunction: EdgeBPR => Cost,
     h3Resolution: Int = 7, // 5 square kilometers per hex
@@ -121,10 +121,7 @@ object AvgSpeedHeatmap {
     * @param h3Core an instance of the H3 library
     * @return a mapping between EdgeIds and h3 hexes
     */
-  def createMapping(graph: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
-                    h3Resolution: Int,
-                    networkCRS: String,
-                    h3Core: H3Core): AvgSpeedHeatmap.H3Mapping = {
+  def createMapping(graph: RoadNetwork[IO, Coordinate, EdgeBPR], h3Resolution: Int, networkCRS: String, h3Core: H3Core): AvgSpeedHeatmap.H3Mapping = {
 
     val crsFactory: CRSFactory  = new CRSFactory()
     val ct: CoordinateTransform = new BasicCoordinateTransform(crsFactory.createFromName(networkCRS), crsFactory.createFromName("EPSG:4326"))

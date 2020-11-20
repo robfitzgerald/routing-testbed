@@ -1,7 +1,7 @@
 //package edu.colorado.fitzgero.sotestbed.algorithm.batching
 //
 //import cats.Monad
-//import cats.effect.SyncIO
+//import cats.effect.IO
 //
 //import com.typesafe.scalalogging.LazyLogging
 //import cse.bdlab.fitzgero.mcts.algorithm.samplingpolicy.banditfunction.UCT_PedrosoRei
@@ -51,7 +51,7 @@
 //
 //  class PedrosoReiMCTSBatchingSearch(
 //    alts: Map[Request, List[Path]],
-//    roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
+//    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
 //  ) extends PedrosoReiMCTS[Array[Int], Int]
 //      with LazyLogging { pedrosoRei =>
 //

@@ -19,8 +19,10 @@ trait BatchingFunction {
     * @param currentTime the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
-  def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-                                                activeRouteRequests: List[RouteRequestData],
-                                                currentTime: SimTime): F[Option[List[(String, List[Request])]]]
+  def updateBatchingStrategy[F[_]: Monad, V, E](
+    roadNetwork: RoadNetwork[F, V, E],
+    activeRouteRequests: List[RouteRequestData],
+    currentTime: SimTime
+  ): F[Option[List[(String, List[Request])]]]
 
 }

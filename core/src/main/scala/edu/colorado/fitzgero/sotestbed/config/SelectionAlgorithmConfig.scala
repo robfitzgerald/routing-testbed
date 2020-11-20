@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import cats.Monad
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.TrueShortestSelectionAlgorithm
@@ -39,7 +39,7 @@ object SelectionAlgorithmConfig {
       f"local-mcts-selection.minimum-average-batch-travel-improvement must be non-negative but found ${minimumAverageBatchTravelImprovement.value}%.2f"
     )
 
-    def build[V, E](): selection.SelectionAlgorithm[SyncIO, V, E] = {
+    def build[V, E](): selection.SelectionAlgorithm[IO, V, E] = {
       // todo:
       //  the LocalMCTS selection does mutable ops that need to run in an IO; just calling F a Monad here
       //  doesn't tell us that the F is a typeclass with unsafeRunSync or anything like that.
@@ -55,6 +55,6 @@ object SelectionAlgorithmConfig {
   }
 
   final case object TspSelection extends SelectionAlgorithmConfig {
-    def build[V, E](): selection.SelectionAlgorithm[SyncIO, V, E] = TrueShortestSelectionAlgorithm.apply[V, E]()
+    def build[V, E](): selection.SelectionAlgorithm[IO, V, E] = TrueShortestSelectionAlgorithm.apply[V, E]()
   }
 }

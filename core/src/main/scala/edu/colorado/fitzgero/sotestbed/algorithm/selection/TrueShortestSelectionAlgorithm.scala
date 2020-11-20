@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionCost
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
@@ -12,15 +12,17 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 /**
   * simply returns the true shortest paths for each agent
   */
-class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V, E] {
+class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[IO, V, E] {
 
-  def selectRoutes(alts: Map[Request, List[Path]],
-                   roadNetwork: RoadNetwork[SyncIO, V, E],
-                   pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
-                   combineFlowsFunction: Iterable[Flow] => Flow,
-                   marginalCostFunction: E => Flow => Cost): SyncIO[SelectionAlgorithm.Result] = {
+  def selectRoutes(
+    alts: Map[Request, List[Path]],
+    roadNetwork: RoadNetwork[IO, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost
+  ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
     if (alts.isEmpty) {
-      SyncIO { SelectionAlgorithm.Result() }
+      IO { SelectionAlgorithm.SelectionAlgorithmResult() }
     } else {
       val responses: List[Response] = {
         for {
@@ -40,13 +42,13 @@ class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[SyncIO, V,
       }.toList
 
       val totalCost: Cost = responses.map { _.costEstimate }.reduce { _ + _ }
-      val result = SelectionAlgorithm.Result(
+      val result = SelectionAlgorithm.SelectionAlgorithmResult(
         selectedRoutes = responses,
         estimatedCost = totalCost,
         selfishCost = totalCost
       )
 
-      SyncIO { result }
+      IO { result }
     }
   }
 }

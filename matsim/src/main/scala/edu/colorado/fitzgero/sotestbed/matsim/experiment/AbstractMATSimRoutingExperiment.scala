@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.experiment
 
 import java.io.File
 
-import cats.effect.{IO, SyncIO}
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment
@@ -16,19 +16,19 @@ import edu.colorado.fitzgero.sotestbed.reports.{CompletePathAlternativesRoutingR
 
 abstract class AbstractMATSimRoutingExperiment(
   finalReportFile: File,
-  routingReports: RoutingReports[SyncIO, Coordinate, EdgeBPR]
-) extends RoutingExperiment[SyncIO, Coordinate, EdgeBPR]
+  routingReports: RoutingReports[IO, Coordinate, EdgeBPR]
+) extends RoutingExperiment[IO, Coordinate, EdgeBPR]
     with MATSimSimulator {
 
-  val routingResultFileReport: RoutingReports[SyncIO, Coordinate, EdgeBPR] = routingReports
-  val finalReport: MATSimFinalReport                                       = new MATSimFinalReport(finalReportFile)
+  val routingResultFileReport: RoutingReports[IO, Coordinate, EdgeBPR] = routingReports
+  val finalReport: MATSimFinalReport                                   = new MATSimFinalReport(finalReportFile)
 
   override def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
-                             roadNetwork: RoadNetwork[SyncIO, Coordinate, EdgeBPR],
-                             currentSimTime: SimTime): SyncIO[Unit] =
+                             roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+                             currentSimTime: SimTime): IO[Unit] =
     routingResultFileReport.updateReports(routingResult, roadNetwork, currentSimTime)
 
   def close(): Unit = routingResultFileReport.close()
 
-  override def finishReports(simulator: Any): SyncIO[Unit] = SyncIO { () } // kinda deprecated for now...
+  override def finishReports(): IO[Unit] = IO { () } // kinda deprecated for now...
 }

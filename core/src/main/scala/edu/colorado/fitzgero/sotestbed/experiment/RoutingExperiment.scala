@@ -11,18 +11,32 @@ import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.Edge
 import edu.colorado.fitzgero.sotestbed.reports.Reports
-import edu.colorado.fitzgero.sotestbed.simulator.SimulatorOps
+import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 
-abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] with SimulatorOps[F] {
+abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] with HandCrankedSimulator[F] {
 
   final case class ExperimentState(
-    simulator: Simulator,
     roadNetwork: RoadNetwork[F, V, E],
     batchingManager: BatchingManager,
-    simulatorState: SimulatorOps.SimulatorState = SimulatorOps.SimulatorState.Uninitialized,
-    error: Option[String] = None
+    simulatorState: HandCrankedSimulator.SimulatorState = HandCrankedSimulator.SimulatorState.Uninitialized
   )
 
+  /**
+    * run an experiment using a hand-cranked simulator and a set of algorithms
+    *
+    * @param config
+    * @param roadNetwork
+    * @param ueRoutingAlgorithm
+    * @param soRoutingAlgorithm
+    * @param updateFunction
+    * @param batchingFunction
+    * @param batchWindow
+    * @param minBatchSize
+    * @param minRequestUpdateThreshold
+    * @param minNetworkUpdateThreshold
+    * @param doneRoutingAtSimTime
+    * @return
+    */
   final def run(
     config: SimulatorConfiguration,
     roadNetwork: RoadNetwork[F, V, E],
@@ -40,13 +54,13 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
     def _run(startState: ExperimentState): F[ExperimentState] = {
 
       val experiment: F[ExperimentState] = startState.iterateUntilM {
-        case ExperimentState(e0, r0, b0, s0, _) =>
+        case ExperimentState(r0, b0, s0) =>
           for {
-            e1              <- advance(e0) // should return updated simulator
-            currentSimTime  <- getCurrentSimTime(e1)
-            edges           <- getUpdatedEdges(e1)
+            _               <- advance() // should return updated simulator
+            currentSimTime  <- getCurrentSimTime
+            edges           <- getUpdatedEdges
             r1              <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
-            batchDataUpdate <- getAgentsNewlyAvailableForReplanning(e1)
+            batchDataUpdate <- getAgentsNewlyAvailableForReplanning
             (ueRequests, soUpdate) = batchDataUpdate.partition { BatchingManager.splitUEFromSO }
             ueResults <- RoutingExperiment.runUE(ueRoutingAlgorithm, ueRequests, r1)
             b1                  = b0.updateAgentBatchData(soUpdate)
@@ -60,42 +74,36 @@ abstract class RoutingExperiment[F[_]: Monad, V, E] extends Reports[F, V, E] wit
                 }
             }
             resolvedResults = BatchingManager.resolveRoutingResultBatches(ueResults +: soResults.map { _._2 })
-            e2 <- assignReplanningRoutes(e1, resolvedResults) // should return updated simulator
-            //            ueForReports = ueResults.responses.map { response =>
-            //              ("ue", response)
-            //            }
+            _ <- assignReplanningRoutes(resolvedResults)
             dataForReports = ("ue", ueResults) +: soResults
-            _              <- updateReports(dataForReports, r1, currentSimTime) // unit is ok here, no modifications to application state
-            simulatorState <- getState(e2)
+            _              <- updateReports(dataForReports, r1, currentSimTime)
+            simulatorState <- getState
           } yield {
-            simulatorState match {
-              case Right(newState) =>
-                ExperimentState(e2, r1, b2, newState)
-              case Left(error) =>
-                ExperimentState(e2, r1, b2, s0, Some { error })
-            }
+            ExperimentState(r1, b2, simulatorState)
           }
       } {
-        case ExperimentState(_, _, _, s, err) =>
+        case ExperimentState(_, _, s) =>
           // termination condition
-          s == SimulatorOps.SimulatorState.Finished || err.isDefined
+          s == HandCrankedSimulator.SimulatorState.Finished
       }
 
       for {
         finalState <- experiment
       } yield {
-        finishReports(finalState.simulator)
+        finishReports()
         finalState
       }
     }
 
-    for {
-      initialSimulatorState <- initializeSimulator(config)
-      initialExperimentState = ExperimentState(initialSimulatorState, roadNetwork, BatchingManager(batchWindow, minRequestUpdateThreshold))
+    val simulationResult = for {
+      _ <- initializeSimulator(config)
+      initialExperimentState = ExperimentState(roadNetwork, BatchingManager(batchWindow, minRequestUpdateThreshold))
       result <- _run(initialExperimentState)
     } yield {
       result
     }
+
+    simulationResult
   }
 }
 

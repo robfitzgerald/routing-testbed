@@ -5,7 +5,7 @@ import java.io.File
 import scala.util.Try
 import scala.xml.XML
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.util.XMLParserIgnoresDTD
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime}
@@ -18,19 +18,19 @@ case class LocalAdjacencyListFlowNetwork(
   verticesMap: Map[VertexId, Coordinate],
   adjList: Map[VertexId, Map[EdgeId, VertexId]],
   revAdjList: Map[VertexId, Map[EdgeId, VertexId]]
-) extends RoadNetwork[SyncIO, Coordinate, EdgeBPR] {
+) extends RoadNetwork[IO, Coordinate, EdgeBPR] {
 
-  def vertex(vertexId: VertexId): SyncIO[Option[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
+  def vertex(vertexId: VertexId): IO[Option[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = IO {
     verticesMap.get(vertexId).map { attr =>
       RoadNetwork.VertexIdAndAttribute(vertexId, attr)
     }
   }
 
-  def vertices: SyncIO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
+  def vertices: IO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = IO {
     verticesMap.map { case (vertexId, attr) => RoadNetwork.VertexIdAndAttribute(vertexId, attr) }.toList
   }
 
-  def vertices(vertexIds: List[VertexId]): SyncIO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = SyncIO {
+  def vertices(vertexIds: List[VertexId]): IO[List[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = IO {
     for {
       vertexId <- vertexIds
       attr     <- verticesMap.get(vertexId)
@@ -39,18 +39,18 @@ case class LocalAdjacencyListFlowNetwork(
     }
   }
 
-  def edge(edgeId: EdgeId): SyncIO[Option[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = SyncIO {
+  def edge(edgeId: EdgeId): IO[Option[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = IO {
     edgesMap.get(edgeId).map {
       case RoadNetwork.EdgeTriplet(_, _, _, attr) =>
         RoadNetwork.EdgeIdAndAttribute(edgeId, attr)
     }
   }
 
-  def edgeTriplets: SyncIO[List[RoadNetwork.EdgeTriplet[EdgeBPR]]] = SyncIO {
+  def edgeTriplets: IO[List[RoadNetwork.EdgeTriplet[EdgeBPR]]] = IO {
     edgesMap.values.toList
   }
 
-  def edges(edgeIds: List[EdgeId]): SyncIO[List[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = SyncIO {
+  def edges(edgeIds: List[EdgeId]): IO[List[RoadNetwork.EdgeIdAndAttribute[EdgeBPR]]] = IO {
     for {
       edgeId                                 <- edgeIds
       RoadNetwork.EdgeTriplet(_, _, _, attr) <- edgesMap.get(edgeId)
@@ -59,29 +59,29 @@ case class LocalAdjacencyListFlowNetwork(
     }
   }
 
-  def hasVertex(vertexId: VertexId): SyncIO[Boolean] = SyncIO { verticesMap.isDefinedAt(vertexId) }
+  def hasVertex(vertexId: VertexId): IO[Boolean] = IO { verticesMap.isDefinedAt(vertexId) }
 
-  def hasEdge(edgeId: EdgeId): SyncIO[Boolean] = SyncIO { edgesMap.isDefinedAt(edgeId) }
+  def hasEdge(edgeId: EdgeId): IO[Boolean] = IO { edgesMap.isDefinedAt(edgeId) }
 
-  def source(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edgesMap.get(edgeId).map { _.src } }
+  def source(edgeId: EdgeId): IO[Option[VertexId]] = IO { edgesMap.get(edgeId).map { _.src } }
 
-  def destination(edgeId: EdgeId): SyncIO[Option[VertexId]] = SyncIO { edgesMap.get(edgeId).map { _.dst } }
+  def destination(edgeId: EdgeId): IO[Option[VertexId]] = IO { edgesMap.get(edgeId).map { _.dst } }
 
-  def incidentEdges(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[EdgeId]] = SyncIO {
+  def incidentEdges(vertexId: VertexId, direction: TraverseDirection): IO[List[EdgeId]] = IO {
     direction match {
       case TraverseDirection.Forward => adjList.get(vertexId).toList.flatMap { _.keys }
       case TraverseDirection.Reverse => revAdjList.get(vertexId).toList.flatMap { _.keys }
     }
   }
 
-  def neighbors(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[VertexId]] = SyncIO {
+  def neighbors(vertexId: VertexId, direction: TraverseDirection): IO[List[VertexId]] = IO {
     direction match {
       case TraverseDirection.Forward => adjList.get(vertexId).toList.flatMap { _.values }
       case TraverseDirection.Reverse => revAdjList.get(vertexId).toList.flatMap { _.values }
     }
   }
 
-  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): SyncIO[List[RoadNetwork.EdgeTriplet[EdgeBPR]]] = SyncIO {
+  def incidentEdgeTriplets(vertexId: VertexId, direction: TraverseDirection): IO[List[RoadNetwork.EdgeTriplet[EdgeBPR]]] = IO {
     val lookup: Map[VertexId, Map[EdgeId, VertexId]] = direction match {
       case TraverseDirection.Forward => adjList
       case TraverseDirection.Reverse => revAdjList
@@ -95,9 +95,9 @@ case class LocalAdjacencyListFlowNetwork(
     }
   }
 
-  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (EdgeBPR, Flow) => EdgeBPR): SyncIO[LocalAdjacencyListFlowNetwork] =
-    if (flows.isEmpty) SyncIO { this } else
-      SyncIO {
+  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (EdgeBPR, Flow) => EdgeBPR): IO[LocalAdjacencyListFlowNetwork] =
+    if (flows.isEmpty) IO { this } else
+      IO {
 
         val flowsMap: Map[EdgeId, Flow] = flows.toMap
 

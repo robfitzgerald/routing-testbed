@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts
 
-import cats.effect.SyncIO
+import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import cse.bdlab.fitzgero.mcts.algorithm.samplingpolicy.banditfunction.UCT_PedrosoRei
@@ -20,22 +20,23 @@ class LocalMCTSSelectionAlgorithm[V, E](
   exhaustiveSearchSampleLimit: Int,
   minimumAverageBatchTravelImprovement: Cost, // todo: wire this value in to batch selection (positive time value here)
   terminationFunction: SelectionState => Boolean
-) extends SelectionAlgorithm[SyncIO, V, E]
+) extends SelectionAlgorithm[IO, V, E]
     with LazyLogging {
 
   var localSeed: Long = seed
 
   def selectRoutes(
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[SyncIO, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): SyncIO[SelectionAlgorithm.Result] = {
+  ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
-    if (alts.isEmpty) SyncIO {
-      SelectionAlgorithm.Result()
-    } else if (alts.size == 1) {
+    if (alts.isEmpty) IO {
+      SelectionAlgorithm.SelectionAlgorithmResult()
+    }
+    else if (alts.size == 1) {
 
       TrueShortestSelectionAlgorithm().selectRoutes(
         alts,
@@ -56,14 +57,18 @@ class LocalMCTSSelectionAlgorithm[V, E](
         )
         .map {
           case (result, tspCost) =>
-            val avgAlts: Double = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-            logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
+            val avgAlts: Double =
+              if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
             logger.info(
-              f"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost} AVG_DIFF ${(tspCost - result.estimatedCost).value / alts.size}%.2f")
+              f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH"
+            )
+            logger.info(
+              f"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost} AVG_DIFF ${(tspCost - result.estimatedCost).value / alts.size}%.2f"
+            )
             result
         }
     } else
-      SyncIO {
+      IO {
 
         // set up MCTS-based route selection solver
         val startTime: Long = System.currentTimeMillis
@@ -96,18 +101,20 @@ class LocalMCTSSelectionAlgorithm[V, E](
         }.toList
 
         // some logging
-        val avgAlts: Double          = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+        val avgAlts: Double =
+          if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
         val travelTimeDiff: Cost     = bestCost - trueShortestPathsCost
         val meanTravelTimeDiff: Cost = Cost((bestCost - trueShortestPathsCost).value / alts.size)
 
         logger.info(f"AGENTS: ${responses.length} AVG_ALTS: $avgAlts%.2f SAMPLES: $samples")
         logger.info(
-          f"COST_EST: BEST $bestCost, SELFISH $trueShortestPathsCost, DIFF ${travelTimeDiff.value}%.2f AVG_DIFF ${meanTravelTimeDiff.value}%.2f")
+          f"COST_EST: BEST $bestCost, SELFISH $trueShortestPathsCost, DIFF ${travelTimeDiff.value}%.2f AVG_DIFF ${meanTravelTimeDiff.value}%.2f"
+        )
 
         // update local seed
         this.localSeed = mcts.random.nextInt(Int.MaxValue)
 
-        val result = SelectionAlgorithm.Result(
+        val result = SelectionAlgorithm.SelectionAlgorithmResult(
           selectedRoutes = responses,
           estimatedCost = bestCost,
           selfishCost = trueShortestPathsCost,
@@ -120,15 +127,16 @@ class LocalMCTSSelectionAlgorithm[V, E](
       }
   }
 
-  class PedrosoReiMCTSRouting(alts: Map[Request, List[Path]],
-                              roadNetwork: RoadNetwork[SyncIO, V, E],
-                              pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
-                              combineFlowsFunction: Iterable[Flow] => Flow,
-                              marginalCostFunction: E => Flow => Cost,
-                              terminationFunction: SelectionAlgorithm.SelectionState => Boolean,
-                              seed: Long,
-                              startTime: Long)
-      extends PedrosoReiMCTS[Array[Int], Int]
+  class PedrosoReiMCTSRouting(
+    alts: Map[Request, List[Path]],
+    roadNetwork: RoadNetwork[IO, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost,
+    terminationFunction: SelectionAlgorithm.SelectionState => Boolean,
+    seed: Long,
+    startTime: Long
+  ) extends PedrosoReiMCTS[Array[Int], Int]
       with Serializable { pedrosoRei =>
     // state? a list of selected alternatives (indices) : List[Int] (in reverse order would be smart)
     // action: another index : Int
@@ -158,17 +166,19 @@ class LocalMCTSSelectionAlgorithm[V, E](
     override var globalWorstSimulation: BigDecimal   = BigDecimal(trueShortestPathSelectionCost.overallCost.value)
     override var bestSolution: Array[Int]            = trueShortestPaths
 
-    val searchSpaceSize: BigDecimal = altsInternal.map { paths =>
-      BigDecimal(paths.length)
-    }.product
+    val searchSpaceSize: BigDecimal = altsInternal.map { paths => BigDecimal(paths.length) }.product
 
     var bestAgentCosts: List[Cost] = trueShortestPathSelectionCost.agentPathCosts
 
-    override def getSearchCoefficients(tree: MCTreePedrosoReiReward[Array[Int], Int]): UCTScalarPedrosoReiReward.Coefficients = {
+    override def getSearchCoefficients(
+      tree: MCTreePedrosoReiReward[Array[Int], Int]
+    ): UCTScalarPedrosoReiReward.Coefficients = {
       UCTScalarPedrosoReiReward.Coefficients(1.0 / math.sqrt(2), globalBestSimulation, globalWorstSimulation)
     }
 
-    override def getDecisionCoefficients(tree: MCTreePedrosoReiReward[Array[Int], Int]): UCTScalarPedrosoReiReward.Coefficients = {
+    override def getDecisionCoefficients(
+      tree: MCTreePedrosoReiReward[Array[Int], Int]
+    ): UCTScalarPedrosoReiReward.Coefficients = {
       UCTScalarPedrosoReiReward.Coefficients(0, globalBestSimulation, globalWorstSimulation)
     }
 
@@ -211,7 +221,8 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
     override def selectAction(actions: Seq[Int]): Option[Int] = actionSelection.selectAction(actions)
 
-    override protected val terminationCriterion: TerminationCriterion[Array[Int], Int, MCTreePedrosoReiReward[Array[Int], Int]] =
+    override protected val terminationCriterion
+      : TerminationCriterion[Array[Int], Int, MCTreePedrosoReiReward[Array[Int], Int]] =
       new TerminationCriterion[Array[Int], Int, MCTreePedrosoReiReward[Array[Int], Int]] {
 
         def init(): Unit = ()
@@ -246,7 +257,8 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
       }
 
-    override protected def actionSelection: ActionSelection[Array[Int], Int] = RandomSelection(random, generatePossibleActions)
+    override protected def actionSelection: ActionSelection[Array[Int], Int] =
+      RandomSelection(random, generatePossibleActions)
 
     override val random: RandomGenerator = new BuiltInRandomGenerator(Some { seed })
 

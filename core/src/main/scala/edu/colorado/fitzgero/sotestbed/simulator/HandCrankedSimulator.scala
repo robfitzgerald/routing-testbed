@@ -11,8 +11,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
   *
   * @tparam F a context for the computation (such as cats.effect.IO)
   */
-trait SimulatorOps[F[_]] {
-  type Simulator
+trait HandCrankedSimulator[F[_]] {
   type SimulatorConfiguration
 
   /**
@@ -21,60 +20,54 @@ trait SimulatorOps[F[_]] {
     * @param config configuration relevant to this simulator
     * @return the simulator state object
     */
-  def initializeSimulator(config: SimulatorConfiguration): F[Simulator]
+  def initializeSimulator(config: SimulatorConfiguration): F[Unit]
 
   /**
     * cranks the simulation forward
     *
-    * @param simulator the simulator state object
     * @return simulator state after one crank
     */
-  def advance(simulator: Simulator): F[Simulator]
+  def advance(): F[Unit]
 
   /**
     * captures the link flow deltas which occurred last time advance was called
     *
-    * @param simulator the simulator state object
     * @return a list of edge id and marginal flow tuples
     */
-  def getUpdatedEdges(simulator: Simulator): F[List[(EdgeId, Flow)]]
+  def getUpdatedEdges: F[List[(EdgeId, Flow)]]
 
   /**
     * produces all routing requests which have recently become available for replanning
     * so that they may be considered by the BatchingManager for replanning assignment.
     *
-    * @param simulator the simulator state object
     * @return a list of request objects translated into the routing framework
     */
-  def getAgentsNewlyAvailableForReplanning(simulator: Simulator): F[List[AgentBatchData]]
+  def getAgentsNewlyAvailableForReplanning: F[List[AgentBatchData]]
 
   /**
     * takes routing responses and applies them to the associated agents in the simulation
     *
-    * @param simulator the simulator state object
     * @param xs a list of responses
     * @return the simulator state object
     */
-  def assignReplanningRoutes(simulator: Simulator, xs: List[Response]): F[Simulator]
+  def assignReplanningRoutes(xs: List[Response]): F[Unit]
 
   /**
     * returns one of the discrete simulation phases that this simulation is in
     *
-    * @param simulator the simulator state object
-    * @return either an error message, or, a [[SimulatorOps.SimulatorState]] object
+    * @return either an error message, or, a [[HandCrankedSimulator.SimulatorState]] object
     */
-  def getState(simulator: Simulator): F[Either[String, SimulatorOps.SimulatorState]]
+  def getState: F[HandCrankedSimulator.SimulatorState]
 
   /**
     * get a common time representation of the current simulation state
     *
-    * @param simulator the simulator state object
     * @return a [[SimTime]] object representing time in seconds
     */
-  def getCurrentSimTime(simulator: Simulator): F[SimTime]
+  def getCurrentSimTime: F[SimTime]
 }
 
-object SimulatorOps {
+object HandCrankedSimulator {
 
   sealed trait SimulatorState
 
