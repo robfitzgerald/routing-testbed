@@ -12,6 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import cats.implicits._
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 
 /**
@@ -20,14 +21,17 @@ import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunne
   * @param batchingFunction applies a means to group requests
   * @param batchFilterFunction removes batches based on a batch filtering heuristic
   * @param selectionRunner combinatorial search
+  * @param minBatchSize ignore batches less than this size. this value should be a function of
+  *                     the alt paths algorithm "k" and the batch filter function "minSearchSpaceSize" parameters
   * @tparam V coordinate type
   */
 case class RoutingAlgorithm2[V](
   altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, V, EdgeBPR],
   batchingFunction: BatchingFunction,
   batchFilterFunction: BatchFilterFunction,
-  selectionRunner: SelectionRunner[V]
-) {
+  selectionRunner: SelectionRunner[V],
+  minBatchSize: Int
+) extends LazyLogging {
 
   /**
     * performs all steps related to solving SO route plans
@@ -45,36 +49,94 @@ case class RoutingAlgorithm2[V](
     batchingManager: BatchingManager
   ): IO[List[(String, RoutingAlgorithm.Result)]] = {
 
-    val result: IO[IO[List[(String, RoutingAlgorithm.Result)]]] = for {
-      routeRequestsOpt <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
-    } yield {
-      routeRequestsOpt match {
-        case None =>
-          IO.pure(List.empty)
-        case Some(routeRequests) =>
-          val altPathsResult: IO[List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]] =
-            routeRequests.traverse {
-              case (batchId, batch) =>
-                for {
-                  res <- altPathsAlgorithmRunner.run(batchId, batch, batchingManager.storedHistory, roadNetwork)
-                } yield res
+    if (requests.isEmpty) {
+      IO.pure(List.empty)
+    } else {
+      logger.info("beginning SO routing alorithm")
+
+      val result: IO[IO[List[(String, RoutingAlgorithm.Result)]]] = for {
+        routeRequestsOpt <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
+      } yield {
+        logger.info(s"request batching computed via ${batchingFunction.getClass.getSimpleName}")
+        routeRequestsOpt match {
+          case None =>
+            logger.info("no viable requests after applying batching function")
+            IO.pure(List.empty)
+          case Some(routeRequests) =>
+            // remove route requests which we know do not meet the batch size requirements of our batch filter function
+            val preFilteredRouteRequests = routeRequests.filter {
+              case (_, reqs) => reqs.lengthCompare(minBatchSize) >= 0
             }
-          for {
-            batchAlts <- altPathsResult
-            batchAltsFiltered = batchFilterFunction.filter(batchAlts)
-            soResults <- batchAltsFiltered.traverse { r => selectionRunner.run(r.batchId, r.alts, roadNetwork) }
-          } yield {
-            // convert to RoutingAlgorithm.Result.. requires a Map[BatchId, T] for T = {AltsResult, SelectionResult}
-            RoutingAlgorithm2.matchAltBatchesWithSelectionBatches(batchAltsFiltered, soResults, batchingManager)
-          }
+
+            val altPathsResult: IO[List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]] =
+              preFilteredRouteRequests.traverse {
+                case (batchId, batch) =>
+                  for {
+                    res <- altPathsAlgorithmRunner.run(batchId, batch, batchingManager.storedHistory, roadNetwork)
+                  } yield res
+              }
+            for {
+              batchAlts <- altPathsResult
+              _ <- IO.pure(
+                logger.info(
+                  s"alt paths computed via ${altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName}"
+                )
+              )
+              batchAltsFiltered = batchFilterFunction.filter(batchAlts)
+              _ <- IO.pure(
+                logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
+              )
+              soResults <- batchAltsFiltered.traverse { r => selectionRunner.run(r.batchId, r.alts, roadNetwork) }
+              _ <- IO.pure(
+                logger.info(
+                  s"selection algorithm completed via ${selectionRunner.selectionAlgorithm.getClass.getSimpleName}"
+                )
+              )
+            } yield {
+              // re-combine data by batch id and package as a RoutingAlgorithm.Result
+              RoutingAlgorithm2.matchAltBatchesWithSelectionBatches(batchAltsFiltered, soResults, batchingManager)
+            }
+        }
       }
+
+      result.flatten
     }
 
-    result.flatten
   }
 }
 
 object RoutingAlgorithm2 {
+
+  /**
+    * constructor which computes the minBatchSize
+    *
+    * @param altPathsAlgorithmRunner an algorithm that computes alt paths for a batch
+    * @param batchingFunction applies a means to group requests
+    * @param batchFilterFunction removes batches based on a batch filtering heuristic
+    * @param selectionRunner combinatorial search
+    * @param k number of alt paths as a parameter for the alt paths runner
+    * @param minSearchSpaceSize ignore batches which cannot produce at least this many combinations
+    * @tparam V coordinate type
+    * @return the Routing Algorithm, v2
+    */
+  def apply[V](
+    altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, V, EdgeBPR],
+    batchingFunction: BatchingFunction,
+    batchFilterFunction: BatchFilterFunction,
+    selectionRunner: SelectionRunner[V],
+    k: Int,
+    minSearchSpaceSize: Int
+  ): RoutingAlgorithm2[V] = {
+    // find log of minSearchSpaceSize in the base of k
+    val minBatchSize: Int = math.ceil(math.log(minSearchSpaceSize.toDouble) / math.log(k)).toInt
+    RoutingAlgorithm2(
+      altPathsAlgorithmRunner,
+      batchingFunction,
+      batchFilterFunction,
+      selectionRunner,
+      minBatchSize
+    )
+  }
 
   /**
     * helper function to gather all results back together as a routing result for a batch

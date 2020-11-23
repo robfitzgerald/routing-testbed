@@ -17,7 +17,7 @@ object BatchDataOps {
       )
       val trialNumbers: List[Int] = (0 until trials).toList
       val result = trialNumbers.foldLeft(Acc()) { (acc, trial) =>
-        val batchDataFilePath = baseDir.resolve(experimentName).resolve(trial.toString).resolve("batchLearning.csv")
+        val batchDataFilePath = baseDir.resolve(experimentName).resolve(trial.toString).resolve("batchData.csv")
         BatchMetrics.fromFile(batchDataFilePath.toFile) match {
           case Left(error) =>
             acc.copy(errors = error +: acc.errors)

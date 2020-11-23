@@ -43,11 +43,10 @@ final case class FilterByTopKRanking(
       val ranksMsg = filtered
         .map { case (r, b) => f"(id=${b.batchId}:k=${b.alts.size}:${r * 100.0}%.1f%%)" }
         .mkString("{", ", ", "}")
-      val msssMsg = minBatchSearchSpace.map(n => s" and min search space size $n").getOrElse("")
       val msssMsg2 =
         minBatchSearchSpace.map(n => s" down to $rankCount due to search space size, and finally").getOrElse("")
       logger.info(s"input batches with overlap percentage: $inRanks")
-      logger.info(s"filtered $inCount batches$msssMsg2 down to $outCount due to top-$k ranking$msssMsg:\n$ranksMsg")
+      logger.info(s"filtered $inCount batches$msssMsg2 down to $outCount due to top-$k ranking:\n$ranksMsg")
     }
 
     val result = filtered.map { _._2 }

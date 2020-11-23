@@ -15,6 +15,7 @@ import edu.colorado.fitzgero.sotestbed.reports._
 sealed trait RoutingReportConfig
 
 object RoutingReportConfig {
+
   final case object Inactive extends RoutingReportConfig {
 
     def build(): RoutingReports[IO, Coordinate, EdgeBPR] = new NoRoutingReporter()
@@ -27,6 +28,7 @@ object RoutingReportConfig {
       new CompletePathAlternativesRoutingReport(completePathFilePath.toFile, costFunction)
     }
   }
+
   final case object AggregateData extends RoutingReportConfig {
 
     def build(outputDirectory: Path, costFunction: EdgeBPR => Cost): RoutingReports[IO, Coordinate, EdgeBPR] = {
@@ -45,12 +47,49 @@ object RoutingReportConfig {
 
   final case object Heatmap extends RoutingReportConfig {
 
-    def build(outputDirectory: Path,
-              logCycle: SimTime,
-              h3Resolution: Int,
-              network: RoadNetwork[IO, Coordinate, EdgeBPR],
-              costFunction: EdgeBPR => Cost): RoutingReports[IO, Coordinate, EdgeBPR] = {
+    def build(
+      outputDirectory: Path,
+      logCycle: SimTime,
+      h3Resolution: Int,
+      network: RoadNetwork[IO, Coordinate, EdgeBPR],
+      costFunction: EdgeBPR => Cost
+    ): RoutingReports[IO, Coordinate, EdgeBPR] = {
       AvgSpeedHeatmapReport(outputDirectory, logCycle, h3Resolution, network, costFunction)
+    }
+  }
+
+  final case object AllAggregate extends RoutingReportConfig with LazyLogging {
+
+    def build(
+      outputDirectory: Path,
+      logCycle: SimTime,
+      h3Resolution: Int,
+      network: RoadNetwork[IO, Coordinate, EdgeBPR],
+      costFunction: EdgeBPR => Cost
+    ): RoutingReports[IO, Coordinate, EdgeBPR] = new RoutingReports[IO, Coordinate, EdgeBPR] {
+
+      val reporters: List[RoutingReports[IO, Coordinate, EdgeBPR]] = List(
+        AggregateData.build(outputDirectory, costFunction),
+        Batch.build(outputDirectory),
+        Heatmap.build(outputDirectory, logCycle, h3Resolution, network, costFunction)
+      )
+
+      def updateReports(
+        routingResult: List[(String, RoutingAlgorithm.Result)],
+        roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+        currentTime: SimTime
+      ): IO[Unit] = IO {
+        logger.debug(s"begin updating reports at time $currentTime")
+        for {
+          reporter <- reporters
+        } {
+          reporter.updateReports(routingResult, roadNetwork, currentTime).unsafeRunSync()
+          logger.debug(s"update reporter ${reporter.getClass.getName}")
+        }
+        logger.debug(s"finished updating reports at time $currentTime")
+      }
+
+      def close(): Unit = for { reporter <- reporters } { reporter.close() }
     }
   }
 
@@ -71,9 +110,11 @@ object RoutingReportConfig {
         Heatmap.build(outputDirectory, logCycle, h3Resolution, network, costFunction)
       )
 
-      def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
-                        roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-                        currentTime: SimTime): IO[Unit] = IO {
+      def updateReports(
+        routingResult: List[(String, RoutingAlgorithm.Result)],
+        roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+        currentTime: SimTime
+      ): IO[Unit] = IO {
         logger.debug(s"begin updating reports at time $currentTime")
         for {
           reporter <- reporters

@@ -34,7 +34,10 @@ import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.{
+  toDoubleWithMinimum,
+  Coordinate
+}
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 
 case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
@@ -61,8 +64,9 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
 
       Files.createDirectories(config.experimentDirectory)
 
-      // used by reporting logic
-      val edgeFlowCostFunction: EdgeBPR => Cost = {
+      // build some cost functions
+      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) => edgeBPR.freeFlowCost
+      val nonMarginalCostFunction: EdgeBPR => Cost = {
         val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
         edgeBPR: EdgeBPR => marginalCostFn(edgeBPR)(Flow.Zero)
       }
@@ -73,18 +77,26 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
           case RoutingReportConfig.Inactive =>
             RoutingReportConfig.Inactive.build()
           case RoutingReportConfig.AggregateData =>
-            RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, edgeFlowCostFunction)
+            RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, nonMarginalCostFunction)
           case RoutingReportConfig.Batch =>
             RoutingReportConfig.Batch.build(config.experimentLoggingDirectory)
           case RoutingReportConfig.CompletePath =>
-            RoutingReportConfig.CompletePath.build(config.experimentLoggingDirectory, edgeFlowCostFunction)
+            RoutingReportConfig.CompletePath.build(config.experimentLoggingDirectory, nonMarginalCostFunction)
           case RoutingReportConfig.Heatmap =>
             RoutingReportConfig.Heatmap.build(
               config.experimentLoggingDirectory,
               SimTime.minute(config.io.heatmapLogCycleMinutes),
               config.io.heatmapH3Resolution,
               network,
-              edgeFlowCostFunction
+              nonMarginalCostFunction
+            )
+          case RoutingReportConfig.AllAggregate =>
+            RoutingReportConfig.AllAggregate.build(
+              config.experimentLoggingDirectory,
+              SimTime.minute(config.io.heatmapLogCycleMinutes),
+              config.io.heatmapH3Resolution,
+              network,
+              nonMarginalCostFunction
             )
           case RoutingReportConfig.AllReporting =>
             RoutingReportConfig.AllReporting.build(
@@ -92,7 +104,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
               SimTime.minute(config.io.heatmapLogCycleMinutes),
               config.io.heatmapH3Resolution,
               network,
-              edgeFlowCostFunction
+              nonMarginalCostFunction
             )
         }
 
@@ -124,8 +136,8 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
               AltPathsAlgorithmRunner(
                 altPathsAlgorithm = so.kspAlgorithm.build(),
                 kspFilterFunction = so.kspFilterFunction.build(),
-                costFunction = edgeFlowCostFunction,
-                marginalCostFunction = so.marginalCostFunction.build(),
+                costFunction = nonMarginalCostFunction,
+                freeFlowCostFunction = freeFlowCostFunction,
                 useFreeFlowNetworkCostsInPathSearch = so.useFreeFlowNetworkCostsInPathSearch,
                 seed = seed
               )
@@ -149,8 +161,10 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
             val alg = RoutingAlgorithm2(
               altPathsAlgorithmRunner = ksp,
               batchingFunction = so.batchingFunction.build(),
-              batchFilterFunction = so.batchFilterFunction.build(),
-              selectionRunner = sel
+              batchFilterFunction = so.batchFilterFunction.build(Some(config.routing.minBatchSearchSpace)),
+              selectionRunner = sel,
+              k = so.kspAlgorithm.k,
+              minSearchSpaceSize = config.routing.minBatchSearchSpace
             )
             Some(alg)
           case _: Algorithm.Selfish =>

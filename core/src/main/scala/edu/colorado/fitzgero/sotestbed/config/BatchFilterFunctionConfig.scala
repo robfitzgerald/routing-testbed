@@ -9,7 +9,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.{
 
 sealed trait BatchFilterFunctionConfig {
 
-  def build(): BatchFilterFunction
+  def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction
 }
 
 object BatchFilterFunctionConfig {
@@ -19,7 +19,7 @@ object BatchFilterFunctionConfig {
     */
   final case object NoFilter extends BatchFilterFunctionConfig {
 
-    def build(): BatchFilterFunction = new BatchFilterFunction {
+    def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction = new BatchFilterFunction {
       def filter(batches: List[AltPathsAlgorithmResult]): List[AltPathsAlgorithmResult] = batches
     }
   }
@@ -32,11 +32,10 @@ object BatchFilterFunctionConfig {
     */
   final case class OverlapThresholdBatchFilter(
     threshold: Double,
-    minBatchSearchSpace: Option[Int],
     batchOverlapFunction: BatchOverlapFunctionConfig
   ) extends BatchFilterFunctionConfig {
 
-    def build(): BatchFilterFunction =
+    def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction =
       FilterByOverlapThreshold(threshold, minBatchSearchSpace, batchOverlapFunction.build())
   }
 
@@ -48,11 +47,10 @@ object BatchFilterFunctionConfig {
     */
   final case class TopKRankingBatchFilter(
     k: Int,
-    minBatchSearchSpace: Option[Int],
     batchOverlapFunction: BatchOverlapFunctionConfig
   ) extends BatchFilterFunctionConfig {
 
-    def build(): BatchFilterFunction =
+    def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction =
       FilterByTopKRanking(k, minBatchSearchSpace, batchOverlapFunction.build())
   }
 }
