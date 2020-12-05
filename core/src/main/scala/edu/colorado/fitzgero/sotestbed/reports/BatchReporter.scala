@@ -20,9 +20,11 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
   printWriter.write(BatchReporter.Header + "\n")
 
-  def updateReports(routingResult: List[(String, RoutingAlgorithm.Result)],
-                    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-                    currentTime: SimTime): IO[Unit] = IO {
+  def updateReports(
+    routingResult: List[(String, RoutingAlgorithm.Result)],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    currentTime: SimTime
+  ): IO[Unit] = IO {
 
     for {
       (batchId, batchResult) <- routingResult
@@ -32,7 +34,7 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
       val totalAlts: Int                 = batchResult.kspResult.values.map { _.size }.sum
       val avgAlts: Double                = if (batchResult.kspResult.nonEmpty) totalAlts.toDouble / batchResult.kspResult.size else 0.0
       val assignedOptimalRoute: Double   = batchResult.responses.count { _.pathIndex != 0 }.toDouble
-      val proportionOptimalRoute: Double = assignedOptimalRoute / batchSize
+      val proportionOptimalRoute: Double = if (batchSize == 0) 0.0 else assignedOptimalRoute / batchSize
       val meanTravelTimeDiff: Double     = batchResult.meanTravelTimeDiff.value
       val samples: Int                   = batchResult.samples
       val searchSpaceSize: BigDecimal = if (batchResult.kspResult.nonEmpty) batchResult.kspResult.values.map { alts =>
@@ -48,7 +50,11 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
         samples = samples,
         searchSpaceSize = searchSpaceSize,
         optimalProportion = proportionOptimalRoute,
+        selfishCost = batchResult.selfishCost.value,
+        optimalCost = batchResult.optimalCost.value,
+        travelTimeDiff = batchResult.travelTimeDiff.value,
         meanTravelTimeDiff = meanTravelTimeDiff,
+        travelTimeDiffPercent = batchResult.percentTTDiff
       )
 
       printWriter.write(f"${row.toString}\n")
@@ -62,7 +68,9 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
 
 object BatchReporter {
 
-  val Header: String = "time,batch_id,batch_size,avgAltPathsPerAgent,searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent"
+  val Header: String =
+    "time,batch_id,batch_size,avgAltPathsPerAgent,searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent,,ttSelfish,ttOptimal,ttDiff,ttMeanDiff,ttDiffPercent"
+
   final case class Row(
     time: SimTime,
     batchId: String,
@@ -70,16 +78,21 @@ object BatchReporter {
     avgAlts: Double,
     samples: Int,
     searchSpaceSize: BigDecimal,
-    optimalProportion: Double = 0.0,
-    meanTravelTimeDiff: Double = 0.0,
+    optimalProportion: Double,
+    selfishCost: Double,
+    optimalCost: Double,
+    travelTimeDiff: Double,
+    meanTravelTimeDiff: Double,
+    travelTimeDiffPercent: String
   ) {
 
     override def toString: String = {
-      val spaceExploredRatio: Double  = if (searchSpaceSize != BigDecimal(0)) (BigDecimal(samples) / searchSpaceSize).toDouble * 100.0 else 0.0
+      val spaceExploredRatio: Double =
+        if (searchSpaceSize != BigDecimal(0)) (BigDecimal(samples) / searchSpaceSize).toDouble * 100.0 else 0.0
       val spaceExplored: String       = f"$spaceExploredRatio%.9f%%"
       val soAssignmentPercent: String = f"${optimalProportion * 100.0}%.2f%%"
 
-      f"$time,$batchId,$size,$avgAlts%.2f,$samples,$searchSpaceSize,$spaceExplored,$soAssignmentPercent"
+      f"$time,$batchId,$size,$avgAlts%.2f,$samples,$searchSpaceSize,$spaceExplored,$soAssignmentPercent,,$selfishCost%.2f,$optimalCost%.2f,$travelTimeDiff%.2f,$meanTravelTimeDiff%.2f,$travelTimeDiffPercent"
     }
   }
 }

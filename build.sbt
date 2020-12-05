@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.3.0"
+val packageVersion = "2.3.1"
 version := packageVersion
 val sVersion = "2.12.10"
 

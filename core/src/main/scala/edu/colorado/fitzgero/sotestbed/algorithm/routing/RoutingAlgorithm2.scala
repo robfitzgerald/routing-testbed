@@ -1,5 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
+import cats.Monad
+import cats.implicits._
 import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
@@ -7,13 +9,14 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner
-import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
 
 /**
   *
@@ -54,6 +57,9 @@ case class RoutingAlgorithm2[V](
     } else {
       logger.info("beginning SO routing alorithm")
 
+      val currentPathFn: String => IO[Path] =
+        RoutingAlgorithm2.getCurrentPath(batchingManager, roadNetwork, altPathsAlgorithmRunner.costFunction)
+
       val result: IO[IO[List[(String, RoutingAlgorithm.Result)]]] = for {
         routeRequestsOpt <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
       } yield {
@@ -86,7 +92,8 @@ case class RoutingAlgorithm2[V](
               _ <- IO.pure(
                 logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
               )
-              soResults <- batchAltsFiltered.traverse { r => selectionRunner.run(r.batchId, r.alts, roadNetwork) }
+              selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
+              soResults               <- selectionRunnerRequests.traverse { r => selectionRunner.run(r, roadNetwork) }
               _ <- IO.pure(
                 logger.info(
                   s"selection algorithm completed via ${selectionRunner.selectionAlgorithm.getClass.getSimpleName}"
@@ -167,6 +174,8 @@ object RoutingAlgorithm2 {
         agentHistory = batchingManager.storedHistory,
         kspRuntime = alts.runtimeMilliseconds,
         selectionRuntime = selectionResult.runtime,
+        selfishCost = selectionResult.selection.selfishCost,
+        optimalCost = selectionResult.selection.estimatedCost,
         travelTimeDiff = selectionResult.selection.travelTimeDiff,
         meanTravelTimeDiff = selectionResult.selection.averageTravelTimeDiff,
         samples = selectionResult.selection.samples.value
@@ -174,5 +183,58 @@ object RoutingAlgorithm2 {
       (batchId, routingResult)
     }
     result
+  }
+
+  /**
+    * grab the current path for this agentId, using the current road network state.
+    *
+    * @param batchingManager stores historical path data for active agents
+    * @param roadNetwork the current road network state
+    * @param costFunction edge cost function
+    * @param agentId the agent id to find their current path
+    * @tparam V vertex type
+    * @return the requested path inside an effect type
+    */
+  def getCurrentPath[V](
+    batchingManager: BatchingManager,
+    roadNetwork: RoadNetwork[IO, V, EdgeBPR],
+    costFunction: EdgeBPR => Cost
+  )(agentId: String): IO[List[PathSegment]] = {
+    val result = for {
+      mostRecentOption <- IO.pure(batchingManager.storedHistory.getMostRecentDataFor(agentId))
+    } yield {
+      mostRecentOption match {
+        case None =>
+          IO.pure(List.empty[PathSegment])
+        case Some(mostRecent) =>
+          val inner = for {
+            edges <- roadNetwork.edges(mostRecent.remainingRoute.map(_.edgeId))
+          } yield {
+            edges.map(e => PathSegment(e.edgeId, costFunction(e.attribute)))
+          }
+          inner
+      }
+    }
+    result.flatten
+  }
+
+  /**
+    * for all batches, construct SelectionRunner request objects
+    *
+    * @param batchAltsFiltered the final set of alt paths we are considering (for the final set of
+    *                          batches we are considering)
+    * @param currentPathFn a lookup function that gets the most recent path data for an agent
+    * @tparam V vertex type
+    * @return a list of selection runner requests wrapped in the effect of calling the road network
+    */
+  def getCurrentPaths[V](
+    batchAltsFiltered: List[AltPathsAlgorithmResult],
+    currentPathFn: String => IO[Path]
+  ): IO[List[SelectionRunner.SelectionRunnerRequest]] = {
+    batchAltsFiltered.traverse { b =>
+      b.alts.toList
+        .traverse { case (r, alts) => currentPathFn(r.agent).map { p => (r, p +: alts) } }
+        .map { paths => SelectionRunner.SelectionRunnerRequest(b.batchId, paths.toMap) }
+    }
   }
 }

@@ -28,8 +28,7 @@ final case class SelectionRunner[V](
     * @return the best combination of paths as [[Response]] objects for each [[Request]]
     */
   def run(
-    batchId: String,
-    filteredAlts: Map[Request, List[Path]],
+    req: SelectionRunner.SelectionRunnerRequest,
     roadNetwork: RoadNetwork[IO, V, EdgeBPR]
   ): IO[Option[SelectionRunnerResult]] = {
 
@@ -38,7 +37,7 @@ final case class SelectionRunner[V](
     val selectionResultIO: IO[SelectionAlgorithm.SelectionAlgorithmResult] =
       selectionAlgorithm
         .selectRoutes(
-          filteredAlts,
+          req.finalAlternatePaths,
           roadNetwork,
           pathToMarginalFlowsFunction,
           combineFlowsFunction,
@@ -51,10 +50,8 @@ final case class SelectionRunner[V](
 
       // test for minimumAverageImprovement threshold
       if (math.abs(selectionResult.averageTravelTimeDiff.value) < minimumAverageImprovement.value) {
-        val ignoredAgents: String = filteredAlts.keys
-          .map {
-            _.agent
-          }
+        val ignoredAgents: String = req.finalAlternatePaths.keys
+          .map { _.agent }
           .mkString(",")
         logger.info(
           s"ignoring batch with avg improvement ${selectionResult.averageTravelTimeDiff}s less than min required ${minimumAverageImprovement}s for agents: $ignoredAgents"
@@ -64,13 +61,13 @@ final case class SelectionRunner[V](
         val selectionResultWithKSPPaths: List[Response] =
           TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths(
             selectionResult.selectedRoutes,
-            filteredAlts
+            req.finalAlternatePaths
           )
         val selectionAlgorithmResult = selectionResult.copy(selectedRoutes = selectionResultWithKSPPaths)
 
         val selectionRuntime = startTime - RunTime(System.currentTimeMillis)
 
-        Some(SelectionRunnerResult(batchId, selectionAlgorithmResult, selectionRuntime))
+        Some(SelectionRunnerResult(req.batchId, selectionAlgorithmResult, selectionRuntime))
       }
     }
 
@@ -79,6 +76,11 @@ final case class SelectionRunner[V](
 }
 
 object SelectionRunner {
+
+  final case class SelectionRunnerRequest(
+    batchId: String,
+    finalAlternatePaths: Map[Request, List[Path]]
+  )
 
   final case class SelectionRunnerResult(
     batchId: String,
@@ -93,10 +95,14 @@ object SelectionRunner {
     * @param altsResults the ksp algorithm response, from before the ksp filter step
     * @return Responses with the complete ksp route due to selection
     */
-  def useKSPResultPaths(selectionResponses: List[Response], altsResults: Map[Request, List[Path]]): List[Response] = {
+  def handlePathsForResponses(
+    selectionResponses: List[Response],
+    altsResults: Map[Request, List[Path]]
+  ): List[Response] = {
     for {
       selectionResponse <- selectionResponses
       alts              <- altsResults.get(selectionResponse.request)
+      if selectionResponse.pathIndex != 0 // remove current path assignments, the agents are already on that path!
     } yield {
       selectionResponse.copy(
         path = alts(selectionResponse.pathIndex).map { _.edgeId }

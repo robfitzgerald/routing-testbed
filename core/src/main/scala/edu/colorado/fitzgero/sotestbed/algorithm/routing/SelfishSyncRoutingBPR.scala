@@ -17,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 case class SelfishSyncRoutingBPR[V](
   marginalCostFunction: EdgeBPR => Flow => Cost, // Likely EdgeBPRCostOps.marginalCostFunction
   pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, V, EdgeBPR],
-  combineFlowsFunction: Iterable[Flow] => Flow,
+  combineFlowsFunction: Iterable[Flow] => Flow
 ) extends RoutingAlgorithm[IO, V, EdgeBPR]
     with LazyLogging {
 
@@ -28,9 +28,11 @@ case class SelfishSyncRoutingBPR[V](
     * @param roadNetwork current road network state
     * @return solution
     */
-  def route(requests: List[Request],
-            activeAgentHistory: ActiveAgentHistory,
-            roadNetwork: RoadNetwork[IO, V, EdgeBPR]): IO[RoutingAlgorithm.Result] = {
+  def route(
+    requests: List[Request],
+    activeAgentHistory: ActiveAgentHistory,
+    roadNetwork: RoadNetwork[IO, V, EdgeBPR]
+  ): IO[RoutingAlgorithm.Result] = {
 
     val costFlowsFunction: EdgeBPR => Cost = (edge: EdgeBPR) => marginalCostFunction(edge)(edge.flow)
     val search =
@@ -88,11 +90,18 @@ case class SelfishSyncRoutingBPR[V](
         }
       }.toMap
 
+      val selfishCostTotal: Cost = searchResults
+        .foldLeft(Cost.Zero) { (acc, rOpt) =>
+          val thisCost: Cost = rOpt.map { case (_, _, cost) => cost.overallCost }.getOrElse(Cost.Zero)
+          acc + thisCost
+        }
+
       val result = RoutingAlgorithm.Result(
         kspResult = alternatives,
         responses = successfulRouteResponses,
         kspRuntime = RunTime.Zero,
         selectionRuntime = RunTime.Zero,
+        selfishCost = selfishCostTotal
       )
 
       result
