@@ -12,14 +12,17 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.reports.RouteReportOps.{DecisionTag, PathType}
 
-class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR => Cost) extends RoutingReports[IO, Coordinate, EdgeBPR] {
+class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: EdgeBPR => Cost)
+    extends RoutingReports[IO, Coordinate, EdgeBPR] {
 
   val printWriter: PrintWriter = new PrintWriter(routingResultFile)
   printWriter.write(AggregateAgentDataRoutingReport.Header + "\n")
 
-  override def updateReports(routingResults: List[(String, RoutingAlgorithm.Result)],
-                             roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-                             currentSimTime: SimTime): IO[Unit] = IO {
+  override def updateReports(
+    routingResults: List[(String, RoutingAlgorithm.Result)],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    currentSimTime: SimTime
+  ): IO[Unit] = IO {
 
     // functions to interpret path space data
     val edgesToCoords: Path => List[Coordinate]   = RouteReportOps.toCoords(roadNetwork)
@@ -32,24 +35,31 @@ class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: Edg
       ((batchId, routingResult), resultIndex) <- routingResults.zipWithIndex
       batchSize = routingResult.kspResult.size
       response <- routingResult.responses
-      request                  = response.request
-      observedRouteRequestData = routingResult.agentHistory.observedRouteRequestData.get(request.agent).map { _.orderedHistory }.getOrElse(List.empty)
+      request = response.request
+      observedRouteRequestData = routingResult.agentHistory.observedRouteRequestData
+        .get(request.agent)
+        .map { _.orderedHistory }
+        .getOrElse(List.empty)
       latestRouteRequestData <- routingResult.agentHistory.getMostRecentDataFor(request.agent)
       decisionNumber = observedRouteRequestData.length
       decisionTag    = DecisionTag(currentSimTime, resultIndex)
       Coordinate(lon, lat) <- edgeToCoord(request.origin)
       selectedPathIndex = response.pathIndex
       alts <- routingResult.kspResult.get(request)
-      altsCoords = alts.map { path =>
-        edgesToCoords(path)
-      }
-      samples         = routingResult.samples
-      searchSpaceSize = if (routingResult.kspResult.nonEmpty) routingResult.kspResult.values.map { _.length.toDouble }.product else 0
-      if alts.nonEmpty
+      altsCoords = alts.map { path => edgesToCoords(path) }
+      samples    = routingResult.samples
+      searchSpaceSize = if (routingResult.kspResult.nonEmpty)
+        routingResult.kspResult.values.map { _.length.toDouble }.product
+      else 0
+      if alts.nonEmpty &&
+        altsCoords.nonEmpty && // rjf 20201206 - quick fix guard against null case found at "val selected =" below
+        alts.isDefinedAt(selectedPathIndex) &&
+        altsCoords.isDefinedAt(selectedPathIndex)
     } {
       // build a TSP row
 
-      val altsWithCoordsAndIndices  = alts.zip(altsCoords).zipWithIndex
+      val altsWithCoordsAndIndices = alts.zip(altsCoords).zipWithIndex
+
       val selected                  = altsWithCoordsAndIndices(selectedPathIndex)
       val ((path, pathCoords), idx) = selected
 
@@ -78,7 +88,7 @@ class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: Edg
         timeEstOverall = travelTimeExperienced + travelTimeRemaining,
         currentLink = request.origin,
         lat = lat,
-        lon = lon,
+        lon = lon
       )
 
       printWriter.write(row.toString)
@@ -116,8 +126,9 @@ object AggregateAgentDataRoutingReport {
     timeEstOverall: Cost,
     currentLink: EdgeId,
     lat: Double,
-    lon: Double,
+    lon: Double
   ) {
+
     override def toString: String = {
       val spaceExplored: String    = f"${(samples.toDouble / searchSpace) * 100.0}%.20f%%"
       val distanceTraveled: String = f"${(distanceExperienced.value / distanceOverall.value) * 100.0}%.2f%%"

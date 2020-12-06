@@ -89,9 +89,12 @@ case class RoutingAlgorithm2[V](
                 )
               )
               batchAltsFiltered = batchFilterFunction.filter(batchAlts)
-              _ <- IO.pure(
-                logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
-              )
+              _ <- IO.pure {
+                val bffName = batchFilterFunction.getClass.getSimpleName
+                if (bffName.nonEmpty) {
+                  logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
+                }
+              }
               selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
               soResults               <- selectionRunnerRequests.traverse { r => selectionRunner.run(r, roadNetwork) }
               _ <- IO.pure(
