@@ -4,30 +4,31 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRe
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
-sealed trait BatchTag
+sealed trait BatchTagger {
+  def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String]
+}
 
-object BatchTag {
+object BatchTagger {
 
   val ValidBatchTags: Set[String] = Set("o", "d", "od", "c", "cd")
 
-  def makeBatchTag(tagType: String, routeRequestData: RouteRequestData): Option[BatchTag] = {
+  def makeBatchTag(tagType: String): Option[BatchTagger] = {
     tagType.trim.toLowerCase match {
-      case "o"  => Some { OTag(routeRequestData) }
-      case "d"  => Some { DTag(routeRequestData) }
-      case "od" => Some { ODTag(routeRequestData) }
-      case "c"  => Some { CTag(routeRequestData) }
-      case "cd" => Some { CDTag(routeRequestData) }
+      case "o"  => Some { OTag }
+      case "d"  => Some { DTag }
+      case "od" => Some { ODTag }
+      case "c"  => Some { CTag }
+      case "cd" => Some { CDTag }
       case _    => None
     }
   }
 
   /**
     * uses the trip's origin (static) for grouping
-    * @param routeRequestData data to create tags from
     */
-  final case class OTag(routeRequestData: RouteRequestData) extends BatchTag {
+  final case object OTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
+    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
       for {
         src <- originCoordinate(routeRequestData)
       } yield {
@@ -38,11 +39,10 @@ object BatchTag {
 
   /**
     * uses the trip's destination (static) for grouping
-    * @param routeRequestData data to create tags from
     */
-  final case class DTag(routeRequestData: RouteRequestData) extends BatchTag {
+  final case object DTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid): Option[String] =
+    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
       for {
         dst <- destinationCoordinate(routeRequestData)
       } yield {
@@ -53,11 +53,10 @@ object BatchTag {
 
   /**
     * uses the trip's origin and destination (both static) for grouping
-    * @param routeRequestData data to create tags from
     */
-  final case class ODTag(routeRequestData: RouteRequestData) extends BatchTag {
+  final case object ODTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
+    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
       for {
         src <- originCoordinate(routeRequestData)
         dst <- destinationCoordinate(routeRequestData)
@@ -70,11 +69,10 @@ object BatchTag {
 
   /**
     * uses the trip's current location (dynamic) for grouping
-    * @param routeRequestData data to create tags from
     */
-  final case class CTag(routeRequestData: RouteRequestData) extends BatchTag {
+  final case object CTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
+    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
       for {
         src <- currentLocationCoordinate(routeRequestData)
       } yield {
@@ -85,11 +83,10 @@ object BatchTag {
 
   /**
     * uses the trip's current location (dynamic) and destination (static) for grouping
-    * @param routeRequestData data to create tags from
     */
-  final case class CDTag(routeRequestData: RouteRequestData) extends BatchTag {
+  final case object CDTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, currentTime: SimTime, batchPathTimeDelay: SimTime): Option[String] =
+    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
       for {
         src <- currentLocationCoordinate(routeRequestData)
         dst <- destinationCoordinate(routeRequestData)

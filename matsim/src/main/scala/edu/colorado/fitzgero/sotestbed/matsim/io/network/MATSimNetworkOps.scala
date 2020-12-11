@@ -11,7 +11,28 @@ import kantan.csv.ops._
 
 object MATSimNetworkOps {
 
-  final case class NetworkStats(numLinks: Int, totalLengths: Double, maxLength: Double, avgSpeed: Double, speeds: Map[Double, Int]) {
+  /**
+    * iterates through all intersections in a network to find the bounding box of the coordinate space
+    *
+    * @param network road network
+    * @return the bounding box of the intersections
+    */
+  def getBoundingBox(network: Network): BoundingBox = {
+    val result = network.getNodes.asScala.values.foldLeft(BoundingBox()) { (bbox, node) =>
+      val (x, y) = (node.getCoord.getX, node.getCoord.getY)
+      bbox.add(x, y)
+    }
+    result
+  }
+
+  final case class NetworkStats(
+    numLinks: Int,
+    totalLengths: Double,
+    maxLength: Double,
+    avgSpeed: Double,
+    speeds: Map[Double, Int]
+  ) {
+
     override def toString: String =
       f"""
          |total  link lengths: $totalLengths%.2f meters
@@ -70,7 +91,14 @@ object MATSimNetworkOps {
     NetworkStats(numLinks, totalLengths, maxLength, avgSpeed, speeds)
   }
 
-  final case class CountOfCommonEdges(commonEdges: Int, edgesOnlyInA: Int, edgesOnlyInB: Int, lengthDiff: Double, freespeedDiff: Double) {
+  final case class CountOfCommonEdges(
+    commonEdges: Int,
+    edgesOnlyInA: Int,
+    edgesOnlyInB: Int,
+    lengthDiff: Double,
+    freespeedDiff: Double
+  ) {
+
     override def toString: String =
       f"""
          |common links: $commonEdges
@@ -178,7 +206,8 @@ object MATSimNetworkOps {
 
     val writer =
       outFile.asCsvWriter[(String, Double, Double, Boolean, Boolean, Boolean)](
-        rfc.withHeader("WKT", "length_diff", "freespeed_diff", "network_a", "network_b", "both"))
+        rfc.withHeader("WKT", "length_diff", "freespeed_diff", "network_a", "network_b", "both")
+      )
 
     Try {
       for {
@@ -186,14 +215,12 @@ object MATSimNetworkOps {
       } {
         writer.write(link)
       }
-    }.toEither.left.map { t =>
-      new Exception(t)
-    }
+    }.toEither.left.map { t => new Exception(t) }
   }
 
   def writeWKTNetwork(
     network: Network,
-    outFile: Path,
+    outFile: Path
   ): Either[Exception, Unit] = {
     val rowData = {
       for {
@@ -215,8 +242,6 @@ object MATSimNetworkOps {
       } {
         writer.write(link)
       }
-    }.toEither.left.map { t =>
-      new Exception(t)
-    }
+    }.toEither.left.map { t => new Exception(t) }
   }
 }

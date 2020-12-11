@@ -46,7 +46,9 @@ object KSPFilter {
               } yield CombinedKSPFilterFunctionAccumulator(acc.history, filteredReq, filteredAlts, acc.random)
             }
 
-        finalAccumulator.map { case CombinedKSPFilterFunctionAccumulator(_, finalReq, finalAlts, _) => (finalReq, finalAlts) }
+        finalAccumulator.map {
+          case CombinedKSPFilterFunctionAccumulator(_, finalReq, finalAlts, _) => (finalReq, finalAlts)
+        }
       }
   }
 
@@ -56,7 +58,10 @@ object KSPFilter {
 
   object LimitFunction {
 
-    private[this] final case class ByTravelTimeAccumulator(reversePath: Path = List.empty, totalCost: Cost = Cost.Zero) {
+    private[this] final case class ByTravelTimeAccumulator(
+      reversePath: Path = List.empty,
+      totalCost: Cost = Cost.Zero
+    ) {
 
       def addPathSegment(pathSegment: PathSegment): ByTravelTimeAccumulator =
         this.copy(

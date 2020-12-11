@@ -32,6 +32,9 @@ object MATSimNetworkStatsApp
                     Try {
                       val network = NetworkUtils.readNetwork(networkA.toString)
                       val stats   = MATSimNetworkOps.networkStats(network)
+                      val bbox    = MATSimNetworkOps.getBoundingBox(network)
+                      println("bounding box")
+                      println(bbox)
                       println(networkA.toString)
                       println(stats)
                       graphOutDirOption match {
@@ -54,12 +57,21 @@ object MATSimNetworkStatsApp
                       val matsimNetworkB = NetworkUtils.readNetwork(networkB.toString)
                       val statsA         = MATSimNetworkOps.networkStats(matsimNetworkA)
                       val statsB         = MATSimNetworkOps.networkStats(matsimNetworkB)
+                      val bboxA          = MATSimNetworkOps.getBoundingBox(matsimNetworkA)
+                      val bboxB          = MATSimNetworkOps.getBoundingBox(matsimNetworkB)
+                      matsimNetworkA.getLinks.get("linkId").getFromNode.getCoord
+                      // print network stats for each network
+                      println("network A bounding box")
+                      println(bboxA)
                       println(networkA.toString)
                       println(statsA)
+                      println("network B bounding box")
+                      println(bboxB)
                       println(networkB.toString)
                       println(statsB)
 
-                      val linkData = MATSimNetworkOps.countCommonEdgesByCommonCoordinates(matsimNetworkA, matsimNetworkB)
+                      val linkData =
+                        MATSimNetworkOps.countCommonEdgesByCommonCoordinates(matsimNetworkA, matsimNetworkB)
                       println(linkData)
 
                       graphOutDirOption match {
@@ -68,7 +80,8 @@ object MATSimNetworkStatsApp
                         case Some(graphOutDir) =>
                           MATSimNetworkOps.writeWKTNetwork(matsimNetworkA, graphOutDir.resolve("wkt_graph_a.csv"))
                           MATSimNetworkOps.writeWKTNetwork(matsimNetworkB, graphOutDir.resolve("wkt_graph_b.csv"))
-                          MATSimNetworkOps.createDiffWKTNetwork(matsimNetworkA, matsimNetworkB, graphOutDir.resolve("diff_graph.csv"))
+                          MATSimNetworkOps
+                            .createDiffWKTNetwork(matsimNetworkA, matsimNetworkB, graphOutDir.resolve("diff_graph.csv"))
                       }
                     } match {
                       case util.Failure(e) =>

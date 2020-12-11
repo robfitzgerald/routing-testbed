@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchTag
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchTagger
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 sealed trait BatchingFunctionConfig {
@@ -9,6 +9,7 @@ sealed trait BatchingFunctionConfig {
 }
 
 object BatchingFunctionConfig {
+
   final case class Greedy(
     batchWindow: SimTime,
     maxBatchSize: Int
@@ -29,8 +30,8 @@ object BatchingFunctionConfig {
   ) extends BatchingFunctionConfig {
     require(splitFactor > 0, "split factor must be positive")
     require(
-      BatchTag.ValidBatchTags.contains(batchType),
-      s"invalid batching-function.batch-type '$batchType': must be one of ${BatchTag.ValidBatchTags.mkString("{", "|", "}")}"
+      BatchTagger.ValidBatchTags.contains(batchType),
+      s"invalid batching-function.batch-type '$batchType': must be one of ${BatchTagger.ValidBatchTags.mkString("{", "|", "}")}"
     )
 
     def build(): batching.BatchingFunction =

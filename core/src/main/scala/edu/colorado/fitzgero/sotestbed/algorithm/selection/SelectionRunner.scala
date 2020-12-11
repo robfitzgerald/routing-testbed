@@ -23,7 +23,7 @@ final case class SelectionRunner[V](
     * select the best combination of paths from a set of alternative paths given the
     * provided road network conditions
     *
-    * @param filteredAlts the alternative paths for a set of requests
+    * @param req the alternative paths for a set of requests
     * @param roadNetwork the road network state
     * @return the best combination of paths as [[Response]] objects for each [[Request]]
     */
@@ -65,7 +65,7 @@ final case class SelectionRunner[V](
           )
         val selectionAlgorithmResult = selectionResult.copy(selectedRoutes = selectionResultWithKSPPaths)
 
-        val selectionRuntime = startTime - RunTime(System.currentTimeMillis)
+        val selectionRuntime = RunTime(System.currentTimeMillis) - startTime
 
         Some(SelectionRunnerResult(req.batchId, selectionAlgorithmResult, selectionRuntime))
       }

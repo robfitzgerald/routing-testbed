@@ -104,7 +104,8 @@ object KSPFilterFunctionConfig {
         val currentDistance: Meters    = history.last.remainingRouteDistance
         val proportion: Double         = math.min(1.0, math.max(0.0, currentDistance.value / originalDistance.value))
         val allowSOReplanning: Boolean = random.nextDouble() < proportion
-        if (allowSOReplanning) Some { (request, alts) } else Some { (request, alts.take(1)) }
+        if (allowSOReplanning) Some { (request, alts) }
+        else Some { (request, alts.take(1)) }
       }
   }
 
@@ -142,8 +143,10 @@ object KSPFilterFunctionConfig {
           path        <- paths
           limitedPath <- limitFunction.limitPath(path)
         } yield limitedPath
-        if (limitedPaths.isEmpty) None
-        else Some { (req, limitedPaths) }
+        val result: Option[(Request, List[Path])] =
+          if (limitedPaths.isEmpty) None
+          else Some { (req, limitedPaths) }
+        result
       }
   }
 

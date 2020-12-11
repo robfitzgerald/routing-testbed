@@ -25,6 +25,10 @@ class GreedyCoordinateGridBatching(
   // split out the coordinate space into splitFactor * splitFactor grids
   val grid: CoordinateGrid = new CoordinateGrid(minX, maxX, minY, maxY, splitFactor)
 
+  // todo: build GreedyCoordinateGridBatching in a constructor that returns Either[Error, GreedyCoordinateGridBatching]
+  val batchTagger: BatchTagger =
+    BatchTagger.makeBatchTag(tagType).getOrElse(throw new Error(s"invalid batch tag type $tagType"))
+
   /**
     * takes the current batching strategy and any updates about replan-able agents, and spits out an
     * update to that batching strategy
@@ -34,9 +38,11 @@ class GreedyCoordinateGridBatching(
     * @param currentTime          the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
-  def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-                                                activeRouteRequests: List[RouteRequestData],
-                                                currentTime: SimTime): F[Option[List[(String, List[Request])]]] = Monad[F].pure {
+  def updateBatchingStrategy[F[_]: Monad, V, E](
+    roadNetwork: RoadNetwork[F, V, E],
+    activeRouteRequests: List[RouteRequestData],
+    currentTime: SimTime
+  ): F[Option[List[(String, List[Request])]]] = Monad[F].pure {
 
     activeRouteRequests match {
       case Nil =>
@@ -48,32 +54,9 @@ class GreedyCoordinateGridBatching(
         // map the coordinates to string ids and concatenate them into a grouping tag
         val tagged: List[(String, RouteRequestData)] = for {
           agentBatchData <- activeRouteRequests
-          tagger         <- BatchTag.makeBatchTag(tagType, agentBatchData)
-          tagged <- tagger match {
-
-            case od: BatchTag.ODTag =>
-              od.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
-                (tag, agentBatchData)
-              }
-            case o: BatchTag.OTag =>
-              o.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
-                (tag, agentBatchData)
-              }
-            case cd: BatchTag.CDTag =>
-              cd.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
-                (tag, agentBatchData)
-              }
-            case c: BatchTag.CTag =>
-              c.tag(grid, currentTime, this.batchPathTimeDelay).map { tag =>
-                (tag, agentBatchData)
-              }
-            case d: BatchTag.DTag =>
-              d.tag(grid).map { tag =>
-                (tag, agentBatchData)
-              }
-          }
+          tag            <- batchTagger.tag(grid, agentBatchData)
         } yield {
-          tagged
+          (tag, agentBatchData)
         }
 
         // make sub-batches based on the tag groupings
@@ -84,16 +67,25 @@ class GreedyCoordinateGridBatching(
           case (tag, tuples) =>
             // this group may exceed our maxBatchSize, so, break them up based on a batch splitting function
             val routeRequestDatas: List[RouteRequestData] = tuples.map { case (_, agentBatchData) => agentBatchData }
-            for {
-              (batch, batchIdx) <- BatchSplittingFunction.bySlidingWindow(routeRequestDatas, this.maxBatchSize).zipWithIndex
-              batchId = s"$tag-$batchIdx"
-              routeRequestData <- batch
-            } yield {
-              // at this point we have all the information we need to create a batch id
-              // since a tag plus window index should be unique
-              (routeRequestData, batchId)
+            if (routeRequestDatas.size <= this.maxBatchSize) {
+              // labels are fine, no need to apply a batch splitting function
+              val result = tuples.map { _.swap }
+              result
+            } else {
+              // we need to slice this into further sub-batches
+              val result = for {
+                (batch, batchIdx) <- BatchSplittingFunction
+                  .bySlidingWindow(routeRequestDatas, this.maxBatchSize)
+                  .zipWithIndex
+                batchId = s"$tag-$batchIdx"
+                routeRequestData <- batch
+              } yield {
+                // at this point we have all the information we need to create a batch id
+                // since a tag plus window index should be unique
+                (routeRequestData, batchId)
+              }
+              result
             }
-
         }.toList
 
         if (toAdd.isEmpty) {
