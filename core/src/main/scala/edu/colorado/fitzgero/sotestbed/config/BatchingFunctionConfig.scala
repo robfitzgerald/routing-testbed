@@ -35,16 +35,19 @@ object BatchingFunctionConfig {
     )
 
     def build(): batching.BatchingFunction =
-      new batching.GreedyCoordinateGridBatching(
-        batchWindow,
+      batching.GreedyCoordinateGridBatching(
         maxBatchSize,
         minX,
         maxX,
         minY,
         maxY,
         splitFactor,
-        batchPathTimeDelay,
         batchType
-      )
+      ) match {
+        case Left(value) =>
+          throw value
+        case Right(value) =>
+          value
+      }
   }
 }

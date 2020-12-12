@@ -10,24 +10,13 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 class GreedyCoordinateGridBatching(
-  batchWindow: SimTime,
-  maxBatchSize: Int,
-  minX: Double,
-  maxX: Double,
-  minY: Double,
-  maxY: Double,
-  splitFactor: Int,
-  batchPathTimeDelay: SimTime,
-  tagType: String = "c"
+  grid: CoordinateGrid,
+  batchTagger: BatchTagger,
+  maxBatchSize: Int
 ) extends BatchingFunction
     with LazyLogging {
 
   // split out the coordinate space into splitFactor * splitFactor grids
-  val grid: CoordinateGrid = new CoordinateGrid(minX, maxX, minY, maxY, splitFactor)
-
-  // todo: build GreedyCoordinateGridBatching in a constructor that returns Either[Error, GreedyCoordinateGridBatching]
-  val batchTagger: BatchTagger =
-    BatchTagger.makeBatchTag(tagType).getOrElse(throw new Error(s"invalid batch tag type $tagType"))
 
   /**
     * takes the current batching strategy and any updates about replan-able agents, and spits out an
@@ -111,5 +100,32 @@ class GreedyCoordinateGridBatching(
           }
         }
     }
+  }
+}
+
+object GreedyCoordinateGridBatching {
+
+  def apply(
+    maxBatchSize: Int,
+    minX: Double,
+    maxX: Double,
+    minY: Double,
+    maxY: Double,
+    splitFactor: Int,
+    tagType: String
+  ): Either[Error, GreedyCoordinateGridBatching] = {
+    val grid: CoordinateGrid = new CoordinateGrid(minX, maxX, minY, maxY, splitFactor)
+    val batchTaggerOrError: Either[Error, BatchTagger] =
+      BatchTagger.makeBatchTag(tagType).toRight(new Error(s"invalid batch tag type $tagType"))
+    val result: Either[Error, GreedyCoordinateGridBatching] = for {
+      batchTagger <- batchTaggerOrError
+    } yield {
+      new GreedyCoordinateGridBatching(
+        grid,
+        batchTagger,
+        maxBatchSize
+      )
+    }
+    result
   }
 }

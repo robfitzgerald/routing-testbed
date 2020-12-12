@@ -201,7 +201,7 @@ object MATSimRouteOps extends LazyLogging {
   def estRemainingTravelTimeSeconds(
     route: List[Id[Link]],
     currentLinkId: Id[Link],
-    qSim: QSim,
+    qSim: QSim
   ): Double = {
     val lengths: Iterable[Double] = for {
       linkId <- route.dropWhile {
@@ -352,9 +352,7 @@ object MATSimRouteOps extends LazyLogging {
     * @return converted to a MATSim path
     */
   def convertToMATSimPath(path: List[EdgeId]): List[Id[Link]] = {
-    path.map { edgeId =>
-      Id.createLinkId(edgeId.value)
-    }
+    path.map { edgeId => Id.createLinkId(edgeId.value) }
   }
 
   /**
@@ -463,21 +461,32 @@ object MATSimRouteOps extends LazyLogging {
     * @param currentLink the agent's current link
     * @return o-[currentPath]->o-[newPath]-> concatenated, or a message why that failed; along with the index of the current link
     */
-  def coalescePath(oldPath: List[Id[Link]], newPath: List[Id[Link]], currentLink: Id[Link]): Either[String, List[Id[Link]]] = {
+  def coalescePath(
+    oldPath: List[Id[Link]],
+    newPath: List[Id[Link]],
+    currentLink: Id[Link]
+  ): Either[String, List[Id[Link]]] = {
     if (oldPath.isEmpty) {
       Left(s"invariant failed: old path is empty though agent is on network at $currentLink (how did it get there?)")
     } else if (newPath.isEmpty) {
       Left("new path is empty")
+    } else if (newPath.last != oldPath.last) {
+      Left(s"new path doesn't end at the same destination as the old path (${newPath.last} != ${oldPath.last})")
+    } else if (newPath.head == oldPath.head && newPath.last == oldPath.last) {
+      // we can swap in this new path entirely
+      Right(newPath)
     } else {
 
       // construct the path prefix using everything in the old path before we see the head of the new path
       oldPath.takeWhile(_ != newPath.head) match {
-        case Nil =>
-          Left(s"new path origin ${newPath.head} not found on old path")
+        case tookTheWholeThing if tookTheWholeThing == oldPath =>
+          Left(s"new path origin '${newPath.head}' not found on old path")
         case pathPrefix =>
           val coalescedPath: List[Id[Link]] = pathPrefix ++ newPath
           if (!coalescedPath.contains(currentLink)) {
-            Left("old path and new path when combined at root of new path no longer contain the current link")
+            Left(
+              s"old path and new path when combined at root of new path no longer contain the current link '$currentLink'"
+            )
           } else if (coalescedPath.lengthCompare(coalescedPath.toSet.size) != 0) {
             Left("coalesced path contains a loop")
           } else {

@@ -18,7 +18,7 @@ class CoordinateGrid(
   maxX: Double,
   minY: Double,
   maxY: Double,
-  splitFactor: Int,
+  splitFactor: Int
 ) {
 
   // step size between cells in the underlying coordinate space
@@ -83,9 +83,7 @@ class CoordinateGrid(
       .toList
       .sortBy { _._1 }(GroupIdOrdering)
       .sliding(this.splitFactor, this.splitFactor)
-      .map { row =>
-        row.map { case (_, count) => count.toString.padTo(3, ' ') }.mkString("")
-      }
+      .map { row => row.map { case (_, count) => count.toString.padTo(3, ' ') }.mkString("") }
       .mkString("\n")
   }
 
@@ -105,4 +103,5 @@ class CoordinateGrid(
 
 object CoordinateGrid {
   val GridIdRegex: Regex = """^(\d+)#(\d+)$""".r
+
 }
