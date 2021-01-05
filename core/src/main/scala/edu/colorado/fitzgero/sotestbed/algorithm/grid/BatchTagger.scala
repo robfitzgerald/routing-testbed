@@ -1,7 +1,6 @@
-package edu.colorado.fitzgero.sotestbed.algorithm.batching
+package edu.colorado.fitzgero.sotestbed.algorithm.grid
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 sealed trait BatchTagger {

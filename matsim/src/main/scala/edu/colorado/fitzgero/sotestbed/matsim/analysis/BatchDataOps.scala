@@ -13,20 +13,22 @@ object BatchDataOps {
     } else {
       case class Acc(
         batchMetrics: List[BatchMetrics] = List.empty,
-        errors: List[ReadError] = List.empty
+        errors: List[Error] = List.empty
       )
       val trialNumbers: List[Int] = (0 until trials).toList
       val result = trialNumbers.foldLeft(Acc()) { (acc, trial) =>
         val batchDataFilePath = baseDir.resolve(experimentName).resolve(trial.toString).resolve("batchData.csv")
         BatchMetrics.fromFile(batchDataFilePath.toFile) match {
           case Left(error) =>
-            acc.copy(errors = error +: acc.errors)
+            val msg            = s"file $batchDataFilePath"
+            val explainedError = new Error(msg, error)
+            acc.copy(errors = explainedError +: acc.errors)
           case Right(value) =>
             acc.copy(batchMetrics = value +: acc.batchMetrics)
         }
       }
       if (result.errors.nonEmpty) {
-        Left(CombinedError(result.errors))
+        Left(CombinedError(result.errors, Some(s"failure collecting batch metrics")))
       } else {
         Right(result.batchMetrics)
       }

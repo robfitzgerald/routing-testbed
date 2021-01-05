@@ -1,9 +1,12 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batchfilter
 
+import cats.Monad
+
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.BatchOverlapFunction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 final case class FilterByTopKRanking(
   k: Int,
@@ -19,7 +22,10 @@ final case class FilterByTopKRanking(
     * @param batches the batches with their (filtered) alts
     * @return the filtered result
     */
-  def filter(batches: List[AltPathsAlgorithmResult]): List[AltPathsAlgorithmResult] = {
+  def filter[F[_]: Monad, V, E](
+    batches: List[AltPathsAlgorithmResult],
+    roadNetwork: RoadNetwork[F, V, E]
+  ): F[List[AltPathsAlgorithmResult]] = {
     val ranked: List[(Double, AltPathsAlgorithmResult)] = for {
       batch <- batches
       alts          = batch.filteredAlts.getOrElse(batch.alts)
@@ -50,6 +56,7 @@ final case class FilterByTopKRanking(
     }
 
     val result = filtered.map { _._2 }
-    result
+
+    Monad[F].pure(result)
   }
 }

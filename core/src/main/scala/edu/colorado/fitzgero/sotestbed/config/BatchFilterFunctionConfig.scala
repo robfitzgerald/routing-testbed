@@ -1,11 +1,14 @@
 package edu.colorado.fitzgero.sotestbed.config
 
+import cats.Monad
+
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.{
   BatchFilterFunction,
   FilterByOverlapThreshold,
   FilterByTopKRanking
 }
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 
 sealed trait BatchFilterFunctionConfig {
 
@@ -20,7 +23,11 @@ object BatchFilterFunctionConfig {
   final case object NoFilter extends BatchFilterFunctionConfig {
 
     def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction = new BatchFilterFunction {
-      def filter(batches: List[AltPathsAlgorithmResult]): List[AltPathsAlgorithmResult] = batches
+
+      def filter[F[_]: Monad, V, E](
+        batches: List[AltPathsAlgorithmResult],
+        roadNetwork: RoadNetwork[F, V, E]
+      ): F[List[AltPathsAlgorithmResult]] = Monad[F].pure(batches)
     }
   }
 

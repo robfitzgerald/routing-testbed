@@ -47,12 +47,15 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
     * @return either a matsim config setup error, or,
     *         the final state of the simulation after the simulation ends (which could be a failure as well)
     */
-  def run(): Either[io.Serializable, Any] = {
-    for {
-      network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(
-        matsimRunConfig.io.matsimNetworkFile,
-        matsimRunConfig.routing.batchWindow
-      )
+  def run(): Either[Exception, String] = {
+    val result = for {
+      network <- LocalAdjacencyListFlowNetwork
+        .fromMATSimXML(
+          matsimRunConfig.io.matsimNetworkFile,
+          matsimRunConfig.routing.batchWindow
+        )
+        .left
+        .map { s => new Error(s) }
       agentsUnderControlPercentage = if (matsimRunConfig.algorithm.isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
       else matsimRunConfig.routing.adoptionRate
       agentsUnderControl <- PopulationOps.loadAgentsUnderControl(
@@ -182,7 +185,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
           minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
         )
 
-      Try {
+      val experimentResult = Try {
         val result: experiment.ExperimentState = experimentIO.unsafeRunSync()
         experiment.close()
 
@@ -207,6 +210,11 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
         case Right(_) =>
           "done."
       }
+
+      experimentResult
+    }
+    result.left.map { t =>
+      new Exception(s"failure for MATSim run in directory '${matsimRunConfig.experimentDirectory}'", t)
     }
   }
 }

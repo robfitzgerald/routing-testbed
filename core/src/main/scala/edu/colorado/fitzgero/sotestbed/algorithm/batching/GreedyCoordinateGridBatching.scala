@@ -5,6 +5,7 @@ import cats.Monad
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.{BatchingInstruction, BatchingStrategy}
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.{BatchTagger, CoordinateGrid}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork

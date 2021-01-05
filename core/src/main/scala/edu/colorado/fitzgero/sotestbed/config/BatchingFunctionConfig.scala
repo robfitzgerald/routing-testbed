@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchTagger
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.BatchTagger
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 sealed trait BatchingFunctionConfig {

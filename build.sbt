@@ -76,8 +76,9 @@ lazy val coreDependencies = List(
   "com.github.pureconfig" %% "pureconfig" % "0.12.2",
 //  "com.typesafe" % "config" % "1.3.4",
   // GIS
-  "org.locationtech.proj4j" % "proj4j" % "1.1.1",
-  "com.uber"                % "h3"     % "3.0.3",
+  "org.locationtech.proj4j" % "proj4j"   % "1.1.1",
+  "org.locationtech.jts"    % "jts-core" % "1.17.1",
+  "com.uber"                % "h3"       % "3.0.3",
 //  "org.locationtech.jts" % "jts-core" % "1.16.1",
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",

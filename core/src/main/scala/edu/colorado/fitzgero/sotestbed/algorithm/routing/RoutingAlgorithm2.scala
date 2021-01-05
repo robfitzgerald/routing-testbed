@@ -88,7 +88,7 @@ case class RoutingAlgorithm2[V](
                   s"alt paths computed via ${altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName}"
                 )
               )
-              batchAltsFiltered = batchFilterFunction.filter(batchAlts)
+              batchAltsFiltered <- batchFilterFunction.filter(batchAlts, roadNetwork)
               _ <- IO.pure {
                 val bffName = batchFilterFunction.getClass.getSimpleName
                 if (bffName.nonEmpty) {

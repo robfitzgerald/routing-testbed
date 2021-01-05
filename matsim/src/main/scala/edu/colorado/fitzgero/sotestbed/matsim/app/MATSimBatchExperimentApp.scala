@@ -203,7 +203,7 @@ object MATSimBatchExperimentApp
                               case Left(e) =>
                                 println(s"trial $trial exit with handled error")
                                 val time = new Timestamp(System.currentTimeMillis)
-                                batchLogger.write(s"$trial,$time,${e.toString}\n")
+                                batchLogger.write(s"$trial,$time,${e.getClass} ${e.getCause} ${e.getMessage}\n")
                               case Right(_) =>
                                 println(s"trial $trial exited normally")
                                 val time = new Timestamp(System.currentTimeMillis)
@@ -303,13 +303,15 @@ object MATSimBatchExperimentApp
                               s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}"
                             )
                             val time = new Timestamp(System.currentTimeMillis)
-                            batchLogger.write(s"$trial,$time,${e.getClass} ${e.getCause} ${e.getMessage}\n")
+                            batchLogger.write(s"$trial,$time,FAILURE - ${e.getClass} ${e.getCause} ${e.getMessage}\n")
                           case Right(result) =>
                             result match {
                               case Left(e) =>
                                 println(s"trial $trial exit with handled error")
                                 val time = new Timestamp(System.currentTimeMillis)
-                                batchLogger.write(s"$trial,$time,${e.toString}\n")
+                                batchLogger.write(
+                                  s"$trial,$time,FAILURE - ${e.getClass} ${e.getCause} ${e.getMessage}\n"
+                                )
                               case Right(_) =>
                                 println(s"trial $trial exited normally")
                                 val time = new Timestamp(System.currentTimeMillis)

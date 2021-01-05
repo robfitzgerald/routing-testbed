@@ -1,7 +1,9 @@
-package edu.colorado.fitzgero.sotestbed.algorithm.batching
+package edu.colorado.fitzgero.sotestbed.algorithm.grid
 
 import scala.util.Try
 import scala.util.matching.Regex
+
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 
 /**
   * creates a simple grid from a bounding box. given an arbirary point within the box, provides a unique grouping
