@@ -17,6 +17,7 @@ import cats.implicits._
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 /**
   *
@@ -26,13 +27,12 @@ import edu.colorado.fitzgero.sotestbed.model.agent.Request
   * @param selectionRunner combinatorial search
   * @param minBatchSize ignore batches less than this size. this value should be a function of
   *                     the alt paths algorithm "k" and the batch filter function "minSearchSpaceSize" parameters
-  * @tparam V coordinate type
   */
-case class RoutingAlgorithm2[V](
-  altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, V, EdgeBPR],
+case class RoutingAlgorithm2(
+  altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR],
   batchingFunction: BatchingFunction,
   batchFilterFunction: BatchFilterFunction,
-  selectionRunner: SelectionRunner[V],
+  selectionRunner: SelectionRunner[Coordinate],
   minBatchSize: Int
 ) extends LazyLogging {
 
@@ -46,7 +46,7 @@ case class RoutingAlgorithm2[V](
     * @return routing algorithm results for each batch
     */
   def runSO(
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     requests: List[RouteRequestData],
     currentSimTime: SimTime,
     batchingManager: BatchingManager
@@ -126,17 +126,16 @@ object RoutingAlgorithm2 {
     * @param selectionRunner combinatorial search
     * @param k number of alt paths as a parameter for the alt paths runner
     * @param minSearchSpaceSize ignore batches which cannot produce at least this many combinations
-    * @tparam V coordinate type
     * @return the Routing Algorithm, v2
     */
-  def apply[V](
-    altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, V, EdgeBPR],
+  def apply(
+    altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR],
     batchingFunction: BatchingFunction,
     batchFilterFunction: BatchFilterFunction,
-    selectionRunner: SelectionRunner[V],
+    selectionRunner: SelectionRunner[Coordinate],
     k: Int,
     minSearchSpaceSize: Int
-  ): RoutingAlgorithm2[V] = {
+  ): RoutingAlgorithm2 = {
     // find log of minSearchSpaceSize in the base of k
     val minBatchSize: Int = math.ceil(math.log(minSearchSpaceSize.toDouble) / math.log(k)).toInt
     RoutingAlgorithm2(
@@ -195,12 +194,11 @@ object RoutingAlgorithm2 {
     * @param roadNetwork the current road network state
     * @param costFunction edge cost function
     * @param agentId the agent id to find their current path
-    * @tparam V vertex type
     * @return the requested path inside an effect type
     */
-  def getCurrentPath[V](
+  def getCurrentPath(
     batchingManager: BatchingManager,
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     costFunction: EdgeBPR => Cost
   )(agentId: String): IO[List[PathSegment]] = {
     val result = for {
@@ -227,10 +225,9 @@ object RoutingAlgorithm2 {
     * @param batchAltsFiltered the final set of alt paths we are considering (for the final set of
     *                          batches we are considering)
     * @param currentPathFn a lookup function that gets the most recent path data for an agent
-    * @tparam V vertex type
     * @return a list of selection runner requests wrapped in the effect of calling the road network
     */
-  def getCurrentPaths[V](
+  def getCurrentPaths(
     batchAltsFiltered: List[AltPathsAlgorithmResult],
     currentPathFn: String => IO[Path]
   ): IO[List[SelectionRunner.SelectionRunnerRequest]] = {

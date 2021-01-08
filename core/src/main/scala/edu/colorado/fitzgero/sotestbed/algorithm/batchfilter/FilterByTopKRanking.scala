@@ -1,12 +1,15 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batchfilter
 
 import cats.Monad
+import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.BatchOverlapFunction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 final case class FilterByTopKRanking(
   k: Int,
@@ -22,10 +25,10 @@ final case class FilterByTopKRanking(
     * @param batches the batches with their (filtered) alts
     * @return the filtered result
     */
-  def filter[F[_]: Monad, V, E](
+  def filter(
     batches: List[AltPathsAlgorithmResult],
-    roadNetwork: RoadNetwork[F, V, E]
-  ): F[List[AltPathsAlgorithmResult]] = {
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[List[AltPathsAlgorithmResult]] = {
     val ranked: List[(Double, AltPathsAlgorithmResult)] = for {
       batch <- batches
       alts          = batch.filteredAlts.getOrElse(batch.alts)
@@ -57,6 +60,6 @@ final case class FilterByTopKRanking(
 
     val result = filtered.map { _._2 }
 
-    Monad[F].pure(result)
+    IO(result)
   }
 }

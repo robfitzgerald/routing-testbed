@@ -18,13 +18,14 @@ import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{Edge, EdgeBPR}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.Reports
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 
-abstract class RoutingExperiment2[V] extends Reports[IO, V, EdgeBPR] with HandCrankedSimulator[IO] {
+abstract class RoutingExperiment2 extends Reports[IO, Coordinate, EdgeBPR] with HandCrankedSimulator[IO] {
 
   final case class ExperimentState(
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     batchingManager: BatchingManager,
     simulatorState: HandCrankedSimulator.SimulatorState = HandCrankedSimulator.SimulatorState.Uninitialized
   )
@@ -43,10 +44,10 @@ abstract class RoutingExperiment2[V] extends Reports[IO, V, EdgeBPR] with HandCr
     */
   final def run(
     config: SimulatorConfiguration,
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR],
-    ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, V, EdgeBPR]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, Coordinate, EdgeBPR]],
     updateFunction: Edge.UpdateFunction[EdgeBPR],
-    soRoutingAlgorithm: Option[RoutingAlgorithm2[V]],
+    soRoutingAlgorithm: Option[RoutingAlgorithm2],
     batchWindow: SimTime,
     minRequestUpdateThreshold: SimTime
   ): IO[ExperimentState] = {

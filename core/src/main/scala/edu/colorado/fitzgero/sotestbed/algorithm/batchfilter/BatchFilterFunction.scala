@@ -1,9 +1,11 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batchfilter
 
-import cats.Monad
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 trait BatchFilterFunction {
 
@@ -15,8 +17,8 @@ trait BatchFilterFunction {
     * @param roadNetwork the current road network state
     * @return the filtered result
     */
-  def filter[F[_]: Monad, V, E](
+  def filter(
     batches: List[AltPathsAlgorithmResult],
-    roadNetwork: RoadNetwork[F, V, E]
-  ): F[List[AltPathsAlgorithmResult]]
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[List[AltPathsAlgorithmResult]]
 }

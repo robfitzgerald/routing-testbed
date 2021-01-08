@@ -1,18 +1,28 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import cats.Monad
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.{
   BatchFilterFunction,
   FilterByOverlapThreshold,
+  FilterByTopKOverlapAndCongestion,
   FilterByTopKRanking
 }
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 sealed trait BatchFilterFunctionConfig {
 
-  def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction
+  def build(
+    minBatchSearchSpace: Option[Int],
+    grid: CoordinateGrid2,
+    costFunction: EdgeBPR => Cost
+  ): BatchFilterFunction
 }
 
 object BatchFilterFunctionConfig {
@@ -22,12 +32,16 @@ object BatchFilterFunctionConfig {
     */
   final case object NoFilter extends BatchFilterFunctionConfig {
 
-    def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction = new BatchFilterFunction {
+    def build(
+      minBatchSearchSpace: Option[Int]
+//      grid: CoordinateGrid2,
+//      costFunction: EdgeBPR => Cost
+    ): BatchFilterFunction = new BatchFilterFunction {
 
-      def filter[F[_]: Monad, V, E](
+      def filter(
         batches: List[AltPathsAlgorithmResult],
-        roadNetwork: RoadNetwork[F, V, E]
-      ): F[List[AltPathsAlgorithmResult]] = Monad[F].pure(batches)
+        roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+      ): IO[List[AltPathsAlgorithmResult]] = IO(batches)
     }
   }
 
@@ -42,7 +56,11 @@ object BatchFilterFunctionConfig {
     batchOverlapFunction: BatchOverlapFunctionConfig
   ) extends BatchFilterFunctionConfig {
 
-    def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction =
+    def build(
+      minBatchSearchSpace: Option[Int]
+//      grid: CoordinateGrid2,
+//      costFunction: EdgeBPR => Cost
+    ): BatchFilterFunction =
       FilterByOverlapThreshold(threshold, minBatchSearchSpace, batchOverlapFunction.build())
   }
 
@@ -57,7 +75,37 @@ object BatchFilterFunctionConfig {
     batchOverlapFunction: BatchOverlapFunctionConfig
   ) extends BatchFilterFunctionConfig {
 
-    def build(minBatchSearchSpace: Option[Int]): BatchFilterFunction =
+    def build(
+      minBatchSearchSpace: Option[Int]
+//      grid: CoordinateGrid2,
+//      costFunction: EdgeBPR => Cost
+    ): BatchFilterFunction =
       FilterByTopKRanking(k, minBatchSearchSpace, batchOverlapFunction.build())
   }
+
+//  /**
+//    * batch filter that prioritizes batches with higher overlap and higher
+//    * congestion (travel time increase %).
+//    *
+//    * @param k top-k batches
+//    * @param batchOverlapFunction way to compute overlap percentage
+//    */
+//  final case class TopKOverlapAndCongestionRankingBatchFilter(
+//    k: Int,
+//    batchOverlapFunction: BatchOverlapFunctionConfig
+//  ) extends BatchFilterFunctionConfig {
+//
+//    def build(
+//      minBatchSearchSpace: Option[Int],
+////      grid: CoordinateGrid2,
+////      costFunction: EdgeBPR => Cost
+//    ): BatchFilterFunction =
+//      FilterByTopKOverlapAndCongestion(
+//        k,
+//        minBatchSearchSpace,
+//        batchOverlapFunction.build(),
+//        grid,
+//        costFunction
+//      )
+//  }
 }

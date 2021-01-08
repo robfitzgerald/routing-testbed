@@ -16,7 +16,7 @@ import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 abstract class AbstractMATSimRoutingExperiment2(
   finalReportFile: File,
   routingReports: RoutingReports[IO, Coordinate, EdgeBPR]
-) extends RoutingExperiment2[Coordinate]
+) extends RoutingExperiment2
     with MATSimSimulator {
 
   val routingResultFileReport: RoutingReports[IO, Coordinate, EdgeBPR] = routingReports

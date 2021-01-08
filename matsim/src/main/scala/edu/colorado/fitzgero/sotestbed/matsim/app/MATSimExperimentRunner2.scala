@@ -132,7 +132,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
             }
         }
 
-      val soRoutingAlgorithm: Option[RoutingAlgorithm2[Coordinate]] =
+      val soRoutingAlgorithm: Option[RoutingAlgorithm2] =
         config.algorithm match {
           case so: Algorithm.SystemOptimal =>
             val ksp: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR] = {
