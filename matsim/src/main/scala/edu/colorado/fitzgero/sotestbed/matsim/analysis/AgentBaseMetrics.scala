@@ -18,7 +18,7 @@ case class AgentBaseMetrics(
 
   def +(row: AgentExperienceRow): AgentBaseMetrics = {
     if (row.travelTime == 0.0) {
-      logger.warn("encountered 0.0 mph speed, skipping")
+//      logger.debug("encountered 0.0 mph speed, skipping")
       this
     } else {
       val rowDistMiles         = row.distance / 1609.0
@@ -70,9 +70,7 @@ object AgentBaseMetrics {
       val agentExperienceRows: Map[String, AgentExperienceRow] =
         agentExperienceFile
           .unsafeReadCsv[List, AgentExperienceRow](rfc.withHeader)
-          .map { row =>
-            s"${row.agentId}#${row.departureTime}" -> row
-          }
+          .map { row => s"${row.agentId}#${row.departureTime}" -> row }
           .toMap
 
       // accumulate the rows into a summation

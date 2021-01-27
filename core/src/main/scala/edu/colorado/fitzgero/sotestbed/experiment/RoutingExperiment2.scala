@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.experiment
 import cats.effect.IO
 import cats.implicits._
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
@@ -22,7 +23,10 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.reports.Reports
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 
-abstract class RoutingExperiment2 extends Reports[IO, Coordinate, EdgeBPR] with HandCrankedSimulator[IO] {
+abstract class RoutingExperiment2
+    extends Reports[IO, Coordinate, EdgeBPR]
+    with HandCrankedSimulator[IO]
+    with LazyLogging {
 
   final case class ExperimentState(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
@@ -57,8 +61,9 @@ abstract class RoutingExperiment2 extends Reports[IO, Coordinate, EdgeBPR] with 
       val experiment: IO[ExperimentState] = startState.iterateUntilM {
         case ExperimentState(r0, b0, _) =>
           for {
-            _               <- advance() // should return updated simulator
-            currentSimTime  <- getCurrentSimTime
+            _              <- advance() // should return updated simulator
+            currentSimTime <- getCurrentSimTime
+            _ = logger.info(s"current simulation time: $currentSimTime")
             edges           <- getUpdatedEdges
             r1              <- r0.updateEdgeFlows(edges, updateFunction) // should return updated road network
             batchDataUpdate <- getAgentsNewlyAvailableForReplanning

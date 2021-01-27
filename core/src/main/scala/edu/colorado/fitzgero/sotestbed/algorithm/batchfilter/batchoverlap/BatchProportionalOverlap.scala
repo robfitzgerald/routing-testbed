@@ -16,10 +16,14 @@ object BatchProportionalOverlap {
     * @param pathOverlapLookup the type of lookup to apply
     * @return the calculated overlap
     */
-  def from(filteredAlts: Map[Request, List[Path]], pathOverlapLookup: PathOverlapLookup): BatchOverlapResult = {
+  def from(
+    filteredAlts: Map[Request, List[Path]],
+    pathOverlapLookup: PathOverlapLookup,
+    overlapCostType: OverlapCostType
+  ): BatchOverlapResult = {
 
     val lookup: Map[Request, List[(EdgeId, Cost)]] =
-      PathOverlapLookupType.buildLookup(filteredAlts, pathOverlapLookup)
+      PathOverlapLookupOps.buildLookup(filteredAlts, pathOverlapLookup)
 
     // create iterable with each edgeId for each request appearing exactly once along with its cost
     val allAgentsLinks: Map[EdgeId, Cost] = lookup.values.flatten.toMap
@@ -29,12 +33,12 @@ object BatchProportionalOverlap {
       thisAgentLinks = pathOverlapLookup(paths).toMap
       otherAgents    = filteredAlts - request
     } yield {
-      val otherRequestLinks = for {
-        (otherRequest, _) <- otherAgents
-        otherRequestLinks <- lookup.get(otherRequest)
-      } yield {
-        otherRequestLinks
-      }
+//      val otherRequestLinks = for {
+//        (otherRequest, _) <- otherAgents
+//        otherRequestLinks <- lookup.get(otherRequest)
+//      } yield {
+//        otherRequestLinks
+//      }
       val (overlapCost, totalCost) =
         allAgentsLinks.foldLeft((Cost.Zero, Cost.Zero)) {
           case ((overlapAcc, totalAcc), (edgeId, cost)) =>
@@ -50,8 +54,9 @@ object BatchProportionalOverlap {
         }
 
       // compute the overlap proportion for this request
-      val overlapProportion = if (totalCost == Cost.Zero) 0.0 else overlapCost.value / totalCost.value
-      request -> overlapProportion
+      val agentOverlapCost = overlapCostType.cost(overlapCost, totalCost)
+
+      request -> agentOverlapCost
     }
 
     BatchOverlapResult(result.toMap)

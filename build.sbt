@@ -1,9 +1,11 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.3.2"
+val packageVersion = "2.4.0"
 version := packageVersion
 val sVersion = "2.12.10"
+scalacOptions ++= scalac
+//javacOptions ++= javac
 
 lazy val core = project
   .in(file("core"))
@@ -11,6 +13,7 @@ lazy val core = project
     name := "so-testbed-core",
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
+//    javacOptions ++= javac,
     libraryDependencies ++= coreDependencies
   )
 //  .dependsOn(dabtree)
@@ -22,6 +25,7 @@ lazy val matsim = project
     version := packageVersion,
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
+//    javacOptions ++= javac,
     matsimAssemblyStrategy,
     resolvers ++= matsimResolvers,
     libraryDependencies ++= coreDependencies ++ matsimDependencies
@@ -52,11 +56,14 @@ lazy val matsimResolvers = Seq(
 //  .dependsOn(core, matsim)
 
 lazy val scalac = List(
+//  "-target:jvm-1.8",
   "-language:higherKinds",                   // Cats
   "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 //  "-Ypartial-unification"
 )
+
+//lazy val javac = List("-source", "1.8", "-target", "1.8")
 
 // External Dependencies
 lazy val coreDependencies = List(

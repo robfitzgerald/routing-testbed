@@ -11,21 +11,43 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
-trait BatchingFunction {
+case class RandomBatching(
+  batchWindow: SimTime,
+  maxBatchSize: Int
+) extends BatchingFunction {
 
   /**
     * takes the current batching strategy and any updates about replan-able agents, and spits out an
     * update to that batching strategy
     *
-    * @param roadNetwork the current road network state
+    * @param roadNetwork          the current road network state
     * @param activeRouteRequests agents which are available for SO routing requests
-    * @param currentTime the current sim time
+    * @param currentTime          the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
   def updateBatchingStrategy(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     activeRouteRequests: List[RouteRequestData],
     currentTime: SimTime
-  ): IO[Option[List[(String, List[Request])]]]
+  ): IO[Option[List[(String, List[Request])]]] = {
+    if (activeRouteRequests.isEmpty) IO.pure {
+      None
+    }
+    else
+      IO.pure {
 
+        activeRouteRequests match {
+          case Nil         => None
+          case newRequests =>
+            // we have agents that we can replan to add to the nearest possible request time
+            Some {
+              val result: List[(String, List[Request])] = BatchSplittingFunction
+                .bySlidingWindow(newRequests, this.maxBatchSize)
+                .zipWithIndex
+                .map { case (reqs, id) => (id.toString, reqs.map { _.request }) }
+              result
+            }
+        }
+      }
+  }
 }

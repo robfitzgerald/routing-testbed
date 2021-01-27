@@ -8,7 +8,9 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.TrueShortestSelection
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.random.RandomSamplingSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
-sealed trait SelectionAlgorithmConfig
+sealed trait SelectionAlgorithmConfig {
+  def build[V, E](): selection.SelectionAlgorithm[IO, V, E]
+}
 
 object SelectionAlgorithmConfig {
 
@@ -16,11 +18,11 @@ object SelectionAlgorithmConfig {
     seed: Long,
     exhaustiveSearchSampleLimit: Int,
     selectionTerminationFunction: SelectionTerminationFunctionConfig,
-    selectionAcceptanceFunction: SelectionAcceptanceFunctionConfig,
+    selectionAcceptanceFunction: SelectionAcceptanceFunctionConfig
   ) extends SelectionAlgorithmConfig {
 
-    def build[F[_]: Monad, V, E](): selection.SelectionAlgorithm[F, V, E] = {
-      new RandomSamplingSelectionAlgorithm[F, V, E](
+    def build[V, E](): selection.SelectionAlgorithm[IO, V, E] = {
+      new RandomSamplingSelectionAlgorithm[IO, V, E](
         seed,
         exhaustiveSearchSampleLimit,
         selectionTerminationFunction.build(),
@@ -28,11 +30,12 @@ object SelectionAlgorithmConfig {
       )
     }
   }
+
   final case class LocalMCTSSelection(
     seed: Long,
     exhaustiveSearchSampleLimit: Int,
     minimumAverageBatchTravelImprovement: Cost,
-    selectionTerminationFunction: SelectionTerminationFunctionConfig,
+    selectionTerminationFunction: SelectionTerminationFunctionConfig
   ) extends SelectionAlgorithmConfig {
     assert(
       minimumAverageBatchTravelImprovement.value >= 0,

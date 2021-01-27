@@ -5,7 +5,7 @@ import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
-import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.BatchOverlapFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.{BatchOverlapFunction, OverlapCostType}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -14,7 +14,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 final case class FilterByOverlapThreshold(
   threshold: Double,
   minBatchSearchSpace: Option[Int],
-  batchOverlapFunction: BatchOverlapFunction
+  batchOverlapFunction: BatchOverlapFunction,
+  overlapCostType: OverlapCostType
 ) extends BatchFilterFunction
     with LazyLogging {
 
@@ -33,10 +34,11 @@ final case class FilterByOverlapThreshold(
       batch <- batches
       alts          = batch.filteredAlts.getOrElse(batch.alts)
       overlapResult = batchOverlapFunction(alts)
+      overlapCost   = overlapCostType.aggregate(overlapResult.overlapValues.values)
       meetsMinSearchSpaceSizeConstraint = minBatchSearchSpace
         .map(t => SelectionAlgorithm.numCombinationsGreaterThanThreshold(alts, t))
         .getOrElse(true)
-      if meetsMinSearchSpaceSizeConstraint && overlapResult.average >= this.threshold
+      if meetsMinSearchSpaceSizeConstraint && overlapCost >= this.threshold
     } yield batch
 
     logger.whenInfoEnabled {

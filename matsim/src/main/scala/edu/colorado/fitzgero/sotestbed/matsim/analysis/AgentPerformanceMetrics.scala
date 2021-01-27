@@ -37,9 +37,7 @@ object AgentPerformanceMetrics extends LazyLogging {
   def headerWithPrefix(prefix: String): String =
     Header
       .split(",")
-      .map { colName =>
-        f"$prefix$colName"
-      }
+      .map { colName => f"$prefix$colName" }
       .mkString(",")
 
   def ratioToPercent(n: Double): String = f"${n * 100.0}%.2f%%"
@@ -70,11 +68,13 @@ object AgentPerformanceMetrics extends LazyLogging {
     * @param thisAgentExperienceFile
     * @return
     */
-  def fromFiles(referenceAgentExperienceFile: File,
-                thisAgentExperienceFile: File,
-                reportImprovedAgents: Boolean = true,
-                reportDisImprovedAgents: Boolean = true,
-                soAgentsOnly: Boolean = false): Either[Exception, AgentPerformanceMetrics] = {
+  def fromFiles(
+    referenceAgentExperienceFile: File,
+    thisAgentExperienceFile: File,
+    reportImprovedAgents: Boolean = true,
+    reportDisImprovedAgents: Boolean = true,
+    soAgentsOnly: Boolean = false
+  ): Either[Exception, AgentPerformanceMetrics] = {
 
     implicit val dec: HeaderDecoder[AgentExperienceRow] = AgentExperienceRow.headerDecoder
 
@@ -84,16 +84,12 @@ object AgentPerformanceMetrics extends LazyLogging {
       val selfishRows: Map[String, AgentExperienceRow] =
         referenceAgentExperienceFile
           .unsafeReadCsv[List, AgentExperienceRow](rfc.withHeader)
-          .map { row =>
-            s"${row.agentId}#${row.departureTime}" -> row
-          }
+          .map { row => s"${row.agentId}#${row.departureTime}" -> row }
           .toMap
       val optimalRows: Map[String, AgentExperienceRow] =
         thisAgentExperienceFile
           .unsafeReadCsv[List, AgentExperienceRow](rfc.withHeader)
-          .map { row =>
-            s"${row.agentId}#${row.departureTime}" -> row
-          }
+          .map { row => s"${row.agentId}#${row.departureTime}" -> row }
           .toMap
 
       case class Acc(
@@ -134,7 +130,7 @@ object AgentPerformanceMetrics extends LazyLogging {
                 acc
               case Some(selfishRow) =>
                 if (optimalRow.travelTime == 0.0 || selfishRow.travelTime == 0.0) {
-                  logger.warn("encountered infinite mph speed, skipping")
+//                  logger.debug("encountered infinite mph speed, skipping")
                   acc
                 } else if (soAgentsOnly && optimalRow.requestClass == "ue") {
                   acc
@@ -172,8 +168,6 @@ object AgentPerformanceMetrics extends LazyLogging {
 
       diffsAveraged
 
-    }.toEither.left.map { t =>
-      new Exception(t)
-    }
+    }.toEither.left.map { t => new Exception(t) }
   }
 }

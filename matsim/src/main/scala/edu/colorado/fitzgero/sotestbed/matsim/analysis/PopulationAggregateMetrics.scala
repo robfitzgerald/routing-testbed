@@ -1,13 +1,18 @@
 package edu.colorado.fitzgero.sotestbed.matsim.analysis
 
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.AgentExperienceOps.{meanStdev, performanceMetricsAgg, performanceMetricsPGFPlotsAgg}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.AgentExperienceOps.{
+  meanStdev,
+  performanceMetricsAgg,
+  performanceMetricsPGFPlotsAgg
+}
 
 case class PopulationAggregateMetrics(
   outputString: String,
   allData: PGFPlotsData,
   winPercent: Double,
   losePercent: Double,
-  loserData: PGFPlotsData
+  loserData: PGFPlotsData,
+  count: Int
 )
 
 object PopulationAggregateMetrics {
@@ -32,12 +37,16 @@ object PopulationAggregateMetrics {
     val loseCount: Int      = group.map { _.loserMetrics.count }.foldLeft(0) { _ + _ }
     val winPercent: Double  = (winCount.toDouble / overallCount.toDouble) * 100.0
     val losePercent: Double = (loseCount.toDouble / overallCount.toDouble) * 100.0
-    val (ttNormAll, ttNormStdevAll, distNormAll, distNormStdevAll, speedNormAll, speedNormStdevAll) = performanceMetricsPGFPlotsAgg(group.map {
-      _.allPerformanceMetrics
-    })
-    val (ttNormL, ttNormStdevL, distNormL, distNormStdevL, speedNormL, speedNormStdevL) = performanceMetricsPGFPlotsAgg(group.map { _.loserMetrics })
+    val (ttNormAll, ttNormStdevAll, distNormAll, distNormStdevAll, speedNormAll, speedNormStdevAll) =
+      performanceMetricsPGFPlotsAgg(group.map {
+        _.allPerformanceMetrics
+      })
+    val (ttNormL, ttNormStdevL, distNormL, distNormStdevL, speedNormL, speedNormStdevL) = performanceMetricsPGFPlotsAgg(
+      group.map { _.loserMetrics }
+    )
 
-    val outputString = f"$experimentName,$trials,$overallMetrics,$winPercent%%,$losePercent%%,$allPerf,$winPerf,$losePerf"
+    val outputString =
+      f"$experimentName,$trials,$overallMetrics,$winPercent%%,$losePercent%%,$allPerf,$winPerf,$losePerf"
     val allData = PGFPlotsData(
       experimentName,
       winPercent,
@@ -62,6 +71,6 @@ object PopulationAggregateMetrics {
       speedNormStdevL
     )
 
-    PopulationAggregateMetrics(outputString, allData, winPercent, losePercent, loserData)
+    PopulationAggregateMetrics(outputString, allData, winPercent, losePercent, loserData, trials)
   }
 }

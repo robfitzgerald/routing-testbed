@@ -15,6 +15,7 @@ import pureconfig.ConvertHelpers._
 import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, BatchingFunction}
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.config.{
   BatchFilterFunctionConfig,
@@ -32,6 +33,8 @@ import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 final case class MATSimConfig(
   io: MATSimConfig.IO,
@@ -181,11 +184,11 @@ object MATSimConfig {
           * @param currentTime          the current sim time
           * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
           */
-        def updateBatchingStrategy[F[_]: Monad, V, E](
-          roadNetwork: RoadNetwork[F, V, E],
+        def updateBatchingStrategy(
+          roadNetwork: RoadNetwork[cats.effect.IO, Coordinate, EdgeBPR],
           activeRouteRequests: List[RouteRequestData],
           currentTime: SimTime
-        ): F[Option[List[(String, List[Request])]]] = Monad[F].pure { None }
+        ): cats.effect.IO[Option[List[(String, List[Request])]]] = cats.effect.IO.pure { None }
       }
     }
 
@@ -200,9 +203,26 @@ object MATSimConfig {
       batchingFunction: BatchingFunctionConfig,
       batchFilterFunction: BatchFilterFunctionConfig,
       kspFilterFunction: KSPFilterFunctionConfig,
+      grid: SystemOptimal.GridConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {
       override def selfishOnly: Boolean = false
+    }
+
+    object SystemOptimal {
+
+      final case class GridConfig(
+        minX: Double,
+        maxX: Double,
+        minY: Double,
+        maxY: Double,
+        gridCellSideLength: Double,
+        srid: Int
+      ) {
+
+        def build(): Either[Error, CoordinateGrid2] =
+          CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid)
+      }
     }
   }
 

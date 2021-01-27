@@ -54,7 +54,9 @@ object MetricsSubsetApp
 
             println("\nMETRICS SUBSET REPORT\n")
             val header =
-              s"experimentName,ttAll,ttσAll,speedAll,speedσAll,distAll,distσAll,ttLose,ttσLose,speedLose,speedσLose,distLose,distσLose,${BatchMetrics.Header}"
+              s"experimentName,ttAll,ttσAll,speedAll,speedσAll,distAll,distσAll,ttLose,ttσLose,speedLose,speedσLose,distLose,distσLose," +
+                s"${BatchMetrics.Header}," +
+                s"trials"
             println(header)
             for {
               (rawRows, _, batchMetricsList) <- result
@@ -63,7 +65,6 @@ object MetricsSubsetApp
               val stats = for {
                 popAggMetrics <- rawRows
               } yield {
-                //
                 val experimentName = popAggMetrics.allData.experimentName
                 val ttAll          = popAggMetrics.allData.ttNorm
                 val ttσAll         = popAggMetrics.allData.ttStdev
@@ -78,7 +79,7 @@ object MetricsSubsetApp
                 val distLoser      = popAggMetrics.loserData.distNorm
                 val distσLoser     = popAggMetrics.loserData.distStdev
                 val row =
-                  f"$experimentName,$ttAll%.2f%%,$ttσAll%.2f%%,$speedAll%.2f%%,$speedσAll%.2f%%,$distAll%.2f%%,$distσAll%.2f%%,$ttLoser%.2f%%,$ttσLoser%.2f%%,$speedLoser%.2f%%,$speedσLoser%.2f%%,$distLoser%.2f%%,$distσLoser%.2f%%,${batchAgg.toString}"
+                  f"$experimentName,$ttAll%.2f%%,$ttσAll%.2f%%,$speedAll%.2f%%,$speedσAll%.2f%%,$distAll%.2f%%,$distσAll%.2f%%,$ttLoser%.2f%%,$ttσLoser%.2f%%,$speedLoser%.2f%%,$speedσLoser%.2f%%,$distLoser%.2f%%,$distσLoser%.2f%%,${batchAgg.toString},${popAggMetrics.count}"
                 println(row)
 
               }

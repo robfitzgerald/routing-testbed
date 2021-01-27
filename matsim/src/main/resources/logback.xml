@@ -8,9 +8,9 @@
         </encoder>
     </appender>
 
-<!--    <logger name="edu.colorado.fitzgero.sotestbed" level="INFO" additivity="false">-->
-<!--        <appender-ref ref="STDOUT"/>-->
-<!--    </logger>-->
+    <logger name="edu.colorado.fitzgero.sotestbed.algorithm.batching" level="DEBUG" additivity="false">
+        <appender-ref ref="STDOUT"/>
+    </logger>
 
 <!--    <logger name="edu.colorado.fitzgero.sotestbed.matsim" level="DEBUG" additivity="false">-->
 <!--        <appender-ref ref="STDOUT"/>-->

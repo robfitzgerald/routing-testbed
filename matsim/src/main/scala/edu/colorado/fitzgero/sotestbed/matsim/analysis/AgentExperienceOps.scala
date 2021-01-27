@@ -7,13 +7,15 @@ import scala.util.Try
 
 import cats.implicits._
 
+import com.typesafe.scalalogging.LazyLogging
+
 //import scalatikz.pgf.plots.Figure
 //import scalatikz.pgf.plots.enums.LegendPos
 //import scalatikz.pgf.enums.{Color, LineSize}
 //import scalatikz.pgf.enums.LineStyle.DASHED
 import edu.colorado.fitzgero.sotestbed.util.CombinedError
 
-object AgentExperienceOps {
+object AgentExperienceOps extends LazyLogging {
 
   /**
     * old way of collecting output, replaced by AgentExperienceOps.collectMetrics2
@@ -100,13 +102,15 @@ object AgentExperienceOps {
     * @param experimentName the directory name under the base directory we are collecting SO results from
     * @param popSize the population size for the experiments we are analyzing
     * @param trials the number of trials we are collecting
+    * @param ignoreErrors if true, when a file creates an error, simply ignore that file (but warn the user)
     * @return for each trial, the AgentMetrics for that trial
     */
   def collectAgentMetrics(
     baseOutputDir: Path,
     experimentName: String,
     popSize: Int,
-    trials: Int
+    trials: Int,
+    ignoreErrors: Boolean = true
   ): Either[Error, List[AgentMetrics]] = {
 
     if (!baseOutputDir.toFile.isDirectory) {
@@ -125,7 +129,7 @@ object AgentExperienceOps {
       // construct the selfish and optimal file paths by their trial number
       val selfishFilesByTrialNumber = for {
         trial <- 0 until trials
-        selfishLoggingDir = s"$popSize-$trial-logging"
+        selfishLoggingDir = s"$popSize-$trial-logging" // trial.toString // s"$popSize-$trial-logging"
         selfishAgentExperiencePath = baseOutputDir
           .resolve("selfish")
           .resolve(selfishLoggingDir)
@@ -151,7 +155,7 @@ object AgentExperienceOps {
         selfishFile <- selfishFileLookup.get(trial)
         optimalFile <- optimalFileLookup.get(trial)
       } yield {
-        for {
+        val agentMetricsOrError = for {
           overallMetrics        <- AgentBaseMetrics(optimalFile)
           allPerformanceMetrics <- AgentPerformanceMetrics.fromFiles(selfishFile, optimalFile)
           winnerMetrics         <- AgentPerformanceMetrics.fromFiles(selfishFile, optimalFile, reportDisImprovedAgents = false)
@@ -164,6 +168,14 @@ object AgentExperienceOps {
           winnerMetrics,
           loserMetrics
         )
+
+        agentMetricsOrError match {
+          case Left(error) =>
+            logger.warn(s"failure parsing metrics from $experimentName trial $trial", error)
+            Left(error)
+          case Right(value) =>
+            Right(value)
+        }
       }
 
       val errors: List[Exception] = result.flatMap {
@@ -171,13 +183,15 @@ object AgentExperienceOps {
         case Left(error) => Some(error)
       }
 
-      if (errors.nonEmpty) {
+      if (!ignoreErrors && errors.nonEmpty) {
         val errorResult = CombinedError(errors)
         Left(errorResult)
       } else {
         val results: List[AgentMetrics] = result.flatMap {
-          case Left(_)      => None
-          case Right(stats) => Some(stats)
+          case Left(error) =>
+            None
+          case Right(stats) =>
+            Some(stats)
         }
         Right(results)
       }

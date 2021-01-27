@@ -4,26 +4,28 @@ import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
-import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.{BatchOverlapFunction, OverlapCostType}
 import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.congestion.CongestionOps
 import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{RoadNetwork, VertexId}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
-final case class FilterByTopKOverlapAndCongestion(
+/**
+  * uses the congestion
+  * @param k
+  * @param minBatchSearchSpace
+  * @param grid
+  * @param costFunction
+  */
+final case class FilterByTopKCongestion(
   k: Int,
   minBatchSearchSpace: Option[Int],
-  batchOverlapFunction: BatchOverlapFunction,
-  overlapCostType: OverlapCostType,
   grid: CoordinateGrid2,
   costFunction: EdgeBPR => Cost
 ) extends BatchFilterFunction
     with LazyLogging {
-
-  import FilterByTopKOverlapAndCongestion._
 
   /**
     * takes all batches of requests with computed alternate paths, and possibly
@@ -45,10 +47,9 @@ final case class FilterByTopKOverlapAndCongestion(
       )
     } yield {
 
-      val ranked: List[RankedAlternative] = for {
+      val ranked: List[(Double, AltPathsAlgorithmResult)] = for {
         batch <- batches
-        alts          = batch.filteredAlts.getOrElse(batch.alts)
-        overlapResult = batchOverlapFunction(alts)
+        alts = batch.filteredAlts.getOrElse(batch.alts)
         congestion <- congestionLookup.get(batch.batchId) match {
           case Some(value) => Some(value)
           case None =>
@@ -62,22 +63,18 @@ final case class FilterByTopKOverlapAndCongestion(
           .getOrElse(true)
         if meetsMinSearchSpaceSizeConstraint
       } yield {
-        val overlapCost     = overlapCostType.aggregate(overlapResult.overlapValues.values)
-        val ranking: Double = overlapCost * congestion
-        RankedAlternative(ranking, overlapCost, congestion, batch)
+        (congestion, batch)
       }
 
-      val filtered = ranked.sortBy { case RankedAlternative(rank, _, _, _) => -rank }.take(k)
+      val filtered = ranked.sortBy { case (rank, _) => -rank }.take(k)
 
       logger.whenInfoEnabled {
         val inRanks = ranked
-          .sortBy { case RankedAlternative(_, _, _, b) => b.batchId }
+          .sortBy { case (_, b) => b.batchId }
           .map {
-            case RankedAlternative(r, o, c, b) =>
-              val rank       = f"${r * 100.0}%.1f%%"
-              val overlap    = overlapCostType.print(o)
-              val congestion = f"${c * 100.0}%.1f%%"
-              f"(id=${b.batchId}:k=${b.alts.size}:rank=$rank:overlap=$overlap:congestion=$congestion)"
+            case (r, b) =>
+              val congestion = f"${r * 100.0}%.1f%%"
+              f"(id=${b.batchId}:k=${b.alts.size}:congestion=$congestion"
           }
           .mkString("{", ", ", "}")
         val inCount   = batches.length
@@ -85,11 +82,9 @@ final case class FilterByTopKOverlapAndCongestion(
         val outCount  = filtered.length
         val selectedRanks = filtered
           .map {
-            case RankedAlternative(r, o, c, b) =>
-              val rank       = f"${r * 100.0}%.1f%%"
-              val overlap    = overlapCostType.print(o)
-              val congestion = f"${c * 100.0}%.1f%%"
-              f"(id=${b.batchId}:k=${b.alts.size}:rank=$rank:overlap=$overlap:congestion=$congestion)"
+            case (r, b) =>
+              val congestion = f"${r * 100.0}%.1f%%"
+              f"(id=${b.batchId}:k=${b.alts.size}:congestion=$congestion)"
           }
           .mkString("{", ", ", "}")
         val msssMsg2 =
@@ -98,21 +93,10 @@ final case class FilterByTopKOverlapAndCongestion(
         logger.info(s"filtered $inCount batches$msssMsg2 down to $outCount due to top-$k ranking:\n$selectedRanks")
       }
 
-      filtered.map { _.altPathsAlgorithmResult }
+      filtered.map { _._2 }
 
     }
 
     result
   }
-}
-
-object FilterByTopKOverlapAndCongestion {
-
-  final case class RankedAlternative(
-    rank: Double,
-    overlapPercent: Double,
-    congestionIncreasePercent: Double,
-    altPathsAlgorithmResult: AltPathsAlgorithmResult
-  )
-
 }

@@ -68,21 +68,21 @@ object MATSimBatchConfig {
       case _: MATSimConfig.Algorithm.Selfish => "0"
       case so: MATSimConfig.Algorithm.SystemOptimal =>
         so.batchingFunction match {
-          case _: BatchingFunctionConfig.Greedy                    => "0"
-          case bf: BatchingFunctionConfig.GreedyCoordinateGrouping => bf.batchType
+          case _: BatchingFunctionConfig.Random                  => "0"
+          case bf: BatchingFunctionConfig.CoordinateGridGrouping => bf.batchType
         }
     }
-    val splitFactor: String = config.algorithm match {
+    val gridCellSideLength: String = config.algorithm match {
       case _: MATSimConfig.Algorithm.Selfish => "0"
       case so: MATSimConfig.Algorithm.SystemOptimal =>
         so.batchingFunction match {
-          case _: BatchingFunctionConfig.Greedy                    => "0"
-          case bf: BatchingFunctionConfig.GreedyCoordinateGrouping => bf.splitFactor.toString
+          case _: BatchingFunctionConfig.Random                  => "0"
+          case bf: BatchingFunctionConfig.CoordinateGridGrouping => bf.gridCellSideLength.toString
         }
     }
     val maxPathAssignments: String    = config.routing.maxPathAssignments.toString
     val minReplanningWaitTime: String = config.routing.minimumReplanningWaitTime.value.toString
-    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sf=$splitFactor-mP=$maxPathAssignments-mRWT=$minReplanningWaitTime"
+    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sqlen=$gridCellSideLength-mP=$maxPathAssignments-mRWT=$minReplanningWaitTime"
   }
 
   def createVariationNameV3(config: MATSimConfig, popSize: Int): String = {
@@ -133,7 +133,9 @@ object MATSimBatchConfig {
           variation.toMap.get("algorithm.name") match {
             case None =>
               val error: ConfigReaderFailures =
-                ConfigReaderFailures(ThrowableFailure(new IOError(new Throwable("cannot find algorithm.name in batch file")), None))
+                ConfigReaderFailures(
+                  ThrowableFailure(new IOError(new Throwable("cannot find algorithm.name in batch file")), None)
+                )
               Variation(batchConfParsed, Left(error), Map.empty, 0)
 
             case Some(algorithmName) =>
@@ -141,7 +143,12 @@ object MATSimBatchConfig {
 
               if (!Files.isRegularFile(defaultConfigFile)) {
                 val error: ConfigReaderFailures = ConfigReaderFailures(
-                  ThrowableFailure(new IOError(new Throwable(s"config file for algorithm variation does not exist: $defaultConfigFile")), None)
+                  ThrowableFailure(
+                    new IOError(
+                      new Throwable(s"config file for algorithm variation does not exist: $defaultConfigFile")
+                    ),
+                    None
+                  )
                 )
                 Variation(batchConfParsed, Left(error), Map.empty, 0)
               } else {
@@ -158,7 +165,9 @@ object MATSimBatchConfig {
                       thisVariationConfig.getValue("pop.size").unwrapped.toString.trim.toInt
                     } match {
                       case util.Failure(error) =>
-                        val configReaderFailure: ConfigReaderFailures = ConfigReaderFailures(ThrowableFailure(new IOError(error), None))
+                        val configReaderFailure: ConfigReaderFailures = ConfigReaderFailures(
+                          ThrowableFailure(new IOError(error), None)
+                        )
                         Variation(thisVariationConfig, Left(configReaderFailure), Map.empty, 0)
                       case util.Success(popSize) =>
                         val thisVariationMATSimConfig: ConfigReader.Result[MATSimConfig] =

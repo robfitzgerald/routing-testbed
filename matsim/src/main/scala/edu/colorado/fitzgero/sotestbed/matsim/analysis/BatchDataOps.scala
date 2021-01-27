@@ -2,12 +2,18 @@ package edu.colorado.fitzgero.sotestbed.matsim.analysis
 
 import java.nio.file.Path
 
+import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.util.CombinedError
 import kantan.csv.ReadError
 
-object BatchDataOps {
+object BatchDataOps extends LazyLogging {
 
-  def collectBatchMetrics(baseDir: Path, experimentName: String, trials: Int): Either[Error, List[BatchMetrics]] = {
+  def collectBatchMetrics(
+    baseDir: Path,
+    experimentName: String,
+    trials: Int,
+    ignoreErrors: Boolean = true
+  ): Either[Error, List[BatchMetrics]] = {
     if (!baseDir.toFile.isDirectory) {
       Left(new Error(s"$baseDir is not a directory"))
     } else {
@@ -22,12 +28,13 @@ object BatchDataOps {
           case Left(error) =>
             val msg            = s"file $batchDataFilePath"
             val explainedError = new Error(msg, error)
+            logger.warn(s"failure reading batch data for $experimentName trial $trial", explainedError)
             acc.copy(errors = explainedError +: acc.errors)
           case Right(value) =>
             acc.copy(batchMetrics = value +: acc.batchMetrics)
         }
       }
-      if (result.errors.nonEmpty) {
+      if (!ignoreErrors && result.errors.nonEmpty) {
         Left(CombinedError(result.errors, Some(s"failure collecting batch metrics")))
       } else {
         Right(result.batchMetrics)

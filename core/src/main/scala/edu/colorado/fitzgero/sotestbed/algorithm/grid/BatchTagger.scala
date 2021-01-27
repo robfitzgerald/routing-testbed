@@ -4,7 +4,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRe
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 sealed trait BatchTagger {
-  def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String]
+  def tag(grid: CoordinateGrid2, routeRequestData: RouteRequestData): Option[String]
 }
 
 object BatchTagger {
@@ -27,11 +27,11 @@ object BatchTagger {
     */
   final case object OTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
+    def tag(grid: CoordinateGrid2, routeRequestData: RouteRequestData): Option[String] =
       for {
-        src <- originCoordinate(routeRequestData)
+        src       <- originCoordinate(routeRequestData)
+        originTag <- grid.getGridId(src.x, src.y).toOption
       } yield {
-        val originTag: String = grid.getGridId(src.x, src.y)
         originTag
       }
   }
@@ -41,11 +41,11 @@ object BatchTagger {
     */
   final case object DTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
+    def tag(grid: CoordinateGrid2, routeRequestData: RouteRequestData): Option[String] =
       for {
-        dst <- destinationCoordinate(routeRequestData)
+        dst            <- destinationCoordinate(routeRequestData)
+        destinationTag <- grid.getGridId(dst.x, dst.y).toOption
       } yield {
-        val destinationTag: String = grid.getGridId(dst.x, dst.y)
         destinationTag
       }
   }
@@ -55,13 +55,13 @@ object BatchTagger {
     */
   final case object ODTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
+    def tag(grid: CoordinateGrid2, routeRequestData: RouteRequestData): Option[String] =
       for {
-        src <- originCoordinate(routeRequestData)
-        dst <- destinationCoordinate(routeRequestData)
+        src            <- originCoordinate(routeRequestData)
+        dst            <- destinationCoordinate(routeRequestData)
+        originTag      <- grid.getGridId(src.x, src.y).toOption
+        destinationTag <- grid.getGridId(dst.x, dst.y).toOption
       } yield {
-        val originTag: String      = grid.getGridId(src.x, src.y)
-        val destinationTag: String = grid.getGridId(dst.x, dst.y)
         s"$originTag#$destinationTag"
       }
   }
@@ -71,11 +71,11 @@ object BatchTagger {
     */
   final case object CTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
+    def tag(grid: CoordinateGrid2, routeRequestData: RouteRequestData): Option[String] =
       for {
-        src <- currentLocationCoordinate(routeRequestData)
+        src        <- currentLocationCoordinate(routeRequestData)
+        currentTag <- grid.getGridId(src.x, src.y).toOption
       } yield {
-        val currentTag: String = grid.getGridId(src.x, src.y)
         currentTag
       }
   }
@@ -85,13 +85,13 @@ object BatchTagger {
     */
   final case object CDTag extends BatchTagger {
 
-    def tag(grid: CoordinateGrid, routeRequestData: RouteRequestData): Option[String] =
+    def tag(grid: CoordinateGrid2, routeRequestData: RouteRequestData): Option[String] =
       for {
-        src <- currentLocationCoordinate(routeRequestData)
-        dst <- destinationCoordinate(routeRequestData)
+        src            <- currentLocationCoordinate(routeRequestData)
+        dst            <- destinationCoordinate(routeRequestData)
+        currentTag     <- grid.getGridId(src.x, src.y).toOption
+        destinationTag <- grid.getGridId(dst.x, dst.y).toOption
       } yield {
-        val currentTag: String     = grid.getGridId(src.x, src.y)
-        val destinationTag: String = grid.getGridId(dst.x, dst.y)
         s"$currentTag#$destinationTag"
       }
   }

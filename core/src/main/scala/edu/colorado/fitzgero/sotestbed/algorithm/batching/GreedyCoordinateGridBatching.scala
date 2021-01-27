@@ -1,18 +1,21 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import cats.Monad
+import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.{BatchingInstruction, BatchingStrategy}
-import edu.colorado.fitzgero.sotestbed.algorithm.grid.{BatchTagger, CoordinateGrid}
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.{BatchTagger, CoordinateGrid2, CoordinateGrid2PrintOps}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 class GreedyCoordinateGridBatching(
-  grid: CoordinateGrid,
-  batchTagger: BatchTagger,
+  val grid: CoordinateGrid2,
+  val batchTagger: BatchTagger,
   maxBatchSize: Int
 ) extends BatchingFunction
     with LazyLogging {
@@ -28,11 +31,11 @@ class GreedyCoordinateGridBatching(
     * @param currentTime          the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
-  def updateBatchingStrategy[F[_]: Monad, V, E](
-    roadNetwork: RoadNetwork[F, V, E],
+  def updateBatchingStrategy(
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     activeRouteRequests: List[RouteRequestData],
     currentTime: SimTime
-  ): F[Option[List[(String, List[Request])]]] = Monad[F].pure {
+  ): IO[Option[List[(String, List[Request])]]] = IO.pure {
 
     activeRouteRequests match {
       case Nil =>
@@ -89,7 +92,9 @@ class GreedyCoordinateGridBatching(
                     (agentBatchData.request.origin.value, agentBatchData)
                 }
             }
-          logger.info(s"so batched agent locations at $currentTime:\n" + grid.printList(prettyPrintMe))
+          logger.info(
+            s"so batched agent locations at $currentTime:\n" + CoordinateGrid2PrintOps.printList(prettyPrintMe)
+          )
           logger.info(s"batch groupings:\n ${grouped.map { case (_, v) => v.size }.mkString("[", ",", "]")}")
 
           // share our grouping with the world, let them smile upon our greatness
@@ -106,23 +111,37 @@ class GreedyCoordinateGridBatching(
 
 object GreedyCoordinateGridBatching {
 
+  /**
+    * builds a greedy coordinate grid batching function
+    *
+    * @param maxBatchSize the max number of agents per batch
+    * @param minX study area min x value
+    * @param maxX study area max x value
+    * @param minY study area min y value
+    * @param maxY study area max y value
+    * @param gridCellSideLength length (in coordinate system) of the grid square sides
+    * @param srid coordinate system - likely Web Mercator or similar metric CRS
+    * @param tagType batch tag type
+    * @return a GreedyCoordinateGridBatching function or an error
+    */
   def apply(
     maxBatchSize: Int,
     minX: Double,
     maxX: Double,
     minY: Double,
     maxY: Double,
-    splitFactor: Int,
+    gridCellSideLength: Double,
+    srid: Int,
     tagType: String
   ): Either[Error, GreedyCoordinateGridBatching] = {
-    val grid: CoordinateGrid = new CoordinateGrid(minX, maxX, minY, maxY, splitFactor)
     val batchTaggerOrError: Either[Error, BatchTagger] =
       BatchTagger.makeBatchTag(tagType).toRight(new Error(s"invalid batch tag type $tagType"))
     val result: Either[Error, GreedyCoordinateGridBatching] = for {
-      batchTagger <- batchTaggerOrError
+      coordinateGrid2 <- CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid)
+      batchTagger     <- batchTaggerOrError
     } yield {
       new GreedyCoordinateGridBatching(
-        grid,
+        coordinateGrid2,
         batchTagger,
         maxBatchSize
       )

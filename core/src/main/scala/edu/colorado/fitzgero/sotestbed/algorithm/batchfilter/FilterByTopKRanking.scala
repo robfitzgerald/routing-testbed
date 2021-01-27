@@ -5,7 +5,7 @@ import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
-import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.BatchOverlapFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.batchoverlap.{BatchOverlapFunction, OverlapCostType}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -14,7 +14,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 final case class FilterByTopKRanking(
   k: Int,
   minBatchSearchSpace: Option[Int],
-  batchOverlapFunction: BatchOverlapFunction
+  batchOverlapFunction: BatchOverlapFunction,
+  overlapCostType: OverlapCostType
 ) extends BatchFilterFunction
     with LazyLogging {
 
@@ -37,20 +38,20 @@ final case class FilterByTopKRanking(
         .map(t => SelectionAlgorithm.numCombinationsGreaterThanThreshold(alts, t))
         .getOrElse(true)
       if meetsMinSearchSpaceSizeConstraint
-    } yield (overlapResult.average, batch)
+    } yield (overlapCostType.aggregate(overlapResult.overlapValues.values), batch)
 
     val filtered = ranked.sortBy { case (rank, _) => -rank }.take(k)
 
     logger.whenInfoEnabled {
       val inRanks = ranked
         .sortBy { case (_, b) => b.batchId }
-        .map { case (r, b) => f"(id=${b.batchId}:k=${b.alts.size}:${r * 100.0}%.1f%%)" }
+        .map { case (r, b) => f"(id=${b.batchId}:k=${b.alts.size}:${overlapCostType.print(r)})" }
         .mkString("{", ", ", "}")
       val inCount   = batches.length
       val rankCount = ranked.length
       val outCount  = filtered.length
       val ranksMsg = filtered
-        .map { case (r, b) => f"(id=${b.batchId}:k=${b.alts.size}:${r * 100.0}%.1f%%)" }
+        .map { case (r, b) => f"(id=${b.batchId}:k=${b.alts.size}:o=${overlapCostType.print(r)})" }
         .mkString("{", ", ", "}")
       val msssMsg2 =
         minBatchSearchSpace.map(n => s" down to $rankCount due to search space size, and finally").getOrElse("")

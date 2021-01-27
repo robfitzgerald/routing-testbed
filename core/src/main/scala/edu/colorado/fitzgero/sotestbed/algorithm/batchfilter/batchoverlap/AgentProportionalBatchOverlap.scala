@@ -14,12 +14,17 @@ object AgentProportionalBatchOverlap {
     *
     * @param filteredAlts the filtered shortest path sets for this batch
     * @param pathOverlapLookup the type of lookup to apply
+    *
     * @return the calculated overlap
     */
-  def from(filteredAlts: Map[Request, List[Path]], pathOverlapLookup: PathOverlapLookup): BatchOverlapResult = {
+  def from(
+    filteredAlts: Map[Request, List[Path]],
+    pathOverlapLookup: PathOverlapLookup,
+    overlapCostType: OverlapCostType
+  ): BatchOverlapResult = {
 
     val lookup: Map[Request, List[(EdgeId, Cost)]] =
-      PathOverlapLookupType.buildLookup(filteredAlts, pathOverlapLookup)
+      PathOverlapLookupOps.buildLookup(filteredAlts, pathOverlapLookup)
 
     val result: Iterable[(Request, Double)] = for {
       (request, paths) <- filteredAlts
@@ -50,8 +55,9 @@ object AgentProportionalBatchOverlap {
         }
 
       // compute the overlap proportion for this request
-      val overlapProportion = if (totalCost == Cost.Zero) 0.0 else overlapCost.value / totalCost.value
-      request -> overlapProportion
+      val agentOverlapCost = overlapCostType.cost(overlapCost, totalCost)
+
+      request -> agentOverlapCost
     }
 
     BatchOverlapResult(result.toMap)
