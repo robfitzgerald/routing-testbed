@@ -1,11 +1,9 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
-import cats.Monad
 import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.{BatchingInstruction, BatchingStrategy}
 import edu.colorado.fitzgero.sotestbed.algorithm.grid.{BatchTagger, CoordinateGrid2, CoordinateGrid2PrintOps}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
@@ -13,14 +11,12 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
-class GreedyCoordinateGridBatching(
+class CoordinateGridBatching(
   val grid: CoordinateGrid2,
   val batchTagger: BatchTagger,
   maxBatchSize: Int
 ) extends BatchingFunction
     with LazyLogging {
-
-  // split out the coordinate space into splitFactor * splitFactor grids
 
   /**
     * takes the current batching strategy and any updates about replan-able agents, and spits out an
@@ -109,38 +105,24 @@ class GreedyCoordinateGridBatching(
   }
 }
 
-object GreedyCoordinateGridBatching {
+object CoordinateGridBatching {
 
   /**
-    * builds a greedy coordinate grid batching function
-    *
-    * @param maxBatchSize the max number of agents per batch
-    * @param minX study area min x value
-    * @param maxX study area max x value
-    * @param minY study area min y value
-    * @param maxY study area max y value
-    * @param gridCellSideLength length (in coordinate system) of the grid square sides
-    * @param srid coordinate system - likely Web Mercator or similar metric CRS
-    * @param tagType batch tag type
-    * @return a GreedyCoordinateGridBatching function or an error
+    * builds a coordinate grid batch function
+    * @param coordinateGrid2
+    * @param tagType
+    * @param maxBatchSize
+    * @return
     */
   def apply(
-    maxBatchSize: Int,
-    minX: Double,
-    maxX: Double,
-    minY: Double,
-    maxY: Double,
-    gridCellSideLength: Double,
-    srid: Int,
-    tagType: String
-  ): Either[Error, GreedyCoordinateGridBatching] = {
-    val batchTaggerOrError: Either[Error, BatchTagger] =
-      BatchTagger.makeBatchTag(tagType).toRight(new Error(s"invalid batch tag type $tagType"))
-    val result: Either[Error, GreedyCoordinateGridBatching] = for {
-      coordinateGrid2 <- CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid)
-      batchTagger     <- batchTaggerOrError
+    coordinateGrid2: CoordinateGrid2,
+    tagType: String,
+    maxBatchSize: Int
+  ): Either[Error, CoordinateGridBatching] = {
+    val result: Either[Error, CoordinateGridBatching] = for {
+      batchTagger <- BatchTagger.makeBatchTag(tagType).toRight(new Error(s"invalid batch tag type $tagType"))
     } yield {
-      new GreedyCoordinateGridBatching(
+      new CoordinateGridBatching(
         coordinateGrid2,
         batchTagger,
         maxBatchSize
@@ -148,4 +130,40 @@ object GreedyCoordinateGridBatching {
     }
     result
   }
+
+//  /**
+//    * builds a greedy coordinate grid batching function
+//    *
+//    * @param maxBatchSize the max number of agents per batch
+//    * @param minX study area min x value
+//    * @param maxX study area max x value
+//    * @param minY study area min y value
+//    * @param maxY study area max y value
+//    * @param gridCellSideLength length (in coordinate system) of the grid square sides
+//    * @param srid coordinate system - likely Web Mercator or similar metric CRS
+//    * @param tagType batch tag type
+//    * @return a GreedyCoordinateGridBatching function or an error
+//    */
+//  def apply(
+//    maxBatchSize: Int,
+//    minX: Double,
+//    maxX: Double,
+//    minY: Double,
+//    maxY: Double,
+//    gridCellSideLength: Double,
+//    srid: Int,
+//    tagType: String
+//  ): Either[Error, CoordinateGridBatching] = {
+//    val result: Either[Error, CoordinateGridBatching] = for {
+//      coordinateGrid2 <- CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid)
+//      batchTagger     <- BatchTagger.makeBatchTag(tagType).toRight(new Error(s"invalid batch tag type $tagType"))
+//    } yield {
+//      new CoordinateGridBatching(
+//        coordinateGrid2,
+//        batchTagger,
+//        maxBatchSize
+//      )
+//    }
+//    result
+//  }
 }

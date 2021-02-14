@@ -1,59 +1,74 @@
 package edu.colorado.fitzgero.sotestbed.config
 
+import cats.effect.IO
+
 import edu.colorado.fitzgero.sotestbed.algorithm.batching
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, LBTCTrajectoryClusterBatching}
-import edu.colorado.fitzgero.sotestbed.algorithm.grid.BatchTagger
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{
+  AgentBatchData,
+  BatchingFunction,
+  LBTCTrajectoryClusterBatching
+}
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.{BatchTagger, CoordinateGrid2}
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 
 sealed trait BatchingFunctionConfig {
-  def build(): batching.BatchingFunction
+  def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction
 }
 
 object BatchingFunctionConfig {
+
+  final case object NoBatching extends BatchingFunctionConfig {
+
+    def build(coordinateGrid2: CoordinateGrid2): BatchingFunction =
+      new BatchingFunction {
+
+        def updateBatchingStrategy(
+          roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+          activeRouteRequests: List[AgentBatchData.RouteRequestData],
+          currentTime: SimTime
+        ): IO[Option[List[(String, List[Request])]]] = {
+          if (activeRouteRequests.isEmpty) IO(None)
+          else {
+            val singleBatch: List[(String, List[Request])] = List(("all", activeRouteRequests.map { _.request }))
+            IO(Some(singleBatch))
+          }
+        }
+      }
+  }
 
   final case class Random(
     batchWindow: SimTime,
     maxBatchSize: Int
   ) extends BatchingFunctionConfig {
-    def build(): batching.BatchingFunction = batching.RandomBatching(batchWindow, maxBatchSize)
+
+    override def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction =
+      batching.RandomBatching(batchWindow, maxBatchSize)
   }
 
   final case class Greedy(
     maxBatchSize: Int,
     maxBatchRadius: Double
   ) extends BatchingFunctionConfig {
-    def build(): BatchingFunction = batching.GreedyBatching(maxBatchSize, maxBatchRadius)
+
+    override def build(coordinateGrid2: CoordinateGrid2): BatchingFunction =
+      batching.GreedyBatching(maxBatchSize, maxBatchRadius)
   }
 
   final case class CoordinateGridGrouping(
-    batchWindow: SimTime,
     maxBatchSize: Int,
-    minX: Double,
-    maxX: Double,
-    minY: Double,
-    maxY: Double,
-    gridCellSideLength: Double,
-    batchPathTimeDelay: SimTime,
-    srid: Int,
     batchType: String // "o", "d", "od", "c", "cd"
   ) extends BatchingFunctionConfig {
-    require(gridCellSideLength > 0.0, "gridCellSideLength must be positive")
     require(
       BatchTagger.ValidBatchTags.contains(batchType),
       s"invalid batching-function.batch-type '$batchType': must be one of ${BatchTagger.ValidBatchTags.mkString("{", "|", "}")}"
     )
 
-    def build(): batching.BatchingFunction =
-      batching.GreedyCoordinateGridBatching(
-        maxBatchSize,
-        minX,
-        maxX,
-        minY,
-        maxY,
-        gridCellSideLength,
-        srid,
-        batchType
-      ) match {
+    override def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction =
+      batching.CoordinateGridBatching(coordinateGrid2, batchType, maxBatchSize) match {
         case Left(value) =>
           throw value
         case Right(value) =>
@@ -82,7 +97,7 @@ object BatchingFunctionConfig {
 
     val DefaultMaxRuntimeMilliseconds = 10000
 
-    def build(): BatchingFunction = LBTCTrajectoryClusterBatching(
+    override def build(coordinateGrid2: CoordinateGrid2): BatchingFunction = LBTCTrajectoryClusterBatching(
       omegaDelta,
       omegaBeta,
       omegaA,

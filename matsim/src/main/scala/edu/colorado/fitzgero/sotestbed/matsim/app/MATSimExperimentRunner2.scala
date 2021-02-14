@@ -9,15 +9,9 @@ import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{GreedyCoordinateGridBatching, RandomBatching}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.{
-  LocalMCTSSelection,
-  RandomSamplingSelection,
-  TspSelection
-}
-import edu.colorado.fitzgero.sotestbed.config.{RoutingReportConfig, SelectionAlgorithmConfig}
+import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig
 import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
@@ -148,7 +142,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
                 )
               val alg = RoutingAlgorithm2(
                 altPathsAlgorithmRunner = ksp,
-                batchingFunction = so.batchingFunction.build(),
+                batchingFunction = so.batchingFunction.build(grid),
                 batchFilterFunction =
                   so.batchFilterFunction.build(Some(config.routing.minBatchSearchSpace), grid, costFunction),
                 selectionRunner = sel,

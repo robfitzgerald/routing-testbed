@@ -3,7 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
 import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid
 
-class GreedyCoordinateGridBatchingTest extends SoTestBedBaseTest {
+class CoordinateGridBatchingTest extends SoTestBedBaseTest {
   "GreedyCoordinateGridBatching" when {
     "CoordinateGrid" when {
       "called with a set of integer-rounded test values" should {

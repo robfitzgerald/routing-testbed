@@ -73,12 +73,8 @@ object MATSimBatchConfig {
         }
     }
     val gridCellSideLength: String = config.algorithm match {
-      case _: MATSimConfig.Algorithm.Selfish => "0"
-      case so: MATSimConfig.Algorithm.SystemOptimal =>
-        so.batchingFunction match {
-          case _: BatchingFunctionConfig.Random                  => "0"
-          case bf: BatchingFunctionConfig.CoordinateGridGrouping => bf.gridCellSideLength.toString
-        }
+      case _: MATSimConfig.Algorithm.Selfish        => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal => so.grid.gridCellSideLength.toString
     }
     val maxPathAssignments: String    = config.routing.maxPathAssignments.toString
     val minReplanningWaitTime: String = config.routing.minimumReplanningWaitTime.value.toString
