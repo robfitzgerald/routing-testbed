@@ -1,5 +1,9 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts
 
+import java.io.{FileWriter, PrintWriter}
+
+import scala.util.{Failure, Success, Try}
+
 import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
@@ -86,6 +90,57 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
         // run algorithm - SIDE EFFECTS in mcts!
         val tree: mcts.Tree = mcts.run()
+
+        // compute tree shape
+//        // hey, maybe we just hard-code this.. val histBins = alts.values.map { _.length }.max
+//        val histBins = 11
+//        val zeroHist = Array.fill(histBins + 1)(0) // bin counts [0, histBins]
+//        def buildHistograms(t: mcts.Tree, minReward: Option[Double] = None): (Array[Int], Array[Int]) = {
+//          val doesntMeetRewardMinimum = minReward.exists(_ > t.reward(mcts.getDecisionCoefficients(t)))
+//          if (doesntMeetRewardMinimum) {
+//            (zeroHist, zeroHist)
+//          } else {
+//
+//            t.children match {
+//              case None =>
+//                val nodesHist  = zeroHist.updated(0, 1)
+//                val visitsHist = zeroHist.updated(0, t.visits.toInt)
+//                (nodesHist, visitsHist)
+//              case Some(children) =>
+//                val histIndex  = children.size
+//                val nodesHist  = zeroHist.updated(histIndex, 1)
+//                val visitsHist = zeroHist.updated(histIndex, t.visits.toInt)
+//                children.values
+//                  .map { child => buildHistograms(child(), minReward) }
+//                  .foldLeft((nodesHist, visitsHist)) {
+//                    case ((nodesAcc, visitsAcc), (nodesChild, visitsChild)) =>
+//                      val updatedNodesAcc  = nodesAcc.zip(nodesChild).map { case (a, b)   => a + b }
+//                      val updatedVisitsAcc = visitsAcc.zip(visitsChild).map { case (a, b) => a + b }
+//                      (updatedNodesAcc, updatedVisitsAcc)
+//                  }
+//            }
+//          }
+//        }
+//        val (nodesHist, visitsHist) = buildHistograms(tree)
+////        println(histogram.zipWithIndex.map { case (c, i)     => s"$i:$c" }.mkString(" "))
+////        println(minRewardHist.zipWithIndex.map { case (c, i) => s"$i:$c" }.mkString(" "))
+//        val treeNodes         = nodesHist.sum
+//        val leaves            = nodesHist(0)
+//        val branches          = nodesHist.tail.sum
+//        val treeEdgeCount     = nodesHist.zipWithIndex.map { case (a, b) => a * b }.sum.toDouble
+//        val avgBranchChildren = treeEdgeCount / branches
+//        val avgChildren       = treeEdgeCount / treeNodes
+//        val hist              = nodesHist.mkString(",")
+//        val avgVisitsHist = nodesHist
+//          .zip(visitsHist)
+//          .map { case (n, v) => f"${if (n == 0) 0.0 else v.toDouble / n}%.2f" }
+//          .mkString(",")
+//
+//        val treeStats =
+//          f",${alts.size},$treeNodes,$leaves,$branches,$avgChildren%.2f,$avgBranchChildren%.2f,${tree.visits},$hist,$avgVisitsHist\n"
+//        val printWriter: PrintWriter = new PrintWriter(new FileWriter("treeStats.csv", true))
+//        printWriter.append(treeStats)
+//        printWriter.close()
 
         val samples: NonNegativeNumber = NonNegativeNumber(tree.visits.toInt).getOrElse(NonNegativeNumber.Zero)
         val bestCost: Cost             = Cost(mcts.globalBestSimulation.toDouble)

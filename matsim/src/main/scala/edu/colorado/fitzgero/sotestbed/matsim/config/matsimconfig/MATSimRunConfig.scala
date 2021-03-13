@@ -66,7 +66,7 @@ object MATSimRunConfig {
     def toVariationPath(basePath: Path, batchName: String): Path =
       algorithm match {
         case "selfish" =>
-          basePath.resolve(batchName).resolve(s"selfish").resolve(s"$popSize-${trialNumber.toString}-logging")
+          basePath.resolve(batchName).resolve(s"selfish").resolve(popSize.toString).resolve(trialNumber.toString)
         case _ =>
           basePath.resolve(batchName).resolve(variationName)
       }
@@ -74,7 +74,7 @@ object MATSimRunConfig {
     def toTrialPath(basePath: Path, batchName: String): Path =
       algorithm match {
         case "selfish" =>
-          basePath.resolve(batchName).resolve(s"selfish").resolve(s"$popSize-${trialNumber.toString}-logging")
+          basePath.resolve(batchName).resolve(s"selfish").resolve(popSize.toString).resolve(trialNumber.toString)
         case _ =>
           basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString)
       }
@@ -82,14 +82,15 @@ object MATSimRunConfig {
     def toExperimentPath(basePath: Path, batchName: String): Path =
       algorithm match {
         case "selfish" =>
-          basePath.resolve(batchName).resolve(s"selfish").resolve(s"$popSize-${trialNumber.toString}")
+          basePath
+            .resolve(batchName)
+            .resolve(s"selfish")
+            .resolve(popSize.toString)
+            .resolve(trialNumber.toString)
+            .resolve("matsim")
         case _ =>
           basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString).resolve(algorithm)
       }
 
   }
-
-//  final case class PopulationData(
-//    agentsUnderControl: Set[Id[Person]],
-//  )
 }

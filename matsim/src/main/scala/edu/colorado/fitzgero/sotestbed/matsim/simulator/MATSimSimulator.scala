@@ -126,7 +126,7 @@ trait MATSimSimulator extends HandCrankedSimulator[IO] with LazyLogging { self =
 
     // MATSimProxy Selfish Routing Mode
     config.routing.selfish match {
-      case MATSimConfig.Routing.Selfish.MATSim(lastIter, soRoutingIterCycle, soFirstIter) =>
+      case MATSimConfig.Routing.Selfish.Matsim(lastIter, soRoutingIterCycle, soFirstIter) =>
         // allow MATSim's genetic algorithm to attempt to find a user equilibrium for selfish agents
         self.lastIteration = lastIter
         self.soFirstIteration = soFirstIter

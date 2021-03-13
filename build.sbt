@@ -14,7 +14,7 @@ lazy val core = project
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
 //    javacOptions ++= javac,
-    libraryDependencies ++= coreDependencies
+    libraryDependencies ++= coreDependencies ++ loggingDependencies
   )
 //  .dependsOn(dabtree)
 
@@ -28,7 +28,7 @@ lazy val matsim = project
 //    javacOptions ++= javac,
     matsimAssemblyStrategy,
     resolvers ++= matsimResolvers,
-    libraryDependencies ++= coreDependencies ++ matsimDependencies
+    libraryDependencies ++= coreDependencies ++ matsimDependencies ++ loggingDependencies
   )
   .dependsOn(core)
 
@@ -74,13 +74,10 @@ lazy val coreDependencies = List(
   // PURE FP LIBRARY
   "org.typelevel" %% "cats-core"   % "2.0.0",
   "org.typelevel" %% "cats-effect" % "2.0.0",
-  // LOGGING SYSTEM
-  "ch.qos.logback"             % "logback-classic" % "1.2.3",
-  "com.typesafe.scala-logging" %% "scala-logging"  % "3.9.2",
   // COMMAND LINE PARSING
   "com.monovore" %% "decline" % "1.0.0",
   // CONFIG
-  "com.github.pureconfig" %% "pureconfig" % "0.12.2",
+  "com.github.pureconfig" %% "pureconfig" % "0.14.1",
 //  "com.typesafe" % "config" % "1.3.4",
   // GIS
   "org.locationtech.proj4j" % "proj4j"   % "1.1.1",
@@ -95,12 +92,18 @@ lazy val coreDependencies = List(
 // TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
-)
+).map(_.exclude("org.slf4j", "*"))
 
 lazy val matsimDependencies = List(
   "org.geotools" % "gt-main" % "21.5",
   "org.matsim"   % "matsim"  % "12.0" // most recent official release/tag
 //  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
+).map(_.exclude("org.slf4j", "*"))
+
+lazy val loggingDependencies = List(
+  // LOGGING SYSTEM
+  "ch.qos.logback"             % "logback-classic" % "1.2.3",
+  "com.typesafe.scala-logging" %% "scala-logging"  % "3.9.2"
 )
 
 /////////////////////////// sbt-assembly ///////////////////////////

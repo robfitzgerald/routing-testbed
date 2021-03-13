@@ -31,7 +31,7 @@ object BatchProportionalOverlap {
     val result: Iterable[(Request, Double)] = for {
       (request, paths) <- filteredAlts
       thisAgentLinks = pathOverlapLookup(paths).toMap
-      otherAgents    = filteredAlts - request
+//      otherAgents    = filteredAlts - request
     } yield {
 //      val otherRequestLinks = for {
 //        (otherRequest, _) <- otherAgents

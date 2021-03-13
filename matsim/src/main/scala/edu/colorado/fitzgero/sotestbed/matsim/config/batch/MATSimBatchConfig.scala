@@ -68,8 +68,11 @@ object MATSimBatchConfig {
       case _: MATSimConfig.Algorithm.Selfish => "0"
       case so: MATSimConfig.Algorithm.SystemOptimal =>
         so.batchingFunction match {
-          case _: BatchingFunctionConfig.Random                  => "0"
-          case bf: BatchingFunctionConfig.CoordinateGridGrouping => bf.batchType
+          case BatchingFunctionConfig.NoBatching                        => "0"
+          case _: BatchingFunctionConfig.Random                         => "0"
+          case _: BatchingFunctionConfig.Greedy                         => "0"
+          case bf: BatchingFunctionConfig.CoordinateGridGrouping        => bf.batchType
+          case _: BatchingFunctionConfig.LabelBasedTrajectoryClustering => "traj"
         }
     }
     val gridCellSideLength: String = config.algorithm match {

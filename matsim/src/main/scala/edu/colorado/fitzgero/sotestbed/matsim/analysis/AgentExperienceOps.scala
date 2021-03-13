@@ -129,10 +129,11 @@ object AgentExperienceOps extends LazyLogging {
       // construct the selfish and optimal file paths by their trial number
       val selfishFilesByTrialNumber = for {
         trial <- 0 until trials
-        selfishLoggingDir = trial.toString // s"$popSize-$trial-logging"
+//        selfishLoggingDir = s"$popSize/$trial" // s"$popSize-$trial-logging"
         selfishAgentExperiencePath = baseOutputDir
           .resolve("selfish")
-          .resolve(selfishLoggingDir)
+          .resolve(popSize.toString)
+          .resolve(trial.toString)
           .resolve("agentExperience.csv")
       } yield {
         (trial, selfishAgentExperiencePath.toFile)

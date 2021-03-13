@@ -102,7 +102,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
 
       val ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, Coordinate, EdgeBPR]] =
         config.routing.selfish match {
-          case _: MATSimConfig.Routing.Selfish.MATSim =>
+          case _: MATSimConfig.Routing.Selfish.Matsim =>
             None
           case MATSimConfig.Routing.Selfish
                 .Dijkstra(pathToMarginalFlowsFunction, combineFlowsFunction, marginalCostFunction) =>

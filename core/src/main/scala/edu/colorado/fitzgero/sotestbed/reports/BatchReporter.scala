@@ -58,6 +58,7 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
       )
 
       printWriter.write(f"${row.toString}\n")
+      printWriter.flush()
     }
   }
 

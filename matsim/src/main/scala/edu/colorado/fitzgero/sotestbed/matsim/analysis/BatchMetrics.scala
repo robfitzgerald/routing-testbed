@@ -51,7 +51,8 @@ case class BatchMetrics(
 
 object BatchMetrics {
 
-  val Header: String = "batchSize,altPaths,searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent,observations"
+  val Header: String =
+    "batchSize,altPaths,searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent,observations"
 
   def fromFile(file: File): Either[ReadError, BatchMetrics] = {
     implicit val hd: HeaderDecoder[BatchDataRow] = BatchDataRow.headerDecoder
@@ -59,7 +60,9 @@ object BatchMetrics {
     val result: Either[ReadError, BatchMetrics] = for {
       rows <- ReadResult.sequence(file.readCsv[List, BatchDataRow](rfc.withHeader))
     } yield {
-      rows.foldLeft(BatchMetrics()) { _.add(_) }
+      val batchRowsBatchTimeAggregated =
+        rows.groupBy { _.time }.map { case (_, groupRows) => BatchDataRow.combine(groupRows) }
+      batchRowsBatchTimeAggregated.foldLeft(BatchMetrics()) { _.add(_) }
     }
 
     result

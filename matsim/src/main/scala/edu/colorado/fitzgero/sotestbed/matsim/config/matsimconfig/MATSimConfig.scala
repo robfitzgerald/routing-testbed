@@ -95,7 +95,7 @@ object MATSimConfig {
 
     object Selfish {
 
-      final case class MATSim(
+      final case class Matsim(
         lastIteration: Int,
         soRoutingIterationCycle: Int,
         soFirstIteration: Boolean // overrides the iteration cycle for so-routing and simply has it run on iteration 0
