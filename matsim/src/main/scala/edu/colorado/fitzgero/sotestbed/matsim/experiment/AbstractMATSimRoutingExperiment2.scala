@@ -6,7 +6,7 @@ import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment2
-import edu.colorado.fitzgero.sotestbed.matsim.simulator.MATSimSimulator
+import edu.colorado.fitzgero.sotestbed.matsim.simulator.MATSimSimulatorWithBatchRouting
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -17,7 +17,7 @@ abstract class AbstractMATSimRoutingExperiment2(
   finalReportFile: File,
   routingReports: RoutingReports[IO, Coordinate, EdgeBPR]
 ) extends RoutingExperiment2
-    with MATSimSimulator {
+    with MATSimSimulatorWithBatchRouting {
 
   val routingResultFileReport: RoutingReports[IO, Coordinate, EdgeBPR] = routingReports
   val finalReport: MATSimFinalReport                                   = new MATSimFinalReport(finalReportFile)
