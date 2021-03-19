@@ -9,13 +9,16 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltPathsAlgorithmResult
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.{
+  AltPathsAlgorithmResult,
+  AltsResultData
+}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
@@ -69,6 +72,8 @@ case class RoutingAlgorithm2(
             logger.info("no viable requests after applying batching function")
             IO.pure(List.empty)
           case Some(routeRequests) =>
+            val batchingFunctionStartTime = System.currentTimeMillis
+
             // remove route requests which we know do not meet the batch size requirements of our batch filter function
             val preFilteredRouteRequests = routeRequests.filter {
               case (_, reqs) => reqs.lengthCompare(minBatchSize) >= 0
@@ -81,6 +86,7 @@ case class RoutingAlgorithm2(
                     res <- altPathsAlgorithmRunner.run(batchId, batch, batchingManager.storedHistory, roadNetwork)
                   } yield res
               }
+
             for {
               batchAlts <- altPathsResult
               _ <- IO.pure(
@@ -88,6 +94,7 @@ case class RoutingAlgorithm2(
                   s"alt paths computed via ${altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName}"
                 )
               )
+              altResultData = AltPathsAlgorithmRunner.logAltsResultData(batchAlts)
               batchAltsFiltered <- batchFilterFunction.filter(batchAlts, roadNetwork)
               _ <- IO.pure {
                 val bffName = batchFilterFunction.getClass.getSimpleName
@@ -95,6 +102,7 @@ case class RoutingAlgorithm2(
                   logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
                 }
               }
+              batchingRuntime = RunTime(System.currentTimeMillis - batchingFunctionStartTime)
               selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
               soResults               <- selectionRunnerRequests.traverse { r => selectionRunner.run(r, roadNetwork) }
               _ <- IO.pure(
@@ -104,7 +112,13 @@ case class RoutingAlgorithm2(
               )
             } yield {
               // re-combine data by batch id and package as a RoutingAlgorithm.Result
-              RoutingAlgorithm2.matchAltBatchesWithSelectionBatches(batchAltsFiltered, soResults, batchingManager)
+              RoutingAlgorithm2.matchAltBatchesWithSelectionBatches(
+                batchAltsFiltered,
+                soResults,
+                batchingManager,
+                batchingRuntime,
+                altResultData
+              )
             }
         }
       }
@@ -158,7 +172,9 @@ object RoutingAlgorithm2 {
   def matchAltBatchesWithSelectionBatches(
     alts: List[AltPathsAlgorithmResult],
     selections: List[Option[SelectionRunner.SelectionRunnerResult]],
-    batchingManager: BatchingManager
+    batchingManager: BatchingManager,
+    batchingFunctionRuntime: RunTime,
+    altsResultData: AltsResultData
   ): List[(String, RoutingAlgorithm.Result)] = {
 
     val altsLookup = alts.map { a => (a.batchId, a) }.toMap
@@ -175,7 +191,9 @@ object RoutingAlgorithm2 {
         responses = selectionResult.selection.selectedRoutes,
         agentHistory = batchingManager.storedHistory,
         kspRuntime = alts.runtimeMilliseconds,
+        batchingRuntime = batchingFunctionRuntime,
         selectionRuntime = selectionResult.runtime,
+        altsResultData = altsResultData,
         selfishCost = selectionResult.selection.selfishCost,
         optimalCost = selectionResult.selection.estimatedCost,
         travelTimeDiff = selectionResult.selection.travelTimeDiff,

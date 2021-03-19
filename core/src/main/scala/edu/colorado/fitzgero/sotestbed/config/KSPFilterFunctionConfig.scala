@@ -167,4 +167,24 @@ object KSPFilterFunctionConfig {
     def build(): KSPFilterFunction = KSPFilter.combine(fns)
 
   }
+
+  final case class TravelTimeAndLinkCount(maxEdgeVisits: Int, travelTimeThreshold: Double, linkCount: Int)
+      extends KSPFilterFunctionConfig {
+
+    val fns: List[KSPFilterFunction] = List(
+      LimitedEdgeVisits(maxEdgeVisits).build(),
+      SampleFromRemainingDistanceProportion.build(),
+      LimitPath(KSPFilter.LimitFunction.ByLinkCount(linkCount)).build(),
+      LimitPath(KSPFilter.LimitFunction.ByTravelTime(TravelTimeSeconds(travelTimeThreshold))).build()
+    )
+
+    /**
+      * builds a function which takes the ksp result for an agent, the history of that
+      * agent's replanning, and a seed value for use with sampling-based approaches
+      *
+      * @return the request filtered
+      */
+    def build(): KSPFilterFunction = KSPFilter.combine(fns)
+
+  }
 }

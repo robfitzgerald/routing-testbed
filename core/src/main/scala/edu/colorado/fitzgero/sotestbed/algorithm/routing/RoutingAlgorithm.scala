@@ -1,5 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltsResultData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent._
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime}
@@ -32,7 +33,9 @@ object RoutingAlgorithm {
     responses: List[Response] = List.empty,
     agentHistory: ActiveAgentHistory = ActiveAgentHistory(),
     kspRuntime: RunTime = RunTime.Zero,
+    batchingRuntime: RunTime = RunTime.Zero,
     selectionRuntime: RunTime = RunTime.Zero,
+    altsResultData: AltsResultData = AltsResultData(),
     selfishCost: Cost = Cost.Zero,
     optimalCost: Cost = Cost.Zero,
     travelTimeDiff: Cost = Cost.Zero,

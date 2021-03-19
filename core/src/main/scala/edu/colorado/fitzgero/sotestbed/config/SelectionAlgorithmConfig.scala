@@ -82,7 +82,7 @@ object SelectionAlgorithmConfig {
   final case class LocalMCTS2(
     seed: Option[Long],
     exhaustiveSearchSampleLimit: Int,
-    selectionComputeBudgetFunctionConfig: SelectionComputeBudgetFunctionConfig,
+    computeBudgetFunctionConfig: SelectionComputeBudgetFunctionConfig,
     expandPolicy: ExpandPolicy,
     agentOrdering: Option[AgentOrdering],
     pathOrdering: Option[PathOrdering],
@@ -98,7 +98,7 @@ object SelectionAlgorithmConfig {
         RunnerType.Default,
         seed.getOrElse(System.currentTimeMillis),
         exhaustiveSearchSampleLimit,
-        selectionComputeBudgetFunctionConfig,
+        computeBudgetFunctionConfig,
         computeBudgetTestRate
       )
     }

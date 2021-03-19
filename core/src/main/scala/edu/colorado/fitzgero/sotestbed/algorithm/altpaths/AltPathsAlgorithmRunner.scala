@@ -135,4 +135,43 @@ object AltPathsAlgorithmRunner {
     }
     altsWithCurrentSpeeds
   }
+
+  case class AltsResultData(
+    numBatches: Int = 0,
+    avgBatchSize: Double = 0.0,
+    avgPathTravelTimeSec: Double = 0.0,
+    avgPathLinkCount: Double = 0.0
+  )
+
+  /**
+    * logs reporting data on this batch's set of alternatives
+    *
+    * @param alts the set of batch alternatives (before filtering)
+    * @return data on the batches
+    */
+  def logAltsResultData(alts: List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]): AltsResultData = {
+    if (alts.isEmpty) AltsResultData()
+    else {
+      val numBatches   = alts.size
+      val avgBatchSize = alts.map { _.alts.size.toDouble }.sum / numBatches
+      val allPaths     = alts.flatMap { _.alts.values.flatten }
+      val numPaths     = allPaths.length
+      val (sumPathTravelTime, sumPathLinkCount) =
+        allPaths.foldLeft((0.0, 0.0)) { (acc, path) =>
+          val (accPathTravelTime, accPathLinkCount) = acc
+          val thisPathTravelTime                    = if (path.isEmpty) 0.0 else path.map { _.cost.value }.sum
+          val thisPathLinkCount                     = path.length
+          (accPathTravelTime + thisPathTravelTime, accPathLinkCount + thisPathLinkCount)
+        }
+      val avgPathTravelTime = sumPathTravelTime / numPaths
+      val avgPathLinkCount  = sumPathLinkCount / numPaths
+      val result = AltsResultData(
+        numBatches = numBatches,
+        avgBatchSize = avgBatchSize,
+        avgPathTravelTimeSec = avgPathTravelTime,
+        avgPathLinkCount = avgPathLinkCount
+      )
+      result
+    }
+  }
 }

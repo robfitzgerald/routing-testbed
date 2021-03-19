@@ -5,7 +5,7 @@ import java.io.{File, PrintWriter}
 import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.model.numeric.{RunTime, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
@@ -30,6 +30,7 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
       (batchId, batchResult) <- routingResult
       if batchResult.responses.lengthCompare(1) > 0 && batchId != "ue" // only report SO batch assignments
     } {
+
       val batchSize: Int                 = batchResult.responses.size
       val totalAlts: Int                 = batchResult.kspResult.values.map { _.size }.sum
       val avgAlts: Double                = if (batchResult.kspResult.nonEmpty) totalAlts.toDouble / batchResult.kspResult.size else 0.0
@@ -46,7 +47,14 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
         time = currentTime,
         batchId = batchId,
         size = batchSize,
+        kspRuntimeMs = batchResult.kspRuntime,
+        bfRuntimeMs = batchResult.batchingRuntime,
+        selRuntimeMs = batchResult.selectionRuntime,
         avgAlts = avgAlts,
+        numBatches = batchResult.altsResultData.numBatches,
+        avgBatchSize = batchResult.altsResultData.avgBatchSize,
+        avgPathTravelTimeSec = batchResult.altsResultData.avgPathTravelTimeSec,
+        avgPathLinkCount = batchResult.altsResultData.avgPathLinkCount,
         samples = samples,
         searchSpaceSize = searchSpaceSize,
         optimalProportion = proportionOptimalRoute,
@@ -70,13 +78,24 @@ class BatchReporter(routingResultFile: File) extends RoutingReports[IO, Coordina
 object BatchReporter {
 
   val Header: String =
-    "time,batch_id,batch_size,avgAltPathsPerAgent,searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent,,ttSelfish,ttOptimal,ttDiff,ttMeanDiff,ttDiffPercent"
+    "time,batch_id,batch_size," +
+      "kspRuntimeMs,kspRuntime,bfRuntimeMs,bfRuntime,selRuntimeMs,selRuntime,totalRuntimeMs,totalRuntime" +
+      "avgAltPathsPerAgent,numBatches,avgBatchSize,avgPathTravelTimeSec,avgPathLinkCount," +
+      "searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent," +
+      "ttSelfish,ttOptimal,ttDiff,ttMeanDiff,ttDiffPercent"
 
   final case class Row(
     time: SimTime,
     batchId: String,
     size: Int,
+    kspRuntimeMs: RunTime,
+    bfRuntimeMs: RunTime,
+    selRuntimeMs: RunTime,
     avgAlts: Double,
+    numBatches: Int,
+    avgBatchSize: Double,
+    avgPathTravelTimeSec: Double,
+    avgPathLinkCount: Double,
     samples: Int,
     searchSpaceSize: BigDecimal,
     optimalProportion: Double,
@@ -92,8 +111,13 @@ object BatchReporter {
         if (searchSpaceSize != BigDecimal(0)) (BigDecimal(samples) / searchSpaceSize).toDouble * 100.0 else 0.0
       val spaceExplored: String       = f"$spaceExploredRatio%.9f%%"
       val soAssignmentPercent: String = f"${optimalProportion * 100.0}%.2f%%"
+      val totalRuntime                = kspRuntimeMs + bfRuntimeMs + selRuntimeMs
 
-      f"$time,$batchId,$size,$avgAlts%.2f,$samples,$searchSpaceSize,$spaceExplored,$soAssignmentPercent,,$selfishCost%.2f,$optimalCost%.2f,$travelTimeDiff%.2f,$meanTravelTimeDiff%.2f,$travelTimeDiffPercent"
+      f"$time,$batchId,$size," +
+        f"$kspRuntimeMs,${kspRuntimeMs.asMinutes},$bfRuntimeMs,${bfRuntimeMs.asMinutes},$selRuntimeMs,${selRuntimeMs.asMinutes},$totalRuntime,${totalRuntime.asMinutes}," +
+        f"$avgAlts%.2f,$numBatches,$avgBatchSize%.2f,$avgPathTravelTimeSec%.2f,$avgPathLinkCount%.2f," +
+        f"$samples,$searchSpaceSize,$spaceExplored,$soAssignmentPercent," +
+        f"$selfishCost%.2f,$optimalCost%.2f,$travelTimeDiff%.2f,$meanTravelTimeDiff%.2f,$travelTimeDiffPercent"
     }
   }
 }

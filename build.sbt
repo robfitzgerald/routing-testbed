@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.5.0"
+val packageVersion = "2.5.1"
 version := packageVersion
 val sVersion = "2.12.10"
 scalacOptions ++= scalac
@@ -123,6 +123,10 @@ lazy val matsimAssemblyStrategy = Seq(
     case PathList(ps @ _*) if ps.last == "Log4j2Plugins.dat" => MergeStrategy.discard
     case PathList("javax", "validation", xs @ _*)            => MergeStrategy.first
     case "module-info.class"                                 => MergeStrategy.discard
+
+    // 20210317 - too many logbacks!
+    case "logback.xml" => MergeStrategy.first
+
     case x =>
       val oldStrategy: String => MergeStrategy = (assemblyMergeStrategy in assembly).value
       oldStrategy(x)
