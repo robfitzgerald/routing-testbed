@@ -62,7 +62,8 @@ object BatchMetrics {
     } yield {
       val batchRowsBatchTimeAggregated =
         rows.groupBy { _.time }.map { case (_, groupRows) => BatchDataRow.combine(groupRows) }
-      batchRowsBatchTimeAggregated.foldLeft(BatchMetrics()) { _.add(_) }
+      val result = batchRowsBatchTimeAggregated.foldLeft(BatchMetrics()) { _.add(_) }
+      result
     }
 
     result

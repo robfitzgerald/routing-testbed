@@ -190,7 +190,7 @@ object RoutingAlgorithm2 {
         filteredKspResult = alts.filteredAlts.getOrElse(alts.alts),
         responses = selectionResult.selection.selectedRoutes,
         agentHistory = batchingManager.storedHistory,
-        kspRuntime = alts.runtimeMilliseconds,
+        kspRuntime = altsResultData.totalRuntimeMs,
         batchingRuntime = batchingFunctionRuntime,
         selectionRuntime = selectionResult.runtime,
         altsResultData = altsResultData,

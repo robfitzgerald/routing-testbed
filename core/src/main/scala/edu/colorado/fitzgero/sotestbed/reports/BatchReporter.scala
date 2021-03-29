@@ -79,7 +79,7 @@ object BatchReporter {
 
   val Header: String =
     "time,batch_id,batch_size," +
-      "kspRuntimeMs,kspRuntime,bfRuntimeMs,bfRuntime,selRuntimeMs,selRuntime,totalRuntimeMs,totalRuntime" +
+      "kspRuntimeMs,kspRuntime,bfRuntimeMs,bfRuntime,selRuntimeMs,selRuntime,totalRuntimeMs,totalRuntime," +
       "avgAltPathsPerAgent,numBatches,avgBatchSize,avgPathTravelTimeSec,avgPathLinkCount," +
       "searchSpaceSamples,searchSpaceSize,searchSpaceExplored,soAssignmentPercent," +
       "ttSelfish,ttOptimal,ttDiff,ttMeanDiff,ttDiffPercent"

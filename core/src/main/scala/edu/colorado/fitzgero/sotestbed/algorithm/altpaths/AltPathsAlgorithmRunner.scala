@@ -140,7 +140,8 @@ object AltPathsAlgorithmRunner {
     numBatches: Int = 0,
     avgBatchSize: Double = 0.0,
     avgPathTravelTimeSec: Double = 0.0,
-    avgPathLinkCount: Double = 0.0
+    avgPathLinkCount: Double = 0.0,
+    totalRuntimeMs: RunTime = RunTime.Zero
   )
 
   /**
@@ -152,10 +153,11 @@ object AltPathsAlgorithmRunner {
   def logAltsResultData(alts: List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]): AltsResultData = {
     if (alts.isEmpty) AltsResultData()
     else {
-      val numBatches   = alts.size
-      val avgBatchSize = alts.map { _.alts.size.toDouble }.sum / numBatches
-      val allPaths     = alts.flatMap { _.alts.values.flatten }
-      val numPaths     = allPaths.length
+      val overallRuntimeMs = RunTime(alts.map { _.runtimeMilliseconds.value }.sum)
+      val numBatches       = alts.size
+      val avgBatchSize     = alts.map { _.alts.size.toDouble }.sum / numBatches
+      val allPaths         = alts.flatMap { _.alts.values.flatten }
+      val numPaths         = allPaths.length
       val (sumPathTravelTime, sumPathLinkCount) =
         allPaths.foldLeft((0.0, 0.0)) { (acc, path) =>
           val (accPathTravelTime, accPathLinkCount) = acc
@@ -169,7 +171,8 @@ object AltPathsAlgorithmRunner {
         numBatches = numBatches,
         avgBatchSize = avgBatchSize,
         avgPathTravelTimeSec = avgPathTravelTime,
-        avgPathLinkCount = avgPathLinkCount
+        avgPathLinkCount = avgPathLinkCount,
+        totalRuntimeMs = overallRuntimeMs
       )
       result
     }
