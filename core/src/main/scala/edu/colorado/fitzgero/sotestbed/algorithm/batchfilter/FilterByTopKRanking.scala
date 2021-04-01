@@ -29,7 +29,7 @@ final case class FilterByTopKRanking(
   def filter(
     batches: List[AltPathsAlgorithmResult],
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
-  ): IO[List[AltPathsAlgorithmResult]] = {
+  ): IO[List[AltPathsAlgorithmResult]] = IO {
     val ranked: List[(Double, AltPathsAlgorithmResult)] = for {
       batch <- batches
       alts          = batch.filteredAlts.getOrElse(batch.alts)
@@ -61,6 +61,6 @@ final case class FilterByTopKRanking(
 
     val result = filtered.map { _._2 }
 
-    IO(result)
+    result
   }
 }

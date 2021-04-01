@@ -64,7 +64,9 @@ case class RoutingAlgorithm2(
         RoutingAlgorithm2.getCurrentPath(batchingManager, roadNetwork, altPathsAlgorithmRunner.costFunction)
 
       val result: IO[IO[List[(String, RoutingAlgorithm.Result)]]] = for {
-        routeRequestsOpt <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
+        batchingFunctionStartTime <- IO { System.currentTimeMillis }
+        routeRequestsOpt          <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
+        batchingRuntime           <- IO { RunTime(System.currentTimeMillis - batchingFunctionStartTime) }
       } yield {
         logger.info(s"request batching computed via ${batchingFunction.getClass.getSimpleName}")
         routeRequestsOpt match {
@@ -72,8 +74,6 @@ case class RoutingAlgorithm2(
             logger.info("no viable requests after applying batching function")
             IO.pure(List.empty)
           case Some(routeRequests) =>
-            val batchingFunctionStartTime = System.currentTimeMillis
-
             // remove route requests which we know do not meet the batch size requirements of our batch filter function
             val preFilteredRouteRequests = routeRequests.filter {
               case (_, reqs) => reqs.lengthCompare(minBatchSize) >= 0
@@ -88,13 +88,16 @@ case class RoutingAlgorithm2(
               }
 
             for {
-              batchAlts <- altPathsResult
+              altsStartTime <- IO { System.currentTimeMillis }
+              batchAlts     <- altPathsResult
               _ <- IO.pure(
                 logger.info(
                   s"alt paths computed via ${altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName}"
                 )
               )
               altResultData = AltPathsAlgorithmRunner.logAltsResultData(batchAlts)
+              altsRunTime <- IO { RunTime(System.currentTimeMillis - altsStartTime) }
+
               batchAltsFiltered <- batchFilterFunction.filter(batchAlts, roadNetwork)
               _ <- IO.pure {
                 val bffName = batchFilterFunction.getClass.getSimpleName
@@ -102,7 +105,6 @@ case class RoutingAlgorithm2(
                   logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
                 }
               }
-              batchingRuntime = RunTime(System.currentTimeMillis - batchingFunctionStartTime)
               selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
               soResults               <- selectionRunnerRequests.traverse { r => selectionRunner.run(r, roadNetwork) }
               _ <- IO.pure(
@@ -116,6 +118,7 @@ case class RoutingAlgorithm2(
                 batchAltsFiltered,
                 soResults,
                 batchingManager,
+                altsRunTime,
                 batchingRuntime,
                 altResultData
               )
@@ -173,6 +176,7 @@ object RoutingAlgorithm2 {
     alts: List[AltPathsAlgorithmResult],
     selections: List[Option[SelectionRunner.SelectionRunnerResult]],
     batchingManager: BatchingManager,
+    alternatePathsRuntime: RunTime,
     batchingFunctionRuntime: RunTime,
     altsResultData: AltsResultData
   ): List[(String, RoutingAlgorithm.Result)] = {
@@ -190,7 +194,7 @@ object RoutingAlgorithm2 {
         filteredKspResult = alts.filteredAlts.getOrElse(alts.alts),
         responses = selectionResult.selection.selectedRoutes,
         agentHistory = batchingManager.storedHistory,
-        kspRuntime = altsResultData.totalRuntimeMs,
+        kspRuntime = alternatePathsRuntime,
         batchingRuntime = batchingFunctionRuntime,
         selectionRuntime = selectionResult.runtime,
         altsResultData = altsResultData,

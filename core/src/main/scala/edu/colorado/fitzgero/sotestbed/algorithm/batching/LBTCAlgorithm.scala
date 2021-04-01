@@ -76,7 +76,8 @@ case class LBTCAlgorithm(
         .sortBy { case (_, density) => density }
         .map { case (vertexId, _) => vertexId }
 
-    val endTime = System.currentTimeMillis + maxRuntimeMilliseconds
+    val startTime = System.currentTimeMillis
+    val endTime   = startTime + maxRuntimeMilliseconds
 
     @tailrec
     def _find_clusters(
@@ -140,10 +141,12 @@ case class LBTCAlgorithm(
       }
     }
     val (result, dbi, iterations) = _find_clusters(verticesDescByDensity.zipWithIndex.toMap)
+    val runTime                   = System.currentTimeMillis - startTime
+    val runTimeSeconds            = f"${runTime.toDouble / 1000.0}%.2f"
 
     val clusters = clusterRepresentation(result, graph)
 
-    logger.info(f"LBTC ran $iterations iterations with final DBI $dbi%.1f")
+    logger.info(f"LBTC ran $iterations iterations in $runTimeSeconds seconds with final DBI $dbi%.1f")
     logger.whenDebugEnabled {
       val nonSingletonClusters =
         clusters.filter { case (_, edges) => edges.lengthCompare(1) > 0 }
