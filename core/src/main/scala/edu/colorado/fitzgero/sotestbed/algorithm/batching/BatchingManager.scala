@@ -45,7 +45,7 @@ final case class BatchingManager(
             case Some(mostRecent) =>
               // guard against the requestUpdateCycle
               val canUpdateRequest: Boolean =
-                routeRequestData.timeOfRequest - mostRecent.timeOfRequest > minRequestUpdateThreshold
+                routeRequestData.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
               if (canUpdateRequest) {
                 this.copy(
                   batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
