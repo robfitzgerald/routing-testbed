@@ -3,9 +3,10 @@ package edu.colorado.fitzgero.sotestbed.matsim.config.generator
 object Default {
 
   def apply(bprAlpha: Double = 0.15, bprBeta: Double = 4.0): String =
-    s"""use-free-flow-network-costs-in-path-search = true
-       |io.routing-report-config.type = all-aggregate
+    s"""io.routing-report-config.type = all-aggregate
        |io.matsim-log-level = "WARN"
+       |io.output-base-directory = ""
+       |
        |
        |run {
        |  start-of-sim-time = 0
@@ -17,6 +18,12 @@ object Default {
        |}
        |
        |algorithm {
+       |  ksp-filter-function = {
+       |    type = travel-time-and-link-count
+       |    max-edge-visits = 2
+       |    travel-time-threshold = 300
+       |    link-count = 25
+       |  }
        |  edge-update-function.type = flow-count
        |  path-to-marginal-flows-function.type = default
        |  combine-flows-function.type = sum
@@ -25,6 +32,7 @@ object Default {
        |    alpha = $bprAlpha
        |    beta = $bprBeta
        |  }
+       |  use-free-flow-network-costs-in-path-search = true
        |}
        |""".stripMargin
 }

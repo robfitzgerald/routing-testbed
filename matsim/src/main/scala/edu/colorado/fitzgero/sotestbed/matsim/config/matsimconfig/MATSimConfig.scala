@@ -137,7 +137,8 @@ object MATSimConfig {
   final case class Population(
     workActivityMinTime: LocalTime,
     workActivityMaxTime: LocalTime,
-    workDurationHours: Int
+    workDurationHours: Int,
+    size: Int
   )
 
   sealed trait Algorithm {

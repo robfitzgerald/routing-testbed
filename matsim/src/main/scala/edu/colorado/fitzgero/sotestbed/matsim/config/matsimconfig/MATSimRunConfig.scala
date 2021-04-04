@@ -11,15 +11,16 @@ final case class MATSimRunConfig(
   routing: MATSimConfig.Routing,
   run: MATSimConfig.Run,
   algorithm: MATSimConfig.Algorithm,
+  population: MATSimConfig.Population,
   agentsUnderControl: Set[Id[Person]] = Set.empty
 ) {
 
   def experimentLoggingDirectory: Path = {
-    scenarioData.toTrialPath(io.outputBaseDirectory, io.batchName)
+    scenarioData.loggingDirectory(io.outputBaseDirectory, io.batchName)
   }
 
   def experimentDirectory: Path = {
-    scenarioData.toExperimentPath(io.outputBaseDirectory, io.batchName)
+    scenarioData.matsimDirectory(io.outputBaseDirectory, io.batchName)
   }
 
 }
@@ -32,7 +33,8 @@ object MATSimRunConfig {
       scenarioData = scenarioData,
       routing = config.routing,
       run = config.run,
-      algorithm = config.algorithm
+      algorithm = config.algorithm,
+      population = config.population
     )
 
 //  def apply(agentsUnderControl: Set[Id[Person]], config: MATSimConfig, scenarioData: ScenarioData): MATSimRunConfig =
@@ -63,34 +65,46 @@ object MATSimRunConfig {
     //          .map{ colName => this.scenarioParameters.getOrElse(colName, "") }
     //          .mkString(",")
 
-    def toVariationPath(basePath: Path, batchName: String): Path =
-      algorithm match {
-        case "selfish" =>
-          basePath.resolve(batchName).resolve(s"selfish").resolve(popSize.toString).resolve(trialNumber.toString)
-        case _ =>
-          basePath.resolve(batchName).resolve(variationName)
-      }
+//    def toTrialPath(basePath: Path, batchName: String): Path =
+//      algorithm match {
+//        case "selfish" =>
+//          basePath.resolve(batchName).resolve(s"selfish").resolve(popSize.toString).resolve(trialNumber.toString)
+//        case _ =>
+//          basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString)
+//      }
 
-    def toTrialPath(basePath: Path, batchName: String): Path =
-      algorithm match {
-        case "selfish" =>
-          basePath.resolve(batchName).resolve(s"selfish").resolve(popSize.toString).resolve(trialNumber.toString)
-        case _ =>
-          basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString)
-      }
+    /**
+      * construct the path to the
+      * @param basePath base output directory
+      * @param batchName something shared across different algorithms sharing the same population resource,
+      *                  such as an enumeration
+      * @return outer experiment directory (not the matsim directory), where we drop our logging
+      */
+    def loggingDirectory(basePath: Path, batchName: String): Path =
+      basePath.resolve(batchName).resolve(algorithm)
 
-    def toExperimentPath(basePath: Path, batchName: String): Path =
-      algorithm match {
-        case "selfish" =>
-          basePath
-            .resolve(batchName)
-            .resolve(s"selfish")
-            .resolve(popSize.toString)
-            .resolve(trialNumber.toString)
-            .resolve("matsim")
-        case _ =>
-          basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString).resolve(algorithm)
-      }
+    /**
+      * directory to write MATSim files
+      * @param basePath base output directory
+      * @param batchName something shared across different algorithms sharing the same population resource,
+      *                  such as an enumeration
+      * @return
+      */
+    def matsimDirectory(basePath: Path, batchName: String): Path =
+      basePath.resolve(batchName).resolve(algorithm).resolve("matsim")
+
+//    def toExperimentPath(basePath: Path, batchName: String): Path =
+//      algorithm match {
+//        case "selfish" =>
+//          basePath
+//            .resolve(batchName)
+//            .resolve(s"selfish")
+//            .resolve(popSize.toString)
+//            .resolve(trialNumber.toString)
+//            .resolve("matsim")
+//        case _ =>
+//          basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString).resolve(algorithm)
+//      }
 
   }
 }

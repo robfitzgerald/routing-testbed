@@ -11,6 +11,7 @@ lazy val core = project
   .in(file("core"))
   .settings(
     name := "so-testbed-core",
+    version := packageVersion,
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
 //    javacOptions ++= javac,
@@ -109,9 +110,9 @@ lazy val loggingDependencies = List(
 /////////////////////////// sbt-assembly ///////////////////////////
 
 lazy val matsimAssemblyStrategy = Seq(
-  mainClass in (Compile, run) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
-  mainClass in (Compile, packageBin) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
-  mainClass in assembly := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimBatchExperimentApp"),
+  mainClass in (Compile, run) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
+  mainClass in (Compile, packageBin) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
+  mainClass in assembly := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
   test in assembly := {},
   assemblyMergeStrategy in assembly := {
 

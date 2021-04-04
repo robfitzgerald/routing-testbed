@@ -1,0 +1,84 @@
+Source: /Users/robertfitzgerald/dev/ucd/phd/projects/2020sp/so-testbed-route-viz/20200519/Golden_CO_extended.xml
+
+- note: without 1k buffer, this map excluded highway 93 + 58 interchange and left only 2 residential streets for connecting
+north and south Golden. version without buffer renamed "Golden_CO_no_buffer.xml". rjf 20201205
+
+bounding box
+
+batching-function {
+  min-x = -11715308.93
+  max-x = -11706548.83
+  min-y = 4822215.11
+  max-y = 4834563.74
+}
+
+xdist ydist 8760.10 12348.63
+
+total  link lengths: 353722.08 meters
+average link length: 173.22 meters
+max     link length: 3158.19 meters
+average link speed:  19.08 mph
+speed data:
+37 mph: 0.24%
+25 mph: 2.64%
+74 mph: 0.15%
+65 mph: 0.49%
+9 mph: 0.39%
+45 mph: 2.79%
+49 mph: 3.77%
+35 mph: 0.78%
+18 mph: 4.36%
+31 mph: 0.98%
+40 mph: 0.10%
+55 mph: 0.29%
+30 mph: 1.67%
+15 mph: 81.34%
+
+2020-12-05T11:49:39,059  INFO OsmNetworkReader:555 ... done creating the links.
+2020-12-05T11:49:39,059  INFO OsmNetworkReader:277 = conversion statistics: ==========================
+2020-12-05T11:49:39,062  INFO OsmNetworkReader:278 osm: # nodes read:       905
+2020-12-05T11:49:39,062  INFO OsmNetworkReader:279 osm: # ways read:        1243
+2020-12-05T11:49:39,062  INFO OsmNetworkReader:280 MATSim: # nodes created: 904
+2020-12-05T11:49:39,063  INFO OsmNetworkReader:281 MATSim: # links created: 2114
+2020-12-05T11:49:39,063  INFO OsmNetworkReader:289 = end of conversion statistics ====================
+2020-12-05T11:49:39,065  INFO NetworkCleaner:118 running org.matsim.core.network.algorithms.NetworkCleaner algorithm...
+2020-12-05T11:49:39,069  INFO NetworkCleaner:121   checking 904 nodes and 2114 links for dead-ends...
+2020-12-05T11:49:39,079  INFO NetworkCleaner:139     The biggest cluster consists of 857 nodes.
+2020-12-05T11:49:39,079  INFO NetworkCleaner:140   done.
+2020-12-05T11:49:39,081  INFO NetworkCleaner:155   resulting network contains 857 nodes and 2042 links.
+2020-12-05T11:49:39,081  INFO NetworkCleaner:157 done.
+2020-12-05T11:49:39,085  INFO NetworkWriter:69 Writing network to file: /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Golden_CO.xml...
+2020-12-05T11:49:39,305  INFO NetworkWriter:72 done.
+11:49:39.421 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=15.6464 mph=35.01 count 16
+11:49:39.423 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=11.176 mph=25.01 count 54
+11:49:39.423 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=24.587200000000003 mph=55.01 count 6
+11:49:39.423 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=13.411200000000001 mph=30.01 count 34
+11:49:39.423 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=4.166666666666667 mph=9.32 count 8
+11:49:39.423 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=16.666666666666668 mph=37.29 count 5
+11:49:39.423 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=8.333333333333334 mph=18.65 count 89
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=33.333333333333336 mph=74.58 count 3
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=17.881600000000002 mph=40.01 count 2
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=13.88888888888889 mph=31.08 count 20
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=22.22222222222222 mph=49.72 count 77
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=20.116799999999998 mph=45.01 count 57
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=6.944444444444445 mph=15.54 count 1661
+11:49:39.424 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=29.0576 mph=65.01 count 10
+11:49:39.433 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - total length in meters: 353722.08
+finished importing, network can be found at /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Golden_CO.xml
+
+running 10000th sample with current average 399.96
+running 20000th sample with current average 401.08
+running 30000th sample with current average 401.31
+running 40000th sample with current average 401.16
+running 50000th sample with current average 400.76
+running 60000th sample with current average 400.29
+running 70000th sample with current average 400.04
+... 6:40 avg free flow trip duration (6.67 seconds)
+
+selfish-1000-trial=0,9.29   ( 39.28% ~ 0.5x)
+selfish-8000-trial=0,15.87  (137.93% ~ 2.5x)
+selfish-10000-trial=0,20.19 (202.69% ~ 3x)
+selfish-12000-trial=0,24.93 (273.76% ~ 4x)
+selfish-14000-trial=0,31.59 (373.61% ~ 5x)
+selfish-16000-trial=0,39.47 (491.75% ~ 6x)
+selfish-18000-trial=0,44.82 (571.96% ~ 6x)

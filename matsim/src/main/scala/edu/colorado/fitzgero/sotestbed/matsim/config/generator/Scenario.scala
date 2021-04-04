@@ -1,13 +1,18 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.generator
 
+import java.io.File
+import java.nio.file.{Path, Paths}
+
 import scala.util.Random
 
-sealed trait Scenario
+sealed trait Scenario extends Product with Serializable
 
 object Scenario {
 
   case object Golden  extends Scenario
   case object Boulder extends Scenario
+
+  val All = List(Golden, Boulder)
 
   def randomPick(random: Random): Scenario = {
     random.nextInt(2) match {
@@ -19,6 +24,14 @@ object Scenario {
 
   implicit class ScenarioOps(scenario: Scenario) {
 
+    def networkFilePath: Path = {
+      val resourceDirectory: Path = Paths.get("matsim/src/main/resources/matsim-resources-2021")
+      scenario match {
+        case Golden  => resourceDirectory.resolve("Golden_CO.xml")
+        case Boulder => resourceDirectory.resolve("Boulder_CO.xml")
+      }
+    }
+
     def popSizeRange: (Int, Int) = scenario match {
       case Golden  => (5000, 20000)
       case Boulder => (10000, 30000)
@@ -27,8 +40,8 @@ object Scenario {
     def toHocon: String = scenario match {
       case Golden =>
         s"""io {
-           |  matsim-network-file = "matsim/Golden_CO.xml"
-           |  matsim-config-file = "matsim/matsim-config.xml"
+           |  matsim-network-file = "Golden_CO.xml"
+           |  matsim-config-file = "matsim-config.xml"
            |  name-prefix = "matsim-golden-co"
            |  matsim-log-level = "WARN"
            |}
@@ -45,8 +58,8 @@ object Scenario {
            |}""".stripMargin
       case Boulder =>
         s"""io {
-           |  matsim-network-file = "matsim/Boulder_CO.xml"
-           |  matsim-config-file = "matsim/matsim-config.xml"
+           |  matsim-network-file = "Boulder_CO.xml"
+           |  matsim-config-file = "matsim-config.xml"
            |  name-prefix = "matsim-boulder-co"
            |  matsim-log-level = "WARN"
            |}

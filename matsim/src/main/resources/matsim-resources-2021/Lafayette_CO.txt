@@ -1,0 +1,28 @@
+2020-09-04T14:59:28,054  INFO OsmNetworkReader:277 = conversion statistics: ==========================
+2020-09-04T14:59:28,057  INFO OsmNetworkReader:278 osm: # nodes read:       1403
+2020-09-04T14:59:28,057  INFO OsmNetworkReader:279 osm: # ways read:        1937
+2020-09-04T14:59:28,057  INFO OsmNetworkReader:280 MATSim: # nodes created: 1403
+2020-09-04T14:59:28,057  INFO OsmNetworkReader:281 MATSim: # links created: 3510
+2020-09-04T14:59:28,058  INFO OsmNetworkReader:289 = end of conversion statistics ====================
+2020-09-04T14:59:28,061  INFO NetworkCleaner:118 running org.matsim.core.network.algorithms.NetworkCleaner algorithm...
+2020-09-04T14:59:28,066  INFO NetworkCleaner:121   checking 1403 nodes and 3510 links for dead-ends...
+2020-09-04T14:59:28,078  INFO NetworkCleaner:139     The biggest cluster consists of 1390 nodes.
+2020-09-04T14:59:28,078  INFO NetworkCleaner:140   done.
+2020-09-04T14:59:28,080  INFO NetworkCleaner:155   resulting network contains 1390 nodes and 3491 links.
+2020-09-04T14:59:28,080  INFO NetworkCleaner:157 done.
+2020-09-04T14:59:28,084  INFO NetworkWriter:69 Writing network to file: /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Lafayette_CO.xml...
+2020-09-04T14:59:28,379  INFO NetworkWriter:72 done.
+14:59:28.505 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=15.6464 mph=35.01 count 31
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=22.352 mph=50.01 count 1
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=11.176 mph=25.01 count 281
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=24.587200000000003 mph=55.01 count 46
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=13.411200000000001 mph=30.01 count 79
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=16.666666666666668 mph=37.29 count 20
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=8.333333333333334 mph=18.65 count 52
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=8.940800000000001 mph=20.00 count 24
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=26.822400000000002 mph=60.01 count 21
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=17.881600000000002 mph=40.01 count 14
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=22.22222222222222 mph=49.72 count 2
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=20.116799999999998 mph=45.01 count 26
+14:59:28.508 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=6.944444444444445 mph=15.54 count 2894
+14:59:28.517 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - total length in meters: 461420.79

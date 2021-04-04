@@ -13,6 +13,7 @@ object AltPathsFunction {
            |  type = svp-lo-sync
            |  k = $k
            |  theta = $theta
+           |  min-batch-size = 2
            |  ksp-termination-function = {
            |    type = paths-seen
            |    seen = $searchIterations

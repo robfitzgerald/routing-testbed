@@ -14,6 +14,9 @@ import com.monovore.decline._
 import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig._
+import edu.colorado.fitzgero.sotestbed.matsim.runner
+import edu.colorado.fitzgero.sotestbed.matsim.runner.MATSimExperimentRunner2
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
@@ -187,7 +190,7 @@ object MATSimBatchExperimentApp
 
                         // run experiment
                         val experiment: MATSimExperimentRunner2 =
-                          MATSimExperimentRunner2(matsimRunConfig, trial + batchSeed)
+                          runner.MATSimExperimentRunner2(matsimRunConfig, trial + batchSeed)
 
                         Try {
                           experiment.run()
@@ -293,7 +296,7 @@ object MATSimBatchExperimentApp
                         }
 
                         val experiment: MATSimExperimentRunner2 =
-                          MATSimExperimentRunner2(matsimRunConfig, trial + batchSeed)
+                          runner.MATSimExperimentRunner2(matsimRunConfig, trial + batchSeed)
 
                         Try {
                           experiment.run()

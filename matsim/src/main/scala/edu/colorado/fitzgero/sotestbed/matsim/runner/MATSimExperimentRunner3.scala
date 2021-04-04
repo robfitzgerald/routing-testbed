@@ -1,9 +1,7 @@
-package edu.colorado.fitzgero.sotestbed.matsim.app
+package edu.colorado.fitzgero.sotestbed.matsim.runner
 
-import java.io.{File, FileOutputStream, PrintWriter}
+import java.io.File
 import java.nio.file.Files
-
-import scala.util.Try
 
 import cats.effect.IO
 
@@ -12,7 +10,6 @@ import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunne
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
 import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment2
@@ -23,14 +20,15 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 
-case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
+case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
   /**
     * performs a synchronous run of a MATSim simulation from a MATSimConfig
-    * @return either a matsim config setup error, or,
-    *         the final state of the simulation after the simulation ends (which could be a failure as well)
+    *
+    * @return the effect of running this experiment
     */
-  def run(): Either[Exception, String] = {
+  def run(): IO[Unit] = {
+
     val result = for {
       network <- LocalAdjacencyListFlowNetwork
         .fromMATSimXML(
@@ -171,36 +169,18 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
         )
       } yield experimentFinishState
 
-      val experimentResult = Try {
-        val result: experiment.ExperimentState = experimentIO.unsafeRunSync()
+      for {
+        _ <- experimentIO
+      } yield {
         experiment.close()
-
-        // try to compute summary statistics from agentExperience files
-        for {
-          overallMetrics     <- AgentBaseMetrics(config)
-          performanceMetrics <- AgentPerformanceMetrics.fromConfig(config)
-          batchOverviewFile = config.io.batchLoggingDirectory.resolve("result.csv").toFile
-          appendMode        = true
-          batchOverviewOutput <- Try {
-            new PrintWriter(new FileOutputStream(batchOverviewFile, appendMode))
-          }.toEither
-        } yield {
-          val parameterColumns: String = config.scenarioData.toCSVRow
-          batchOverviewOutput.append(s"$parameterColumns,$overallMetrics,$performanceMetrics\n")
-          batchOverviewOutput.close()
-        }
-      }.toEither match {
-        case Left(e) =>
-          logger.error(s"${e.getCause} ${e.getMessage}\n${e.getStackTrace.mkString("Array(", ", ", ")")}")
-          s"${e.getCause} ${e.getMessage}\n${e.getStackTrace.mkString("Array(", ", ", ")")}"
-        case Right(_) =>
-          "done."
       }
-
-      experimentResult
     }
-    result.left.map { t =>
-      new Exception(s"failure for MATSim run in directory '${matsimRunConfig.experimentDirectory}'", t)
+
+    result match {
+      case Left(error) =>
+        IO.raiseError(error)
+      case Right(value) =>
+        value
     }
   }
 }
