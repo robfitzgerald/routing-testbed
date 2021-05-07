@@ -4,9 +4,20 @@ sealed trait AssignmentAlgorithm
 
 object AssignmentAlgorithm {
 
-  case object Base                                                                     extends AssignmentAlgorithm
-  case class Rand(computeBudgetMs: Int, subBatchK: Int, exploredBudget: Double = 0.01) extends AssignmentAlgorithm
-  case class Mcts(computeBudgetMs: Int, subBatchK: Int, exploredBudget: Double = 0.01) extends AssignmentAlgorithm
+  case object Base extends AssignmentAlgorithm
+
+  case class Rand(
+    computeBudgetMs: Int,
+    subBatchK: Int,
+    exploredBudget: Double = 0.01
+  ) extends AssignmentAlgorithm
+
+  case class Mcts(
+    mctsCoefficient: Double,
+    computeBudgetMs: Int,
+    subBatchK: Int,
+    exploredBudget: Double = 0.01
+  ) extends AssignmentAlgorithm
 
 //  def randomPick(random: Random, computeBudgetMs: Int, subBatchK: Int, exploredBudget: Double): AssignmentAlgorithm = {
 //    random.nextInt(4) match {
@@ -50,7 +61,7 @@ object AssignmentAlgorithm {
            |    compute-budget-test-rate = 100
            |  }
            |}""".stripMargin
-      case Mcts(computeBudgetMs, subBatchK, exploredBudget) =>
+      case Mcts(mctsCoefficient, computeBudgetMs, subBatchK, exploredBudget) =>
         val millis = computeBudgetMs / subBatchK
         s"""algorithm = {
            |  type = system-optimal
@@ -58,6 +69,7 @@ object AssignmentAlgorithm {
            |  selection-algorithm = {
            |    type =local-mcts-2
            |    seed = 0
+           |    mcts-coefficient = $mctsCoefficient
            |    minimum-average-batch-travel-improvement = 0.0
            |    exhaustive-search-sample-limit = 1
            |    agent-ordering.type = "batch-proportional"

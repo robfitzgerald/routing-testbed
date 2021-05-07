@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.5.2"
+val packageVersion = "2.5.3"
 version := packageVersion
 val sVersion = "2.12.10"
 scalacOptions ++= scalac
@@ -61,7 +61,6 @@ lazy val scalac = List(
   "-language:higherKinds",                   // Cats
   "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
-//  "-Ypartial-unification"
 )
 
 //lazy val javac = List("-source", "1.8", "-target", "1.8")
@@ -93,12 +92,13 @@ lazy val coreDependencies = List(
 // TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test"
+  // PLOTTING
+//  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
 ).map(_.exclude("org.slf4j", "*"))
 
 lazy val matsimDependencies = List(
   "org.geotools" % "gt-main" % "21.5",
   "org.matsim"   % "matsim"  % "12.0" // most recent official release/tag
-//  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
 ).map(_.exclude("org.slf4j", "*"))
 
 lazy val loggingDependencies = List(

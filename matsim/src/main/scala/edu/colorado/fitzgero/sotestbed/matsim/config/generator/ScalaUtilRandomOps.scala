@@ -19,7 +19,6 @@ object ScalaUtilRandomOps {
     }
 
     def gaussianInRange(low: Double, mean: Double, high: Double, scale: Double = 0.16): Double = {
-//      val mean = (high.toDouble - low.toDouble) / 2.0
       // scala gaussian uses std deviation of 1.0 whos 95% covers +- 2.5 -> scale down by 0.4
       // try again, how about 1/3.5?
       val result        = (random.nextGaussian * scale) + mean
@@ -27,8 +26,9 @@ object ScalaUtilRandomOps {
       resultBounded
     }
 
-    def gaussianInRange(low: Int, mean: Int, high: Int): Int = {
-      gaussianInRange(low.toDouble, mean.toDouble, high.toDouble).toInt
+    def gaussianInIntegerRange(low: Int, mean: Int, high: Int, scale: Option[Int] = None): Int = {
+      val intScale = scale.getOrElse((high - low) / 8)
+      gaussianInRange(low.toDouble, mean.toDouble, high.toDouble, intScale.toDouble).toInt
     }
   }
 }

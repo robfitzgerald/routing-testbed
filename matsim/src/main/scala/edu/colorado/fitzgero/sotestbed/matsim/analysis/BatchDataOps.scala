@@ -12,7 +12,7 @@ object BatchDataOps extends LazyLogging {
     baseDir: Path,
     experimentName: String,
     trials: Int,
-    ignoreErrors: Boolean = true
+    ignoreErrors: Boolean = false
   ): Either[Error, List[BatchMetrics]] = {
     if (!baseDir.toFile.isDirectory) {
       Left(new Error(s"$baseDir is not a directory"))
@@ -23,7 +23,11 @@ object BatchDataOps extends LazyLogging {
       )
       val trialNumbers: List[Int] = (0 until trials).toList
       val result = trialNumbers.foldLeft(Acc()) { (acc, trial) =>
-        val batchDataFilePath = baseDir.resolve(experimentName).resolve(trial.toString).resolve("batchData.csv")
+        val batchDataFilePath =
+          baseDir
+            .resolve(experimentName)
+            //            .resolve(trial.toString)
+            .resolve("batchData.csv")
         BatchMetrics.fromFile(batchDataFilePath.toFile) match {
           case Left(error) =>
             val msg            = s"file $batchDataFilePath"

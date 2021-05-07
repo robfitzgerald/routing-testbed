@@ -1,3 +1,26 @@
+xdist ydist 10697.10 8650.31
+
+/Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Lafayette_CO.xml
+
+total  link lengths: 461420.79 meters
+average link length: 132.17 meters
+max     link length: 1874.48 meters
+average link speed:  18.14 mph
+speed data:
+37 mph: 0.57%
+25 mph: 8.05%
+20 mph: 0.69%
+60 mph: 0.60%
+45 mph: 0.74%
+49 mph: 0.06%
+35 mph: 0.89%
+18 mph: 1.49%
+50 mph: 0.03%
+40 mph: 0.40%
+55 mph: 1.32%
+30 mph: 2.26%
+15 mph: 82.90%
+
 2020-09-04T14:59:28,054  INFO OsmNetworkReader:277 = conversion statistics: ==========================
 2020-09-04T14:59:28,057  INFO OsmNetworkReader:278 osm: # nodes read:       1403
 2020-09-04T14:59:28,057  INFO OsmNetworkReader:279 osm: # ways read:        1937

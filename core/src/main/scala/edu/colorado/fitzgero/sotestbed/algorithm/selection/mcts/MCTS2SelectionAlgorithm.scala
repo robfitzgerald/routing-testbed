@@ -27,6 +27,7 @@ class MCTS2SelectionAlgorithm(
   agentOrdering: Option[AgentOrdering],
   pathOrdering: Option[PathOrdering],
   runnerType: RunnerType,
+  mctsCoefficient: Option[Double],
   seed: Long,
   exhaustiveSearchSampleLimit: Int,
   computeBudgetFunctionConfig: SelectionComputeBudgetFunctionConfig,
@@ -108,12 +109,15 @@ class MCTS2SelectionAlgorithm(
             sah.batchMarginalCost(selection, marginalCostFunction)
           }
 
+        // default value is 2 * sqrt(2)
+        val mctsCoefficientValue = mctsCoefficient.getOrElse(2.0 / math.sqrt(2.0))
+
         for {
           bestPair <- runnerType.run(
             choices = sah.choices,
             evalFn = evalFn,
             defFn = defaultPolicy.policy(problemRepresentation, sah),
-            valFnConstructor = () => new PedrosoRei(),
+            valFnConstructor = () => new PedrosoRei(mctsCoefficientValue),
             expandFn = expandPolicy.expand,
             computeBudgetFunctionConfig = computeBudgetFunctionConfig,
             computeBudgetTestRate = computeBudgetTestRate

@@ -110,7 +110,7 @@ object AgentExperienceOps extends LazyLogging {
     experimentName: String,
     popSize: Int,
     trials: Int,
-    ignoreErrors: Boolean = true
+    ignoreErrors: Boolean = false
   ): Either[Error, List[AgentMetrics]] = {
 
     if (!baseOutputDir.toFile.isDirectory) {
@@ -132,8 +132,8 @@ object AgentExperienceOps extends LazyLogging {
 //        selfishLoggingDir = s"$popSize/$trial" // s"$popSize-$trial-logging"
         selfishAgentExperiencePath = baseOutputDir
           .resolve("selfish")
-          .resolve(popSize.toString)
-          .resolve(trial.toString)
+          //          .resolve(popSize.toString)
+          //          .resolve(trial.toString)
           .resolve("agentExperience.csv")
       } yield {
         (trial, selfishAgentExperiencePath.toFile)
@@ -142,7 +142,7 @@ object AgentExperienceOps extends LazyLogging {
         trial <- 0 until trials
         optimalAgentExperiencePath = baseOutputDir
           .resolve(experimentName)
-          .resolve(trial.toString)
+          //          .resolve(trial.toString)
           .resolve("agentExperience.csv")
       } yield {
         (trial, optimalAgentExperiencePath.toFile)

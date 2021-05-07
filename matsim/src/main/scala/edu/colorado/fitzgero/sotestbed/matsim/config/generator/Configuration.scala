@@ -4,13 +4,13 @@ import scala.util.Random
 
 import edu.colorado.fitzgero.sotestbed.matsim.config.generator.ScalaUtilRandomOps._
 import kantan.csv._
-import kantan.csv.ops._
 
 sealed trait Configuration
 
 object Configuration {
 
   case class SelfishConfig(
+    namePrefix: String,
     name: String,
     scenario: Scenario,
     batchWindow: Int,
@@ -21,6 +21,7 @@ object Configuration {
   ) extends Configuration
 
   case class SysOptConfig(
+    namePrefix: String,
     name: String,
     scenario: Scenario,
     batchWindow: Int,
@@ -42,38 +43,43 @@ object Configuration {
     val scenario = Scenario.randomPick(random)
 
     // high-level algorithm parameters
-    val batchWindow   = random.uniformInRange(5, 600)
+    val batchWindow   = random.uniformInRange(5, 60)
     val batchWindowMs = batchWindow * 1000
-    val adoptionRate  = random.uniformInRange(0.0, 1.0)
+    val adoptionRate  = random.uniformInRange(0.5, 0.8)
     val popSize = {
-      val (low, high) = scenario.popSizeRange
+      val (low, high) = scenario match {
+        case Scenario.Golden    => (8000, 16000)
+        case Scenario.Lafayette => (7000, 18000)
+        case Scenario.Boulder   => (17000, 30000)
+      }
       random.uniformInRange(low, high)
     }
-    val maxBatchingRuntime = if (batchWindow > 20) 10000 else batchWindowMs / 2
-    val bprAlpha           = 0.15
-    val bprBeta            = 4.0
+    val bprAlpha = 0.15 // random.gaussianInRange(0.05, 0.15, 0.25, 0.08)
+    val bprBeta  = random.gaussianInRange(2, 4, 6, 1)
 
     // alt paths parameters
-    val altsK          = random.uniformInRange(2, 20)
-    val altsTheta      = random.gaussianInRange(0.0, 0.5, 1.0)
+    val altsK          = random.uniformInRange(8, 16)
+    val altsTheta      = random.uniformInRange(0.0, 1.0)
     val altsIterations = random.uniformInRange(altsK, altsK * 2)
 
     // runtime split between batching and assignment
+    // batching as 1/4 of the compute budget, up to 10 seconds
+    val maxBatchingRuntime  = if (batchWindow > 20) 10000 else batchWindowMs / 4
     val batchingRuntimeMs   = random.uniformInRange(1000, maxBatchingRuntime)
     val assignmentRuntimeMs = batchWindowMs - batchingRuntimeMs
 
     // sub-batching parameters
-    val bfOmegaDelta              = random.gaussianInRange(0.0, 0.5, 1.0)
+    val bfOmegaDelta              = random.uniformInRange(0.0, 1.0)
     val bfOmegaBeta               = 1.0 - bfOmegaDelta
-    val bfOmegaA                  = random.gaussianInRange(0.0, 0.5, 1.0)
+    val bfOmegaA                  = random.uniformInRange(0.0, 1.0)
     val bfOmegaS                  = 1.0 - bfOmegaA
-    val bfTrajHistoryLimitSeconds = random.gaussianInRange(60, 150, 300)
+    val bfTrajHistoryLimitSeconds = random.gaussianInIntegerRange(10, 90, 300)
 
     // batch filter parameter
-    val bffSubBatchK = random.uniformInRange(1, 20)
+    val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100)
 
     // assignment parameter
-    val assignmentExloredPct = random.gaussianInRange(0.00000001, 0.1, 1.0)
+    val assignmentExloredPct = 0.1 //random.gaussianInRange(0.00000001, 0.1, 1.0, 0.005)
 
     val altsConfig = AltPathsFunction.KSPWithLimitedOverlap(altsK, altsTheta, altsIterations)
     val batchingFunctionConfig = BatchingFunction.TrajectoryClustering(
@@ -86,6 +92,7 @@ object Configuration {
     )
     val batchFilterFunctionConfig = BatchFilterFunction.TopK(bffSubBatchK)
     val selfishAlgorithm = SelfishConfig(
+      namePrefix,
       s"""$namePrefix-selfish""",
       scenario,
       batchWindow,
@@ -94,15 +101,18 @@ object Configuration {
       bprAlpha,
       bprBeta
     )
+    val mctsCoefficientInput = random.gaussianInRange(1.0, 2.0, 4.0, 0.32)
+    val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
     val soAlgorithms = List(
       AssignmentAlgorithm.Base,
       AssignmentAlgorithm.Rand(assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct),
-      AssignmentAlgorithm.Mcts(assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct)
+      AssignmentAlgorithm.Mcts(mctsCoefficient, assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct)
     )
 
     val confs: List[SysOptConfig] = for {
       assignmentConfig <- soAlgorithms
     } yield SysOptConfig(
+      namePrefix,
       s"""$namePrefix-${assignmentConfig.algorithmName}""",
       scenario,
       batchWindow,
@@ -126,14 +136,28 @@ object Configuration {
       case c: SysOptConfig  => c.name
     }
 
+    def sortOrder: Double = configuration match {
+      case c: Configuration.SelfishConfig => c.popSize * c.adoptionRate
+      case c: Configuration.SysOptConfig  => c.popSize * c.adoptionRate
+    }
+
+    def grouping: String = configuration match {
+      case c: Configuration.SelfishConfig => c.namePrefix
+      case c: Configuration.SysOptConfig  => c.namePrefix
+    }
+
+    def populationSize: Int = configuration match {
+      case c: Configuration.SelfishConfig => c.popSize
+      case c: Configuration.SysOptConfig  => c.popSize
+    }
+
     def filename: String = s"${configuration.name}.conf"
 
     def toHocon: String = {
 
-      val defaultConfig = Default()
-
       configuration match {
-        case SelfishConfig(name, scenario, batchWindow, adoptionRate, popSize, bprAlpha, bprBeta) =>
+        case SelfishConfig(namePrefix, name, scenario, batchWindow, adoptionRate, popSize, bprAlpha, bprBeta) =>
+          val defaultConfig    = Default(bprAlpha, bprBeta)
           val outNameConfig    = s"""name = "$name"\n"""
           val populationConfig = Population(popSize)
           val routingConfig    = Routing(adoptionRate, batchWindow)
@@ -162,6 +186,7 @@ object Configuration {
           hocon
 
         case SysOptConfig(
+            namePrefix,
             name,
             scenario,
             batchWindow,
@@ -174,6 +199,7 @@ object Configuration {
             batchFilterFunction,
             assignmentAlgorithm
             ) =>
+          val defaultConfig    = Default(bprAlpha, bprBeta)
           val outNameConfig    = s"""name = "$name"\n"""
           val populationConfig = Population(popSize)
           val routingConfig    = Routing(adoptionRate, batchWindow, bprAlpha = bprAlpha, bprBeta = bprBeta)
@@ -216,6 +242,7 @@ object Configuration {
       "bfOmegaS",
       "bfTrajHistoryLimitSeconds",
       "bffSubBatchK",
+      "mctsCoefficient",
       "assignmentExloredPct"
     ) { configuration: Configuration =>
       configuration match {
@@ -229,6 +256,7 @@ object Configuration {
             "selfish",
             c.bprAlpha.toString,
             c.bprBeta.toString,
+            "",
             "",
             "",
             "",
@@ -263,6 +291,10 @@ object Configuration {
                         case mcts: AssignmentAlgorithm.Mcts =>
                           (mcts.computeBudgetMs.toString, mcts.exploredBudget.toString)
                       }
+                      val mctsCoefficient = c.assignmentAlgorithm match {
+                        case a: AssignmentAlgorithm.Mcts => a.mctsCoefficient
+                        case _                           => 0.0
+                      }
                       //
                       val row = (
                         c.name,
@@ -284,6 +316,7 @@ object Configuration {
                         omegaS.toString,
                         trajectoryHistoryTimeLimitSeconds.toString,
                         subBatchK.toString,
+                        mctsCoefficient.toString,
                         exploredBudget
                       )
 

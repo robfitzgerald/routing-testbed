@@ -8,8 +8,12 @@ import scala.util.Random
 import cats.implicits._
 
 import com.monovore.decline._
-import edu.colorado.fitzgero.sotestbed.matsim.config.generator.{Configuration, GeneratorAppOps, Scenario}
-import edu.colorado.fitzgero.sotestbed.matsim.config.generator.Configuration._
+import edu.colorado.fitzgero.sotestbed.matsim.config.generator.{
+  Configuration,
+  ConfigurationOps,
+  GeneratorAppOps,
+  Scenario
+}
 import kantan.csv.ops._
 import kantan.csv.rfc
 
@@ -19,6 +23,12 @@ object RandomGridSearchExperimentGeneratorApp
       header = "creates a grid search of random experiments using the Configuration generator classes",
       main = {
 
+        val startNumberOpt: Opts[Int] =
+          Opts.option[Int](
+            long = "start-number",
+            short = "i",
+            help = "number to begin counting from for experiment names"
+          )
         val nOpt: Opts[Int] =
           Opts.option[Int](long = "number", short = "n", help = "the number of scenarios to make")
         val outOpt: Opts[Path] =
@@ -29,9 +39,9 @@ object RandomGridSearchExperimentGeneratorApp
           Opts.option[Long](long = "seed", short = "s", help = "random seed value").orNone
         }
 
-        (nOpt, outOpt, partitionsOps, seedOpt)
+        (startNumberOpt, nOpt, outOpt, partitionsOps, seedOpt)
           .mapN {
-            (n, out, partitions, seed) =>
+            (startNumber, n, out, partitions, seed) =>
               {
                 // random seed for generating each configuration
                 val random = seed match {
@@ -41,7 +51,7 @@ object RandomGridSearchExperimentGeneratorApp
 
                 // create _n_ random configurations
                 val confs: Seq[Configuration] = for {
-                  i    <- 0 until n
+                  i    <- startNumber until (startNumber + n)
                   conf <- Configuration.generate(random, Some(i.toString))
                 } yield conf
 
@@ -58,14 +68,14 @@ object RandomGridSearchExperimentGeneratorApp
                 println(s"configurations table written to $out")
 
                 // partition configurations into _partitions_ splits
-                val partitionSize = math.ceil(n.toDouble / partitions).toInt * 4 // |{Selfish,Base,Rand,MCTS}| == 4
-                val partitioned   = confs.sliding(partitionSize, partitionSize).toArray
-                println(s"created $partitions partitions of $n configurations with partition size $partitionSize")
+//                val partitionSize = math.ceil(n.toDouble / partitions).toInt * 4 // |{Selfish,Base,Rand,MCTS}| == 4
+                val partitioned =
+                  ConfigurationOps.greedyLoadBalancePartitions(confs, partitions)
+                println(s"created $partitions partitions of $n configurations")
 
                 for {
-                  partitionId <- partitioned.indices
+                  (thisPartition, partitionId) <- partitioned.zipWithIndex
                 } yield {
-                  val thisPartition = partitioned(partitionId)
 
                   val partitionOut = out.resolve(partitionId.toString)
                   partitionOut.toFile.mkdirs()
@@ -95,6 +105,9 @@ object RandomGridSearchExperimentGeneratorApp
                   bashPW.write(bashScriptText)
                   bashPW.close()
                   println(s"partition runner script written to $bashFile")
+
+                  // compress this folder
+
                 }
               }
           }
