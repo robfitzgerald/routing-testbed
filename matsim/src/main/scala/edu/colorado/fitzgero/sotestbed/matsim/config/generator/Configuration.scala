@@ -43,9 +43,9 @@ object Configuration {
     val scenario = Scenario.randomPick(random)
 
     // high-level algorithm parameters
-    val batchWindow   = random.uniformInRange(5, 60)
+    val batchWindow   = random.uniformInRange(5, 30)
     val batchWindowMs = batchWindow * 1000
-    val adoptionRate  = random.uniformInRange(0.5, 0.8)
+    val adoptionRate  = random.uniformInRange(0.1, 1.0)
     val popSize = {
       val (low, high) = scenario match {
         case Scenario.Golden    => (8000, 16000)
@@ -55,10 +55,10 @@ object Configuration {
       random.uniformInRange(low, high)
     }
     val bprAlpha = 0.15 // random.gaussianInRange(0.05, 0.15, 0.25, 0.08)
-    val bprBeta  = random.gaussianInRange(2, 4, 6, 1)
+    val bprBeta  = 4.0  // random.gaussianInRange(2, 4, 6, 1)
 
     // alt paths parameters
-    val altsK          = random.uniformInRange(8, 16)
+    val altsK          = random.uniformInRange(5, 10)
     val altsTheta      = random.uniformInRange(0.0, 1.0)
     val altsIterations = random.uniformInRange(altsK, altsK * 2)
 
@@ -73,10 +73,10 @@ object Configuration {
     val bfOmegaBeta               = 1.0 - bfOmegaDelta
     val bfOmegaA                  = random.uniformInRange(0.0, 1.0)
     val bfOmegaS                  = 1.0 - bfOmegaA
-    val bfTrajHistoryLimitSeconds = random.gaussianInIntegerRange(10, 90, 300)
+    val bfTrajHistoryLimitSeconds = random.uniformInRange(30, 200)
 
     // batch filter parameter
-    val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100)
+    val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100, Some(20))
 
     // assignment parameter
     val assignmentExloredPct = 0.1 //random.gaussianInRange(0.00000001, 0.1, 1.0, 0.005)
@@ -101,7 +101,7 @@ object Configuration {
       bprAlpha,
       bprBeta
     )
-    val mctsCoefficientInput = random.gaussianInRange(1.0, 2.0, 4.0, 0.32)
+    val mctsCoefficientInput = random.gaussianInRange(2.0, 4.0, 16.0, 4)
     val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
     val soAlgorithms = List(
       AssignmentAlgorithm.Base,

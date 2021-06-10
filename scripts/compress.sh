@@ -2,7 +2,7 @@
 declare -a workers=("03" "04" "08" "11" "12" "14" "15")
 
 partitions=7
-experiment="20210507-rand-grid"
+experiment="20210523-rand-grid"
 dir_path="../${experiment}"
 
 original_dir=$(pwd)
