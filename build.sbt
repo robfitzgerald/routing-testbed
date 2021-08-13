@@ -3,7 +3,8 @@ import sbtassembly.MergeStrategy
 name := "so-testbed"
 val packageVersion = "2.5.3"
 version := packageVersion
-val sVersion = "2.12.10"
+val sVersion     = "2.13.6"
+val circeVersion = "0.14.1"
 scalacOptions ++= scalac
 //javacOptions ++= javac
 
@@ -58,8 +59,8 @@ lazy val matsimResolvers = Seq(
 
 lazy val scalac = List(
 //  "-target:jvm-1.8",
-  "-language:higherKinds",                   // Cats
-  "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
+  "-language:higherKinds", // Cats
+//  "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 )
 
@@ -78,22 +79,25 @@ lazy val coreDependencies = List(
   "com.monovore" %% "decline" % "1.0.0",
   // CONFIG
   "com.github.pureconfig" %% "pureconfig" % "0.14.1",
-//  "com.typesafe" % "config" % "1.3.4",
   // GIS
   "org.locationtech.proj4j" % "proj4j"   % "1.1.1",
   "org.locationtech.jts"    % "jts-core" % "1.17.1",
   "com.uber"                % "h3"       % "3.0.3",
-//  "org.locationtech.jts" % "jts-core" % "1.16.1",
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
   // CSV
   "com.nrinaudo" %% "kantan.csv" % "0.6.0",
-//  "com.nrinaudo" %% "kantan.csv-generic" % "0.6.0",
-// TEST
+  //  "com.nrinaudo" %% "kantan.csv-generic" % "0.6.0",
+  // JSON
+  "io.circe" %% "circe-core"    % circeVersion,
+  "io.circe" %% "circe-generic" % circeVersion,
+  "io.circe" %% "circe-parser"  % circeVersion,
+  // TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
-  "org.scalatest" %% "scalatest" % "3.0.8" % "test"
-  // PLOTTING
-//  "com.github.vagmcs" %% "scalatikz" % "0.4.4" // writing tikz charts
+  "org.scalatest" %% "scalatest" % "3.0.8" % "test",
+  // NETWORKING
+  "com.softwaremill.sttp.client3" %% "core"         % "3.3.13",
+  "com.google.protobuf"           % "protobuf-java" % "3.17.2"
 ).map(_.exclude("org.slf4j", "*"))
 
 lazy val matsimDependencies = List(

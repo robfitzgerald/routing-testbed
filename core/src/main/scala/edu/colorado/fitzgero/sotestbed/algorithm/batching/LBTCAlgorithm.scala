@@ -253,6 +253,6 @@ object LBTCAlgorithm {
   ): Map[ClusterId, List[DualEdge]] = {
     labels
       .groupBy { case (_, clusterId) => clusterId }
-      .mapValues { _.keys.toList.flatMap { graph.verticesMap.get } }
+      .map { case (k, v) => k -> v.keys.toList.flatMap { graph.verticesMap.get } }
   }
 }

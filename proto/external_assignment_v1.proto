@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package so_testbed;
+
+option java_package = "edu.colorado.fitzgero.sotestbed.proto.v1";
+option java_multiple_files = true;
+option java_outer_classname = "ExternalAssignmentV1";
+
+/*
+ * ==== ExternalAssignmentV1 ====
+ *
+ * Learn a MultiAgent Policy for a static vector of agents and no
+ * sub-groupings. Each agent observes their current position and
+ * destination in the coordinate space, and the link flow at their
+ * location (estimated using a cost/flow function).
+ *
+ * The action selected is the index of the route assignment, an integer
+ * in the range [0, k), where k is provided by the user and truncated by
+ * the observed number of alternatives AgentObservation.k.
+ *
+ * The reward signal is the inverse of the delta between their previous
+ * estimated travel time and the new estimate, based on the assigned route
+ * and with consideration of the overlap effects with other agents in the batch.
+ *
+ */
+
+message ActionRequest {
+  string session_id = 1;
+  repeated AgentObservation observations = 2;
+}
+
+message ActionResponse {
+  string session_id = 1;
+  repeated ActionSelection actions = 2;
+}
+
+message RewardRequest {
+  string session_id = 1;
+  repeated AgentReward rewards = 2;
+}
+
+message RewardResponse {
+  string session_id = 1;
+}
+
+message ActionSelection {
+  string agent = 1;
+  int64 action = 2;
+}
+
+message AgentObservation {
+  string agent = 1;
+  Position current = 2;
+  Position destination = 3;
+  double link_cost_flow = 4;
+  int64 k = 5;
+}
+
+message AgentReward {
+  string agent = 1;
+  double reward = 2;
+}
+
+message Position {
+  double x = 1;
+  double y = 2;
+}

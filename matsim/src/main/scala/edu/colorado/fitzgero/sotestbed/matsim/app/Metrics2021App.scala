@@ -38,7 +38,7 @@ object Metrics2021App
 
             val expDirs: Iterator[Path] = expFile match {
               case Some(value) =>
-                val source = io.Source.fromFile(value.toFile)
+                val source = scala.io.Source.fromFile(value.toFile)
                 val exps = for {
                   expDirName <- source.getLines
                 } yield {

@@ -36,7 +36,7 @@ object CongestionOps {
       // store it by the GridId it is associated with
       // we want values for every grid cell even if it doesn't correspond with
       // any links, so, our initial accumulator has every grid id and empty collections for each
-      val initial = grid2.gridCells.mapValues(_ => List.empty[Double])
+      val initial = grid2.gridCells.map { case (k, _) => k -> List.empty[Double] }
       val observations =
         edges.foldLeft(initial) { (acc, edge) =>
           val inspectEdgeResult = for {

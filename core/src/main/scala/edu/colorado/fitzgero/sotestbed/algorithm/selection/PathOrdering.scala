@@ -27,7 +27,7 @@ object PathOrdering {
   case class BatchProportionalOverlapCount(ascending: Option[Boolean]) extends PathOrdering {
 
     def ordering(alts: Map[Request, List[Path]]): Ordering[Path] = {
-      val lookup: Map[EdgeId, Int] = alts.values.flatten.flatten.groupBy { _.edgeId }.mapValues { _.size }
+      val lookup: Map[EdgeId, Int] = alts.values.flatten.flatten.groupBy { _.edgeId }.map { case (k, v) => k -> v.size }
       Ordering.by { path =>
         if (path.isEmpty) 0.0
         else {

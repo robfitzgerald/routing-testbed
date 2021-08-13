@@ -132,14 +132,14 @@ object SelectionAlgorithmHelper {
 
       // sort according to the traversal policy, if provided
       val (reqsLookup, altsArray) = agentOrdering match {
-        case Some(ordering) => alts.toArray.sorted(ordering).unzip
-        case None           => alts.toArray.unzip
+        case Some(ordering) => alts.toList.sorted(ordering).unzip
+        case None           => alts.toList.unzip
       }
 
       // sort according to the selection policy, if provided
       val pathsLookup = pathOrdering match {
-        case Some(ordering) => altsArray.map { _.toArray.sorted(ordering) }
-        case None           => altsArray.map { _.toArray }
+        case Some(ordering) => altsArray.map { _.toArray.sorted(ordering) }.toArray
+        case None           => altsArray.map { _.toArray }.toArray
       }
 
       // agent -> alt -> edge idx, dense representation
@@ -153,7 +153,7 @@ object SelectionAlgorithmHelper {
             }
           }
         }
-      }
+      }.toArray
 
       val choices = altsInternal.map { _.length }
 
@@ -161,7 +161,7 @@ object SelectionAlgorithmHelper {
         edges.toArray,
         mappingLookup,
         choices,
-        reqsLookup,
+        reqsLookup.toArray,
         pathsLookup,
         altsInternal,
         mappingLength

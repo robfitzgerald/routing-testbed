@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package so_testbed;
+
+option java_package = "edu.colorado.fitzgero.sotestbed.proto";
+option java_multiple_files = true;
+option java_outer_classname = "Example";
+
+message ModelRequest {
+  string x = 1;
+  int64 y = 2;
+  int64 z = 3;
+}
+
+message ModelResponse {
+  int64 a = 1;
+  int64 b = 2;
+}
