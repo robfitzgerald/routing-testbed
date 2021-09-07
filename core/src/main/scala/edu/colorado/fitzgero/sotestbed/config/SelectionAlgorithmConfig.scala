@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts.{
@@ -19,9 +20,11 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.random.{
   Rand2SelectionAlgorithm,
   RandomSamplingSelectionAlgorithm
 }
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.{RLSelectionAlgorithm, RLSpace, SpaceV1}
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.rllib.RLlibPolicyClient
 
 sealed trait SelectionAlgorithmConfig {
   def build(): selection.SelectionAlgorithm[IO, Coordinate, EdgeBPR]
@@ -102,6 +105,23 @@ object SelectionAlgorithmConfig {
         exhaustiveSearchSampleLimit,
         computeBudgetFunctionConfig,
         computeBudgetTestRate
+      )
+    }
+  }
+
+  final case class RLSelection(
+    space: RLSpace,
+    host: String,
+    port: Int
+  ) extends SelectionAlgorithmConfig {
+
+    def build(): SelectionAlgorithm[IO, Coordinate, EdgeBPR] = {
+      val client = new RLlibPolicyClient(host, port)
+      new RLSelectionAlgorithm(
+        client = client,
+        encodeObservation = space.getObservationFunctionFn,
+        decodeAction = space.getDecodeActionFn,
+        computeReward = space.getRewardFn
       )
     }
   }

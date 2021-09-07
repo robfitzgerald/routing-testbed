@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts
 import scala.util.Random
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import com.typesafe.scalalogging.LazyLogging
 import cse.bdlab.fitzgero.mcts.model.observation.ObservationOps._

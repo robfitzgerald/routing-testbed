@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionCost
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}

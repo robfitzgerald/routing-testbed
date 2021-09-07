@@ -6,6 +6,7 @@ import java.nio.file.Path
 import scala.util.Random
 
 import cats.implicits._
+import cats.effect.unsafe.implicits.global
 
 import com.monovore.decline._
 import edu.colorado.fitzgero.sotestbed.matsim.config.generator.{

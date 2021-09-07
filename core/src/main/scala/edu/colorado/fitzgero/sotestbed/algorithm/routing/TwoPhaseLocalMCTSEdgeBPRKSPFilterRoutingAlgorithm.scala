@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 import scala.util.Random
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm

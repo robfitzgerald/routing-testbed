@@ -6,6 +6,7 @@ import java.nio.file.Files
 import scala.util.Try
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner

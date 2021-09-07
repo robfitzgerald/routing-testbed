@@ -1,7 +1,5 @@
 package edu.colorado.fitzgero.sotestbed.rllib
 
-import cats.syntax.functor._
-
 import edu.colorado.fitzgero.sotestbed.util.CirceUtils
 import io.circe.CursorOp.DownField
 import io.circe._
@@ -12,21 +10,22 @@ sealed trait PolicyClientRequest
 
 object PolicyClientRequest {
 
-  case class StartEpisodeRequest(episode_id: Option[EpisodeId], training_enabled: Boolean) extends PolicyClientRequest
-
-  case class GetActionRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
-
-  case class LogActionRequest(episode_id: EpisodeId, observation: Observation, action: Action)
+  final case class StartEpisodeRequest(episode_id: Option[EpisodeId], training_enabled: Boolean)
       extends PolicyClientRequest
 
-  case class LogReturnsRequest(
+  final case class GetActionRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
+
+  final case class LogActionRequest(episode_id: EpisodeId, observation: Observation, action: Action)
+      extends PolicyClientRequest
+
+  final case class LogReturnsRequest(
     episode_id: EpisodeId,
-    reward: Double,
+    reward: Reward,
     info: Map[String, String],
-    done: Map[AgentId, Boolean]
+    done: Option[Map[AgentId, Boolean]]
   ) extends PolicyClientRequest
 
-  case class EndEpisodeRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
+  final case class EndEpisodeRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
 
   implicit class PolicyClientMessageOps(pcm: PolicyClientRequest) {
 

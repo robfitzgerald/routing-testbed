@@ -11,6 +11,7 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig._
 import edu.colorado.fitzgero.sotestbed.matsim.runner.MATSimExperimentRunner3
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
+import cats.effect.unsafe.implicits.global
 
 object MATSimExperiment2021App
     extends CommandApp(

@@ -8,6 +8,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.search.DijkstraSearch
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, TraverseDirection}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPRCostOps
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import cats.effect.unsafe.implicits.global
 
 object MonteCarloTravelTimeLowerBoundsOps {
 

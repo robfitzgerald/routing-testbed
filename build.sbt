@@ -73,9 +73,11 @@ lazy val coreDependencies = List(
 //  "org.nd4j"           % "nd4j-native-platform" % "1.0.0-beta6",
 //  "org.deeplearning4j" % "rl4j-api"             % "1.0.0-beta6",
   // PURE FP LIBRARY
-  "org.typelevel" %% "cats-core"   % "2.0.0",
-  "org.typelevel" %% "cats-effect" % "2.0.0",
-  // COMMAND LINE PARSING
+//  "org.typelevel" %% "cats-core"   % "2.0.0",
+//  "org.typelevel" %% "cats-effect" % "2.0.0",
+  "org.typelevel" %% "cats-core"   % "2.3.0",
+  "org.typelevel" %% "cats-effect" % "3.2.5",
+// COMMAND LINE PARSING
   "com.monovore" %% "decline" % "1.0.0",
   // CONFIG
   "com.github.pureconfig" %% "pureconfig" % "0.14.1",
@@ -96,8 +98,10 @@ lazy val coreDependencies = List(
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test",
   // NETWORKING
-  "com.softwaremill.sttp.client3" %% "core"         % "3.3.13",
-  "com.google.protobuf"           % "protobuf-java" % "3.17.2"
+  "com.softwaremill.sttp.client3" %% "core"                           % "3.3.14",
+  "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % "3.3.14",
+  "com.softwaremill.sttp.client3" %% "circe"                          % "3.3.14",
+  "com.google.protobuf"           % "protobuf-java"                   % "3.17.2"
 ).map(_.exclude("org.slf4j", "*"))
 
 lazy val matsimDependencies = List(

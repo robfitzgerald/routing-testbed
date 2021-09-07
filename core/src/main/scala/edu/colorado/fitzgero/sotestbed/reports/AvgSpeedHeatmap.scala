@@ -6,6 +6,7 @@ import java.nio.file.Path
 import scala.collection.JavaConverters._
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import com.uber.h3core.H3Core
 import com.uber.h3core.util.GeoCoord
@@ -88,14 +89,15 @@ object AvgSpeedHeatmap {
     initialGraph: RoadNetwork[IO, Coordinate, EdgeBPR],
     loggingDirectory: Path,
     costFunction: EdgeBPR => Cost,
-    h3Resolution: Int = 7, // 5 square kilometers per hex
+    h3Resolution: Int = 7,            // 5 square kilometers per hex
     networkCRS: String = "EPSG:3857", // web mercator
     avgSpeedHeatmapFileName: String = "avgSpeedHeatmap.csv",
-    polygonLookupFileName: String = "h3Polygons.csv",
+    polygonLookupFileName: String = "h3Polygons.csv"
   ): AvgSpeedHeatmap = {
 
-    val h3Core: H3Core                       = H3Core.newInstance()
-    val h3Mapping: AvgSpeedHeatmap.H3Mapping = AvgSpeedHeatmap.createMapping(initialGraph, h3Resolution, networkCRS, h3Core)
+    val h3Core: H3Core = H3Core.newInstance()
+    val h3Mapping: AvgSpeedHeatmap.H3Mapping =
+      AvgSpeedHeatmap.createMapping(initialGraph, h3Resolution, networkCRS, h3Core)
 
     val heatmapPrintWriter: PrintWriter = createHeatmapFile(
       loggingDirectory = loggingDirectory,
@@ -121,10 +123,16 @@ object AvgSpeedHeatmap {
     * @param h3Core an instance of the H3 library
     * @return a mapping between EdgeIds and h3 hexes
     */
-  def createMapping(graph: RoadNetwork[IO, Coordinate, EdgeBPR], h3Resolution: Int, networkCRS: String, h3Core: H3Core): AvgSpeedHeatmap.H3Mapping = {
+  def createMapping(
+    graph: RoadNetwork[IO, Coordinate, EdgeBPR],
+    h3Resolution: Int,
+    networkCRS: String,
+    h3Core: H3Core
+  ): AvgSpeedHeatmap.H3Mapping = {
 
-    val crsFactory: CRSFactory  = new CRSFactory()
-    val ct: CoordinateTransform = new BasicCoordinateTransform(crsFactory.createFromName(networkCRS), crsFactory.createFromName("EPSG:4326"))
+    val crsFactory: CRSFactory = new CRSFactory()
+    val ct: CoordinateTransform =
+      new BasicCoordinateTransform(crsFactory.createFromName(networkCRS), crsFactory.createFromName("EPSG:4326"))
 
     val linkWithHex: Iterable[(EdgeId, Long)] = for {
       link <- graph.edgeTriplets.unsafeRunSync()
@@ -176,9 +184,7 @@ object AvgSpeedHeatmap {
     } yield {
       val boundary: List[GeoCoord] = h3Core.h3ToGeoBoundary(hex).asScala.toList
       val wkt: String = (boundary.last +: boundary)
-        .map { c =>
-          f"${c.lat} ${c.lng}"
-        }
+        .map { c => f"${c.lat} ${c.lng}" }
         .mkString("\"POLYGON((", ", ", "))\"")
       polygonFileWriter.write(f"$hex,$wkt\n")
     }

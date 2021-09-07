@@ -5,6 +5,7 @@ import java.io.{FileWriter, PrintWriter}
 import scala.util.{Failure, Success, Try}
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import com.typesafe.scalalogging.LazyLogging
 import cse.bdlab.fitzgero.mcts.algorithm.samplingpolicy.banditfunction.UCT_PedrosoRei
