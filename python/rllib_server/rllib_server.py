@@ -20,17 +20,24 @@ You may connect more than one policy client to any open listen port.
 """
 
 import argparse
+from pathlib import Path
+
 import gym
 import os
+import json
 
+from rllib.env import space_v1
 import ray
 from ray.rllib.agents.dqn import DQNTrainer
 from ray.rllib.agents.ppo import PPOTrainer
+from ray.rllib.agents.qmix import QMixTrainer
 from ray.rllib.env.policy_server_input import PolicyServerInput
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
 from ray.tune.logger import pretty_print
 
 from rllib.env.policy_server_no_pickle import PolicyServerNoPickleInput
+from rllib.env.so_routing_env import create_so_routing_env, create_so_routing_multiagent_config, create_spaces, \
+    load_grouping
 
 SERVER_ADDRESS = "localhost"
 # In this example, the user can run the policy server with
@@ -41,11 +48,22 @@ SERVER_BASE_PORT = 9900  # + worker-idx - 1
 CHECKPOINT_FILE = "last_checkpoint_{}.out"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--run", type=str, choices=["DQN", "PPO"], default="DQN")
+parser.add_argument("--run", type=str, choices=["DQN", "PPO", "QMIX"], default="QMIX")
+parser.add_argument(
+    "--k",
+    type=int,
+    choices=range(1, 1_000_000),
+    help="in this scenario, the number of alternative paths per agent in the ksp algorithm"  
+         "where the index of an alternative path [0, k) is the discrete action to be chosen.")
+parser.add_argument(
+    "--grouping-file",
+    type=str,
+    help="a JSON file which constructs the grouping in the form of Dict[GroupingId, List[AgentId]]"
+)
 parser.add_argument(
     "--framework",
     choices=["tf", "torch"],
-    default="tf",
+    default="torch",
     help="The DL framework specifier.")
 parser.add_argument(
     "--no-restore",
@@ -66,7 +84,21 @@ parser.add_argument(
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    ray.init()
+    ray.init(num_cpus=1)
+    print(f'ray version {ray.__version__}')
+
+    grouping_path = Path(args.grouping_file)
+    # if not grouping_path.is_file():
+    #     raise IOError(f'groupings file {grouping_path} does not exist')
+    #
+    # with grouping_path.open('r') as f:
+    #     grouping = json.loads(f.read())
+
+    # env = create_so_routing_env(args.num_workers, args.k, grouping_path)
+
+    grouping = load_grouping(grouping_path)
+    obs_space, act_space = create_spaces(args.k)
+    multiagent_conf = create_so_routing_multiagent_config(grouping, obs_space, act_space)
 
     # `InputReader` generator (returns None if no input reader is needed on
     # the respective worker).
@@ -75,11 +107,17 @@ if __name__ == "__main__":
         # Create a PolicyServerInput.
         if ioctx.worker_index > 0 or ioctx.worker.num_workers == 0:
             return PolicyServerNoPickleInput(
-                ioctx, SERVER_ADDRESS, SERVER_BASE_PORT + ioctx.worker_index -
-                                       (1 if ioctx.worker_index > 0 else 0))
+                ioctx,
+                SERVER_ADDRESS,
+                SERVER_BASE_PORT + ioctx.worker_index - (1 if ioctx.worker_index > 0 else 0),
+                obs_space,
+                act_space
+            )
         # No InputReader (PolicyServerInput) needed.
         else:
             return None
+
+
 
     # Trainer config. Note that this config is sent to the client only in case
     # the client needs to create its own policy copy for local inference.
@@ -87,13 +125,14 @@ if __name__ == "__main__":
         # Indicate that the Trainer we setup here doesn't need an actual env.
         # Allow spaces to be determined by user (see below).
         "env": None,
+        # "env": env,  # trying to pass along grouping info...
 
         # TODO: (sven) make these settings unnecessary and get the information
         #  about the env spaces from the client.
-        "observation_space": gym.spaces.Box(
-            float("-inf"), float("inf"), (4, )),
-        "action_space": gym.spaces.Discrete(2),
-
+        # "observation_space": obs_space,
+        # "action_space": act_space,
+        "multiagent": multiagent_conf,
+        #
         # Use the `PolicyServerInput` to generate experiences.
         "input": _input,
         # Use n worker processes to listen on different ports.
@@ -101,7 +140,7 @@ if __name__ == "__main__":
         # Disable OPE, since the rollouts are coming from online clients.
         "input_evaluation": [],
         # Create a "chatty" client/server or not.
-        "callbacks": MyCallbacks if args.chatty_callbacks else None,
+        # "callbacks": MyCallbacks if args.chatty_callbacks else None,
     }
 
     # DQN.
@@ -119,6 +158,36 @@ if __name__ == "__main__":
                     "n_step": 3,
                     "framework": args.framework,
                 }))
+    # QMIX.
+    elif args.run == "QMIX":
+        trainer = QMixTrainer(
+            config=dict(config, **{
+                # "num_envs_per_worker": 5,  # test with vectorization on
+                # "env_config": {
+                #     "avail_action": 3,
+                # },
+                # "grouping": grouping,
+                "mixer": "qmix",
+                "framework": args.framework, # only "torch" allowed here
+
+                # "rollout_fragment_length": 4,
+                # "train_batch_size": 32,
+                # "exploration_config": {
+                #     "epsilon_timesteps": 5000,
+                #     "final_epsilon": 0.05,
+                # },
+                # "num_workers": 0,
+                # "mixer": grid_search([None, "qmix"]),
+                # "env_config": {
+                #     "separate_state_space": True,
+                #     "one_hot_state_encoding": True
+                # },
+                # Use GPUs iff `RLLIB_NUM_GPUS` env var set to > 0.
+                # "num_gpus": int(os.environ.get("RLLIB_NUM_GPUS", "0")),
+
+            })
+        )
+
     # PPO.
     else:
         # Example of using PPO (does NOT support off-policy actions).
@@ -137,6 +206,12 @@ if __name__ == "__main__":
         checkpoint_path = open(checkpoint_path).read()
         print("Restoring from checkpoint path", checkpoint_path)
         trainer.restore(checkpoint_path)
+
+    # what's up
+    print("beginning training loop with policies, observation space, action space:")
+    print(multiagent_conf)
+    print(obs_space)
+    print(act_space)
 
     # Serving and training loop.
     while True:

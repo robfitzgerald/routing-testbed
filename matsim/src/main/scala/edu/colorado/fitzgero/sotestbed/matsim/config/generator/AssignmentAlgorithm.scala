@@ -1,5 +1,9 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.generator
 
+import java.io.File
+
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.Space
+
 sealed trait AssignmentAlgorithm
 
 object AssignmentAlgorithm {
@@ -19,6 +23,13 @@ object AssignmentAlgorithm {
     exploredBudget: Double = 0.01
   ) extends AssignmentAlgorithm
 
+  case class Rl(
+    host: String,
+    port: Int,
+    space: Space,
+    groupingFile: File
+  ) extends AssignmentAlgorithm
+
 //  def randomPick(random: Random, computeBudgetMs: Int, subBatchK: Int, exploredBudget: Double): AssignmentAlgorithm = {
 //    random.nextInt(4) match {
 //      case 0 => Selfish
@@ -35,6 +46,7 @@ object AssignmentAlgorithm {
       case Base    => "base"
       case _: Rand => "rand"
       case _: Mcts => "mcts"
+      case _: Rl   => "qmix"
     }
 
     def toHocon: String = algorithm match {
@@ -80,6 +92,18 @@ object AssignmentAlgorithm {
            |      explored = $exploredBudget
            |    }
            |    compute-budget-test-rate = 100
+           |  }
+           |}""".stripMargin
+      case Rl(host, port, space, groupingFile) =>
+        s"""algorithm = {
+           |  type = system-optimal
+           |  name = "qmix"
+           |  selection-algorithm = {
+           |    type = rl-selection
+           |    host = "$host",
+           |    port = $port,
+           |    space.type = $space,
+           |    groupingFile = "$groupingFile"
            |  }
            |}""".stripMargin
     }

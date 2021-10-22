@@ -20,24 +20,36 @@ object OSMNetworkImportApp
         val dstFileOpt: Opts[Path] =
           Opts.option[Path](long = "dstFile", short = "d", help = "URI to place the result file")
         val sourceCRSOpt: Opts[String] =
-          Opts.option[String](long = "sourceCRS", help = "well-known CRS authority for the source file").withDefault("EPSG:4326")
+          Opts
+            .option[String](long = "sourceCRS", help = "well-known CRS authority for the source file")
+            .withDefault("EPSG:4326")
         val destinationCRSOpt: Opts[String] =
           Opts
             .option[String](
               long = "destinationCRS",
               short = "c",
-              help = "well-known CRS authority to apply as a transform to the input data, to a format that reflects meters in distance"
+              help =
+                "well-known CRS authority to apply as a transform to the input data, to a format that reflects meters in distance"
             )
             .withDefault("EPSG:3857") // see https://github.com/matsim-org/matsim-code-examples/wiki/faq-111614359
         val monteCarloSamplesOpt: Opts[Int] =
           Opts
-            .option[Int](long = "mcSamples",
-                         short = "n",
-                         help = "number of monte carlo samples of the free flow travel speed to get a lower-bound on travel time, default 50000")
+            .option[Int](
+              long = "mcSamples",
+              short = "n",
+              help =
+                "number of monte carlo samples of the free flow travel speed to get a lower-bound on travel time, default 50000"
+            )
             .withDefault(50000)
 
         val runMonteCarloSamplingOpt: Opts[Boolean] =
-          Opts.flag(long = "runSampling", short = "m", help = "whether to run the monte carlo sampling of travel times, by default true").orFalse
+          Opts
+            .flag(
+              long = "runSampling",
+              short = "m",
+              help = "whether to run the monte carlo sampling of travel times, by default false"
+            )
+            .orFalse
 
         (srcFileOpt, dstFileOpt, sourceCRSOpt, destinationCRSOpt, monteCarloSamplesOpt, runMonteCarloSamplingOpt)
           .mapN {
@@ -57,7 +69,7 @@ object OSMNetworkImportApp
                     println(s"finished importing, network can be found at $dstFile")
 
                     if (runMCSampling) {
-                      MonteCarloTravelTimeLowerBoundsOps.monteCarloTravelTimeLowerBoundSample(srcFile, 0, n) match {
+                      MonteCarloTravelTimeLowerBoundsOps.monteCarloTravelTimeLowerBoundSample(dstFile, 0, n) match {
                         case Left(e) =>
                           println(f"error while running monte carlo sampling")
                           throw new RuntimeException(e)

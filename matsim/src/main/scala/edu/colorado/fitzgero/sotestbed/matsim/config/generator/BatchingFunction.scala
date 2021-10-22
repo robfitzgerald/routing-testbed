@@ -4,6 +4,8 @@ sealed trait BatchingFunction
 
 object BatchingFunction {
 
+  case object NoBatching extends BatchingFunction
+
   case class TrajectoryClustering(
     omegaDelta: Double = 0.5,
     omegaBeta: Double = 0.5,
@@ -27,6 +29,8 @@ object BatchingFunction {
            |  max-runtime-milliseconds = $runtimeMs
            |  trajectory-time-limit = $trajectoryHistoryTimeLimitSeconds
            |}""".stripMargin
+      case NoBatching =>
+        s"""algorithm.batching-function.type = no-batching"""
     }
   }
 }

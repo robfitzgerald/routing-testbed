@@ -10,9 +10,8 @@ sealed trait PolicyClientRequest
 
 object PolicyClientRequest {
 
-  final case class StartEpisodeRequest(episode_id: Option[EpisodeId], training_enabled: Boolean)
+  final case class StartEpisodeRequest(episode_id: Option[EpisodeId] = None, training_enabled: Boolean = true)
       extends PolicyClientRequest
-
   final case class GetActionRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
 
   final case class LogActionRequest(episode_id: EpisodeId, observation: Observation, action: Action)
@@ -24,7 +23,6 @@ object PolicyClientRequest {
     info: Map[String, String],
     done: Option[Map[AgentId, Boolean]]
   ) extends PolicyClientRequest
-
   final case class EndEpisodeRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
 
   implicit class PolicyClientMessageOps(pcm: PolicyClientRequest) {

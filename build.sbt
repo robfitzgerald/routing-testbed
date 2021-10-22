@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.5.3"
+val packageVersion = "2.6.0"
 version := packageVersion
 val sVersion     = "2.13.6"
 val circeVersion = "0.14.1"
@@ -16,7 +16,13 @@ lazy val core = project
     scalaVersion := sVersion,
     scalacOptions ++= scalac,
 //    javacOptions ++= javac,
-    libraryDependencies ++= coreDependencies ++ loggingDependencies
+    libraryDependencies ++= coreDependencies ++ loggingDependencies,
+    assembly / assemblyMergeStrategy := {
+      case "META-INF/io.netty.versions.properties" => MergeStrategy.first
+      case x =>
+        val oldStrategy: String => MergeStrategy = (assembly / assemblyMergeStrategy).value
+        oldStrategy(x)
+    }
   )
 //  .dependsOn(dabtree)
 
@@ -118,26 +124,29 @@ lazy val loggingDependencies = List(
 /////////////////////////// sbt-assembly ///////////////////////////
 
 lazy val matsimAssemblyStrategy = Seq(
-  mainClass in (Compile, run) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
-  mainClass in (Compile, packageBin) := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
-  mainClass in assembly := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
-  test in assembly := {},
-  assemblyMergeStrategy in assembly := {
+  Compile / mainClass := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
+  run / mainClass := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
+  packageBin / mainClass := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
+  assembly / mainClass := Some("edu.colorado.fitzgero.sotestbed.matsim.app.MATSimExperiment2021App"),
+  assembly / test := {},
+  assembly / assemblyMergeStrategy := {
 
     // early 2020
     case "tec/uom/se/format/messages.properties" => MergeStrategy.concat
 
     // 20200711 - switched from lib/ matsim  12.0 jar to maven-loaded matsim 12.0
     case "META-INF/sun-jaxb.episode"                         => MergeStrategy.first
+    case "META-INF/io.netty.versions.properties"             => MergeStrategy.first
     case PathList(ps @ _*) if ps.last == "Log4j2Plugins.dat" => MergeStrategy.discard
     case PathList("javax", "validation", xs @ _*)            => MergeStrategy.first
+    case PathList("javax", "activation", xs @ _*)            => MergeStrategy.first
     case "module-info.class"                                 => MergeStrategy.discard
 
     // 20210317 - too many logbacks!
     case "logback.xml" => MergeStrategy.first
 
     case x =>
-      val oldStrategy: String => MergeStrategy = (assemblyMergeStrategy in assembly).value
+      val oldStrategy: String => MergeStrategy = (assembly / assemblyMergeStrategy).value
       oldStrategy(x)
   }
 )

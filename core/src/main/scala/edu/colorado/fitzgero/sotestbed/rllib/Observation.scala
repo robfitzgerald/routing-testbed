@@ -10,14 +10,14 @@ import edu.colorado.fitzgero.sotestbed.util.CirceUtils
 sealed trait Observation
 
 object Observation {
-  case class SingleAgentObservation(observation: List[Double])              extends Observation
-  case class MultiAgentObservation(observation: Map[AgentId, List[Double]]) extends Observation
+  case class SingleAgentObservation(observation: List[Double])                    extends Observation
+  case class MultiAgentObservation(observation: Map[AgentId, List[List[Double]]]) extends Observation
 
-  implicit val obsMapEnc: Encoder[Map[AgentId, List[Double]]] =
+  implicit val obsMapEnc: Encoder[Map[AgentId, List[List[Double]]]] =
     CirceUtils.mapEncoder(_.value, identity)
 
-  implicit val obsMapDec: Decoder[Map[AgentId, List[Double]]] =
-    CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (d: List[Double]) => Right(d))
+  implicit val obsMapDec: Decoder[Map[AgentId, List[List[Double]]]] =
+    CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (d: List[List[Double]]) => Right(d))
 
   implicit val enc: Encoder[Observation] = {
     Encoder.instance {
@@ -30,7 +30,7 @@ object Observation {
   implicit val dec: Decoder[Observation] =
     List[Decoder[Observation]](
       Decoder[SingleAgentObservation].widen,
-      Decoder[Option[Map[AgentId, List[Double]]]].emap {
+      Decoder[Option[Map[AgentId, List[List[Double]]]]].emap {
         case None    => Right(MultiAgentObservation(Map.empty))
         case Some(m) => Right(MultiAgentObservation(m))
       }

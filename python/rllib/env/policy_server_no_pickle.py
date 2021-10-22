@@ -14,6 +14,8 @@ from ray.rllib.offline.input_reader import InputReader
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.utils.annotations import override, PublicAPI
 
+from rllib.env.np_encoder import NpEncoder
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,7 +51,7 @@ class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
     """
 
     @PublicAPI
-    def __init__(self, ioctx, address, port, idle_timeout=3.0):
+    def __init__(self, ioctx, address, port, obs_space, act_space, idle_timeout=3.0):
         """Create a PolicyServerInput.
 
         This class implements rllib.offline.InputReader, and can be used with
@@ -91,7 +93,7 @@ class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
         # Create a request handler that receives commands from the clients
         # and sends data and metrics into the queues.
         handler = _make_handler(self.rollout_worker, self.samples_queue,
-                                self.metrics_queue)
+                                self.metrics_queue, obs_space, act_space)
         HTTPServer.__init__(self, (address, port), handler)
 
         logger.info("Starting connector server at {}:{}".format(address, port))
@@ -126,7 +128,7 @@ class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
             self.samples_queue.put(SampleBatch())
 
 
-def _make_handler(rollout_worker, samples_queue, metrics_queue):
+def _make_handler(rollout_worker, samples_queue, metrics_queue, obs_space, act_space):
     # Only used in remote inference mode. We must create a new rollout worker
     # then since the original worker doesn't have the env properly wrapped in
     # an ExternalEnv interface.
@@ -161,6 +163,8 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
+            self.obs_space = obs_space
+            self.act_space = act_space
             super().__init__(*a, **kw)
 
         def do_POST(self):
@@ -173,7 +177,7 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                 response = self.execute_command(parsed_input)
                 self.send_response(200)
                 self.end_headers()
-                response_bytes = json.dumps(response).encode(encoding='utf_8')
+                response_bytes = json.dumps(response, cls=NpEncoder).encode(encoding='utf_8')
                 self.wfile.write(response_bytes)
             except Exception:
                 self.send_error(500, traceback.format_exc())
@@ -204,10 +208,20 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                         args["episode_id"], args["training_enabled"]))
             elif command == PolicyClient.GET_ACTION:
                 assert inference_thread.is_alive()
+                # for obs in args['observation'].values():
+                #     if self.obs_space.contains(obs):
+                #         print(f'observation matches space: {obs}')
+                #     else:
+                #         raise ValueError(f'observation does not match space: {obs} != {self.obs_space}')
                 response["action"] = child_rollout_worker.env.get_action(
                     args["episode_id"], args["observation"])
             elif command == PolicyClient.LOG_ACTION:
                 assert inference_thread.is_alive()
+                # for obs in args['observation'].values():
+                #     if self.obs_space.contains(obs):
+                #         print(f'observation matches space: {obs}')
+                #     else:
+                #         raise ValueError(f'observation does not match space: {obs} != {self.obs_space}')
                 child_rollout_worker.env.log_action(
                     args["episode_id"], args["observation"], args["action"])
             elif command == PolicyClient.LOG_RETURNS:

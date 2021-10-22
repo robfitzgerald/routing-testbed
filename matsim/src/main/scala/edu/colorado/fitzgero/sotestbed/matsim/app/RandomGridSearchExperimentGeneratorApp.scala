@@ -25,11 +25,13 @@ object RandomGridSearchExperimentGeneratorApp
       main = {
 
         val startNumberOpt: Opts[Int] =
-          Opts.option[Int](
-            long = "start-number",
-            short = "i",
-            help = "number to begin counting from for experiment names"
-          )
+          Opts
+            .option[Int](
+              long = "start-number",
+              short = "i",
+              help = "number to begin counting from for experiment names"
+            )
+            .withDefault(0)
         val nOpt: Opts[Int] =
           Opts.option[Int](long = "number", short = "n", help = "the number of scenarios to make")
         val outOpt: Opts[Path] =

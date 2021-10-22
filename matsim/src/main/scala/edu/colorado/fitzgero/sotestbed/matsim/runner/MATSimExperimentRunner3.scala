@@ -8,8 +8,9 @@ import cats.effect.IO
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.RLSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
-import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig
+import edu.colorado.fitzgero.sotestbed.config.{RoutingReportConfig, SelectionAlgorithmConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment2
@@ -19,6 +20,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
+import edu.colorado.fitzgero.sotestbed.rllib.{Observation, PolicyClientOps}
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.EndEpisodeRequest
 
 case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
@@ -130,6 +133,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                 )
               }
               val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] = so.selectionAlgorithm.build()
+
               val sel: SelectionRunner[Coordinate] =
                 SelectionRunner(
                   selectionAlgorithm = selectionAlgorithm,
@@ -173,6 +177,27 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         _ <- experimentIO
       } yield {
         experiment.close()
+        // if there's an RL trainer with an episode started, let's end that episode
+        soRoutingAlgorithmOrError match {
+          case Right(Some(ra)) =>
+            ra.selectionRunner.selectionAlgorithm match {
+              case rlsa: RLSelectionAlgorithm =>
+                PolicyClientOps
+                  .send(
+                    EndEpisodeRequest(
+                      rlsa.episodeId,
+                      Observation.MultiAgentObservation(Map.empty)
+                    ),
+                    rlsa.host,
+                    rlsa.port
+                  )
+                  .map { _ => () }
+              case _ =>
+                IO.pure()
+            }
+          case _ =>
+            IO.pure()
+        }
       }
     }
 
@@ -180,7 +205,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       case Left(error) =>
         IO.raiseError(error)
       case Right(value) =>
-        value
+        value.flatten
     }
   }
 }

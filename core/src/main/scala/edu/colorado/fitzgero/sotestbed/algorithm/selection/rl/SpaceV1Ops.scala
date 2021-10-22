@@ -11,7 +11,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.rllib.Observation.MultiAgentObservation
 import edu.colorado.fitzgero.sotestbed.rllib.Reward.MultiAgentReward
-import edu.colorado.fitzgero.sotestbed.rllib.{Action, AgentId, Observation, Reward}
+import edu.colorado.fitzgero.sotestbed.rllib.{Action, AgentId, Grouping, Observation, Reward}
 
 /**
   * Observation and Action space v1
@@ -40,14 +40,15 @@ import edu.colorado.fitzgero.sotestbed.rllib.{Action, AgentId, Observation, Rewa
   * V1 here trains based on the estimated reward represented by the inverse of the agent
   * estimated travel time reduction (since we are maximizing reward in rllib).
   */
-object SpaceV1 {
+object SpaceV1Ops {
 
   def encodeObservation(costFunction: EdgeBPR => Cost)(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     agents: Map[Request, List[Path]]
-  ): Observation = {
+  ): Map[AgentId, List[Double]] = {
     val result = for {
-      (request, _)         <- agents
+      (request, _) <- agents
+      agentId = AgentId(request.agent)
       currentEdge          <- roadNetwork.edge(request.origin).unsafeRunSync
       currentDstNodeId     <- roadNetwork.destination(currentEdge.edgeId).unsafeRunSync
       currentDstNode       <- roadNetwork.vertex(currentDstNodeId).unsafeRunSync
@@ -73,31 +74,35 @@ object SpaceV1 {
         congestion
       )
 
-      AgentId(request.agent) -> obs
+      agentId -> obs
     }
 
-    MultiAgentObservation(result)
+    result
   }
 
-  def decodeAction(action: Action, agents: Map[Request, List[Path]]): List[Int] = {
-    action match {
-      case Action.MultiAgentRealAction(maa) =>
-        val result = for {
-          (req, alts)                    <- agents
-          percentSystemOptimalAssignment <- maa.get(AgentId(req.agent))
-        } yield {
-          RLUtils.mapPercentageToIntegerRange(percentSystemOptimalAssignment, alts.size)
-        }
-        result.toList
-      case other =>
-        throw new IllegalArgumentException(s"only multiagent action with real number supported, got $other")
-    }
+  /**
+    *
+    * @param actions
+    * @param agents
+    * @return
+    */
+  def decodeAction(actions: Map[AgentId, Int], agents: Map[Request, List[Path]]): Map[AgentId, Int] = {
+    val result = for {
+      (req, _) <- agents
+      agentId = AgentId(req.agent)
+      selectedRouteIndex <- actions.get(agentId)
+    } yield agentId -> selectedRouteIndex
+    result
   }
 
-  def computeReward(selfish: SelectionCost, optimal: SelectionCost, agents: Map[Request, List[Path]]): Reward = {
+  def computeReward(
+    selfish: SelectionCost,
+    optimal: SelectionCost,
+    agents: Map[Request, List[Path]]
+  ): Map[AgentId, Double] = {
     val result = for {
       ((req, _), (selfish, optimal)) <- agents.zip(selfish.agentPathCosts.zip(optimal.agentPathCosts))
     } yield AgentId(req.agent) -> (selfish.value - optimal.value)
-    MultiAgentReward(result.toMap)
+    result.toMap
   }
 }

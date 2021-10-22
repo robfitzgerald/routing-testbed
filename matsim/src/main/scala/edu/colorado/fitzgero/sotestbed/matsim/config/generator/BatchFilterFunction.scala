@@ -4,6 +4,7 @@ sealed trait BatchFilterFunction
 
 object BatchFilterFunction {
   case class TopK(k: Int) extends BatchFilterFunction
+  case object NoFilter    extends BatchFilterFunction
 
   implicit class BatchFilterFunctionOps(bff: BatchFilterFunction) {
 
@@ -19,6 +20,7 @@ object BatchFilterFunction {
            |    use-link-weights = true
            |  }
            |}""".stripMargin
+      case NoFilter => "algorithm.batch-filter-function.type = no-filter"
     }
   }
 }
