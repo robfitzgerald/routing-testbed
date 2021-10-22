@@ -22,6 +22,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 import edu.colorado.fitzgero.sotestbed.rllib.{Observation, PolicyClientOps}
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.EndEpisodeRequest
+import org.matsim.api.core.v01.Id
+import org.matsim.api.core.v01.population.Person
 
 case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
@@ -42,10 +44,19 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         .map { s => new Error(s) }
       agentsUnderControlPercentage = if (matsimRunConfig.algorithm.isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
       else matsimRunConfig.routing.adoptionRate
-      agentsUnderControl <- PopulationOps.loadAgentsUnderControl(
-        matsimRunConfig.io.populationFile,
-        agentsUnderControlPercentage
-      )
+      agentsUnderControl <- matsimRunConfig.algorithm match {
+        case _: Algorithm.Selfish => Right(Set.empty[Id[Person]])
+        case so: Algorithm.SystemOptimal =>
+          so.selectionAlgorithm match {
+            case rl: SelectionAlgorithmConfig.RLSelection =>
+              PopulationOps.readGrouping(rl.groupingFile)
+            case _ =>
+              PopulationOps.loadAgentsUnderControl(
+                matsimRunConfig.io.populationFile,
+                agentsUnderControlPercentage
+              )
+          }
+      }
       config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {
 

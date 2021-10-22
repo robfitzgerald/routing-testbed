@@ -69,7 +69,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
           val msg =
             LogReturnsRequest(
               EpisodeId("ep_id"),
-              reward = MultiAgentReward(Map(AgentId("Bob") -> List(3.14))),
+              reward = MultiAgentReward(Map(AgentId("Bob") -> 3.14)),
               info = Map("config" -> "off"),
               done = None
             )
@@ -87,7 +87,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
           val msg =
             LogReturnsRequest(
               EpisodeId("ep_id"),
-              reward = MultiAgentReward(Map(AgentId("Bob") -> List(3.14))),
+              reward = MultiAgentReward(Map(AgentId("Bob") -> 3.14)),
               info = Map.empty,
               done = None
             )

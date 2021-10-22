@@ -28,8 +28,9 @@ object Env {
         case MultiAgentGroupedEnvironment(space, grouping) =>
           // use space + grouping to create observations
           val obsData = space.encodeObservation(costFunction)(roadNetwork, agents)
+
           for {
-            groupedObservations <- grouping.group(obsData)
+            groupedObservations <- grouping.group(obsData, space.defaultObservation)
           } yield MultiAgentObservation(groupedObservations)
       }
     }
@@ -61,10 +62,11 @@ object Env {
       env match {
         case MultiAgentGroupedEnvironment(space, grouping) =>
           // use space + grouping to encode reward
-          val rewards = space.computeReward(selfish, optimal, agents)
+          val rewards = space.computeAgentReward(selfish, optimal, agents)
           for {
-            groupedRewards <- grouping.group(rewards)
-          } yield MultiAgentReward(groupedRewards)
+            groupedRewards <- grouping.group(rewards, space.defaultReward)
+            groupRewards = groupedRewards.map { case (g, rs) => (g, rs.sum) }
+          } yield MultiAgentReward(groupRewards)
       }
     }
   }

@@ -24,6 +24,22 @@ final case class Grouping(
   groupToAgent: Map[AgentId, List[AgentId]]
 ) {
 
+  def validateGrouped[T](grouped: Map[AgentId, List[T]]): Either[Error, Unit] = {
+    groupToAgent.toList
+      .traverse {
+        case (groupId, groupedAgentIds) =>
+          grouped.get(groupId) match {
+            case None =>
+              Left(new Error(s"group $groupId missing from grouped"))
+            case Some(groupedValues) =>
+              if (groupedValues.lengthCompare(groupedAgentIds) != 0) {
+                Left(new Error(s"group sizes do not match for group $groupId"))
+              } else Right(())
+          }
+      }
+      .map { _ => () }
+  }
+
   /**
     * group data on its way to the server
     * @param data the data to group
@@ -31,9 +47,9 @@ final case class Grouping(
     * @tparam T the data value type, such as Int, Double, or String
     * @return the grouped data, or, an error
     */
-  def group[T](data: Map[AgentId, T])(implicit m: Monoid[T]): Either[Error, Map[AgentId, List[T]]] = {
+  def group[T](data: Map[AgentId, T], defaultValue: T): Either[Error, Map[AgentId, List[T]]] = {
     val initial: Either[Error, Map[AgentId, Map[AgentId, T]]] =
-      Right(groupToAgent.map { case (k, v) => k -> v.map { _ -> m.empty }.toMap })
+      Right(groupToAgent.map { case (k, v) => k -> v.map { _ -> defaultValue }.toMap })
     val populatedBuilderOrError = data.foldLeft(initial) {
       case (acc, (agentId, t)) =>
         for {
@@ -125,12 +141,14 @@ object Grouping {
     agentId: AgentId,
     t: T
   ): Either[Error, Map[AgentId, Map[AgentId, T]]] = {
-    for {
+    val result = for {
       groupId <- agentToGroup.get(agentId).toRight(new Error(s"agentId $agentId missing from grouping"))
       subtree <- builder.get(groupId).toRight(new Error(s"groupId $groupId missing from grouping"))
     } yield {
       val updatedSubtree = subtree.updated(agentId, t)
       builder.updated(groupId, updatedSubtree)
     }
+
+    result
   }
 }

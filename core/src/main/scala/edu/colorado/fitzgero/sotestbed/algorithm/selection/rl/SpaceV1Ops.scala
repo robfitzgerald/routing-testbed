@@ -81,17 +81,19 @@ object SpaceV1Ops {
   }
 
   /**
-    *
+    * decodes the selected actions. if the action selects an out of bounds path id,
+    * return the last path id (index of path.last)
     * @param actions
     * @param agents
     * @return
     */
   def decodeAction(actions: Map[AgentId, Int], agents: Map[Request, List[Path]]): Map[AgentId, Int] = {
     val result = for {
-      (req, _) <- agents
+      (req, paths) <- agents
       agentId = AgentId(req.agent)
       selectedRouteIndex <- actions.get(agentId)
-    } yield agentId -> selectedRouteIndex
+      truncatedRouteIndex = if (selectedRouteIndex >= paths.length) paths.length - 1 else selectedRouteIndex
+    } yield agentId -> truncatedRouteIndex
     result
   }
 

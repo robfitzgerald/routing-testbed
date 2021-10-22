@@ -74,7 +74,7 @@ final class RLSelectionAlgorithm(
       reward <- IO.fromEither(env.encodeReward(selfish, optimal, alts))
       // todo: actually create "infos" and "dones" here
       info = Map.empty[String, String]
-      done = None
+      done = Some(Map(AgentId("__all__") -> false))
       _ <- PolicyClientOps.send(LogReturnsRequest(episodeId, reward, info, done), host, port)
     } yield {
 

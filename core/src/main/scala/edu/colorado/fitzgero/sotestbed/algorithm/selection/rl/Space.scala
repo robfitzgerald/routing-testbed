@@ -15,6 +15,9 @@ sealed trait Space
 object Space {
 
   final case object V1 extends Space
+  val DefaultCoordinate = 0.0
+  val DefaultCongestion = 0.0
+  val DefaultReward     = 0.0
 
   implicit class SpaceOpsInstance(space: Space) {
 
@@ -26,12 +29,23 @@ object Space {
         case V1 => SpaceV1Ops.encodeObservation(costFunction)(roadNetwork, agents)
       }
 
+    def defaultObservation: List[Double] = space match {
+      case V1 =>
+        List(
+          DefaultCoordinate,
+          DefaultCoordinate,
+          DefaultCoordinate,
+          DefaultCoordinate,
+          DefaultCongestion
+        )
+    }
+
     def decodeAction(actions: Map[AgentId, Int], agents: Map[Request, List[Path]]): Map[AgentId, Int] =
       space match {
         case V1 => SpaceV1Ops.decodeAction(actions, agents)
       }
 
-    def computeReward(
+    def computeAgentReward(
       selfish: SelectionCost,
       optimal: SelectionCost,
       agents: Map[Request, List[Path]]
@@ -39,5 +53,9 @@ object Space {
       space match {
         case V1 => SpaceV1Ops.computeReward(selfish, optimal, agents)
       }
+
+    def defaultReward: Double = space match {
+      case V1 => DefaultReward
+    }
   }
 }
