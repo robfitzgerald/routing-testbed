@@ -13,11 +13,12 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.{
+  EndEpisodeRequest,
   GetActionRequest,
   LogReturnsRequest,
   StartEpisodeRequest
 }
-import edu.colorado.fitzgero.sotestbed.rllib.{AgentId, EpisodeId, PolicyClientOps}
+import edu.colorado.fitzgero.sotestbed.rllib.{AgentId, EpisodeId, Observation, PolicyClientOps}
 
 final class RLSelectionAlgorithm(
   val host: String,
@@ -105,6 +106,25 @@ final class RLSelectionAlgorithm(
     }
 
     result
+  }
+
+  def reportAgentsAreDone(): IO[Unit] = {
+    // create a dummy observation and dummy reward from the grouping
+    for {
+      observation <- IO.fromEither(env.emptyObservation)
+      reward      <- IO.fromEither(env.emptyReward)
+      info = Map.empty[String, String]
+      done = Some(Map(AgentId("__all__") -> true))
+      _ <- PolicyClientOps.send(GetActionRequest(episodeId, observation), host, port)
+      _ <- PolicyClientOps.send(LogReturnsRequest(episodeId, reward, info, done), host, port)
+    } yield ()
+  }
+
+  def close(): IO[Unit] = {
+    for {
+      obs <- IO.fromEither(env.emptyObservation)
+      _   <- PolicyClientOps.send(EndEpisodeRequest(episodeId, obs), host, port)
+    } yield ()
   }
 }
 

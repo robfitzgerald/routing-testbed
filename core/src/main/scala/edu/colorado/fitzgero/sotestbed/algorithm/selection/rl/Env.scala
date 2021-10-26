@@ -35,6 +35,14 @@ object Env {
       }
     }
 
+    def emptyObservation: Either[Error, Observation] =
+      env match {
+        case MultiAgentGroupedEnvironment(space, grouping) =>
+          for {
+            groupedObservations <- grouping.group(Map.empty, space.defaultObservation)
+          } yield MultiAgentObservation(groupedObservations)
+      }
+
     def decodeAction(
       action: Action,
       agents: Map[Request, List[Path]]
@@ -65,6 +73,16 @@ object Env {
           val rewards = space.computeAgentReward(selfish, optimal, agents)
           for {
             groupedRewards <- grouping.group(rewards, space.defaultReward)
+            groupRewards = groupedRewards.map { case (g, rs) => (g, rs.sum) }
+          } yield MultiAgentReward(groupRewards)
+      }
+    }
+
+    def emptyReward: Either[Error, Reward] = {
+      env match {
+        case MultiAgentGroupedEnvironment(space, grouping) =>
+          for {
+            groupedRewards <- grouping.group(Map.empty, space.defaultReward)
             groupRewards = groupedRewards.map { case (g, rs) => (g, rs.sum) }
           } yield MultiAgentReward(groupRewards)
       }

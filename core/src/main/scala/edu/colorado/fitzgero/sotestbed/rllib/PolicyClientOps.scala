@@ -34,6 +34,7 @@ object PolicyClientOps {
       for {
         sttpRes <- request.send(backend)
         res     <- IO.fromEither(sttpRes.body)
+        _       <- backend.close
       } yield res
     }
   }

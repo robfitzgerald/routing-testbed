@@ -21,7 +21,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 import edu.colorado.fitzgero.sotestbed.rllib.{Observation, PolicyClientOps}
-import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.EndEpisodeRequest
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.{EndEpisodeRequest, GetActionRequest}
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
@@ -193,16 +193,10 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
           case Right(Some(ra)) =>
             ra.selectionRunner.selectionAlgorithm match {
               case rlsa: RLSelectionAlgorithm =>
-                PolicyClientOps
-                  .send(
-                    EndEpisodeRequest(
-                      rlsa.episodeId,
-                      Observation.MultiAgentObservation(Map.empty)
-                    ),
-                    rlsa.host,
-                    rlsa.port
-                  )
-                  .map { _ => () }
+                for {
+                  _ <- rlsa.reportAgentsAreDone()
+                  _ <- rlsa.close()
+                } yield ()
               case _ =>
                 IO.pure()
             }

@@ -37,7 +37,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 final case class MATSimConfig(
-  io: MATSimConfig.IO,
+  io: MATSimConfig.Io,
   run: MATSimConfig.Run,
   routing: MATSimConfig.Routing,
   population: MATSimConfig.Population,
@@ -116,7 +116,7 @@ object MATSimConfig {
     }
   }
 
-  final case class IO(
+  final case class Io(
     matsimNetworkFile: File,
     populationPolygonFile: Option[File],
     matsimConfigFile: File,

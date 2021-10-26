@@ -21,6 +21,7 @@ You may connect more than one policy client to any open listen port.
 
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import gym
 import os
@@ -81,6 +82,11 @@ parser.add_argument(
     action="store_true",
     help="Activates info-messages for different events on "
          "server/client (episode steps, postprocessing, etc..).")
+parser.add_argument(
+    "--checkpoint-path",
+    help="location of checkpoint directory",
+    default=None
+)
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -169,7 +175,7 @@ if __name__ == "__main__":
                 # "grouping": grouping,
                 "mixer": "qmix",
                 "framework": args.framework, # only "torch" allowed here
-
+                "buffer_size": 50,
                 # "rollout_fragment_length": 4,
                 # "train_batch_size": 32,
                 # "exploration_config": {
@@ -199,13 +205,16 @@ if __name__ == "__main__":
                     "framework": args.framework,
                 }))
 
-    checkpoint_path = CHECKPOINT_FILE.format(args.run)
+    checkpoint_path = CHECKPOINT_FILE.format(args.run) if args.checkpoint_path is None else args.checkpoint_path
 
     # Attempt to restore from checkpoint, if possible.
-    if not args.no_restore and os.path.exists(checkpoint_path):
-        checkpoint_path = open(checkpoint_path).read()
-        print("Restoring from checkpoint path", checkpoint_path)
-        trainer.restore(checkpoint_path)
+    if not args.no_restore:
+        if os.path.exists(checkpoint_path):
+            # checkpoint_path = open(checkpoint_path).read()
+            print("Restoring from checkpoint path", checkpoint_path)
+            trainer.restore(checkpoint_path)
+        else:
+            raise IOError(f'provided checkpoint {args.checkpoint_path} does not exist')
 
     # what's up
     print("beginning training loop with policies, observation space, action space:")

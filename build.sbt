@@ -1,7 +1,7 @@
 import sbtassembly.MergeStrategy
 
 name := "so-testbed"
-val packageVersion = "2.6.0"
+val packageVersion = "2.7.0"
 version := packageVersion
 val sVersion     = "2.13.6"
 val circeVersion = "0.14.1"
@@ -84,7 +84,8 @@ lazy val coreDependencies = List(
   "org.typelevel" %% "cats-core"   % "2.3.0",
   "org.typelevel" %% "cats-effect" % "3.2.5",
 // COMMAND LINE PARSING
-  "com.monovore" %% "decline" % "1.0.0",
+  "com.monovore" %% "decline"        % "2.1.0",
+  "com.monovore" %% "decline-effect" % "2.1.0",
   // CONFIG
   "com.github.pureconfig" %% "pureconfig" % "0.14.1",
   // GIS
