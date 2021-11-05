@@ -24,7 +24,7 @@ object AgentBatchData {
     experiencedRoute: List[RouteRequestData.EdgeData],
     remainingRoute: List[RouteRequestData.EdgeData],
     remainingRouteDistance: Meters,
-    lastReplanningTime: Option[SimTime],
+    lastReplanningTime: Option[SimTime]
   ) extends AgentBatchData
 
   object RouteRequestData {

@@ -5,7 +5,7 @@ import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
 
 /**
@@ -21,7 +21,8 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
   val terminationFunction: KSPAlgorithm.AltPathsState => Boolean,
   minBatchSize: Int = 2,
   retainSrcDstEdgesInPaths: Boolean = false
-) extends KSPAlgorithm[F, V, E] with LazyLogging {
+) extends KSPAlgorithm[F, V, E]
+    with LazyLogging {
 
   def generateAlts(
     requests: List[Request],
@@ -34,9 +35,10 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
     } else {
       // if we do not meet the user-specified minimum batch size, then override
       // with a simple true shortest path search
+      val startTime: RunTime = RunTime.Now
       val terminationFunctionForThisBatch: KSPAlgorithm.AltPathsState => Boolean =
-        if (requests.length < minBatchSize) {
-          state: KSPAlgorithm.AltPathsState => state.pathsSeen == NonNegativeNumber.One
+        if (requests.length < minBatchSize) { state: KSPAlgorithm.AltPathsState =>
+          state.pathsSeen == NonNegativeNumber.One
         } else {
           terminationFunction
         }
@@ -52,15 +54,14 @@ class kSPwLO_SVP_Sync[F[_]: Monad, V, E](
         }
       } yield {
         val avgAlts: Double =
-          if (result.isEmpty) 0D
-          else result.flatMap{case Some(x) => Some(x.alts.size); case None => None}.sum.toDouble / result.size
+          if (result.isEmpty) 0d
+          else result.flatMap { case Some(x) => Some(x.alts.size); case None => None }.sum.toDouble / result.size
 
-        logger.info(f"AVG $avgAlts%2f alts per agent")
+        logger.debug(f"AVG $avgAlts%2f alts per agent")
+        val runTime: RunTime = RunTime.Now - startTime
         KSPAlgorithm.AltPathsResult(
-          result
-            .flatten
-            .map{ case kSPwLO_SVP_Algorithm.SingleSVPResult(req, alts, _) => req -> alts.take(k) }
-            .toMap
+          result.flatten.map { case kSPwLO_SVP_Algorithm.SingleSVPResult(req, alts, _) => req -> alts.take(k) }.toMap,
+          runtime = runTime
         )
       }
     }

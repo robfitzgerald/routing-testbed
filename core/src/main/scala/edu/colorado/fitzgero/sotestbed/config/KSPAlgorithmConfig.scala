@@ -7,6 +7,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.kSPwLO_SVP_Sync
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
 sealed trait KSPAlgorithmConfig {
+  def k: Int
   def build[F[_]: Monad, V, E](): altpaths.KSPAlgorithm[F, V, E]
   def kspTerminationFunction: KSPTerminationFunctionConfig
 }

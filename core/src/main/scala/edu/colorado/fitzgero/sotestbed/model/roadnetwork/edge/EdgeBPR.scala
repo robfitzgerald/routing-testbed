@@ -14,7 +14,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric._
   * @param flowHistoryLength tracks length of Queue[Flow] to limit List traversals
   * @param vehicleCount tracks the actual count of vehicles at this time; may differ from "flow" which can be an average
   */
-case class EdgeBPR (
+case class EdgeBPR(
   distance: Meters,
   freeFlowSpeed: MetersPerSecond,
   capacity: Capacity,
@@ -24,6 +24,6 @@ case class EdgeBPR (
   vehicleCount: Flow = Flow.Zero
 ) {
   lazy val freeFlowTravelTime: TravelTimeSeconds = Meters.toTravelTime(distance, freeFlowSpeed)
-  override def toString: String = s"EdgeBPR(flow=$flow)"
+  def freeFlowCost: Cost                         = Cost(freeFlowTravelTime.value)
+  override def toString: String                  = s"EdgeBPR(flow=$flow)"
 }
-

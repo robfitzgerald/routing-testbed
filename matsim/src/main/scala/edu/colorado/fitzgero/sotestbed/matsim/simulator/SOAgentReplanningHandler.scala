@@ -29,7 +29,6 @@ import org.matsim.vehicles.Vehicle
 
 class SOAgentReplanningHandler(
   val agentsUnderControl: Set[Id[Person]],
-  val requestUpdateCycle: SimTime,
   val maxPathAssignments: Int,
   val minimumReplanningWaitTime: SimTime
 ) extends PersonEntersVehicleEventHandler
@@ -65,13 +64,6 @@ class SOAgentReplanningHandler(
   def isUnderControl(agent: Id[Person]): Boolean = agentsUnderControl(agent)
 
   /**
-    * adhere to the user-specified request update schedule
-    * @param currentSimTime the current sim time
-    * @return whether to update the requests at this sim time
-    */
-  def updateRequestsThisSimTime(currentSimTime: SimTime): Boolean = currentSimTime % requestUpdateCycle == SimTime.Zero
-
-  /**
     * looks at all active SO agents and returns the ones that have not exceeded this.maxPathAssignments
     * and that have spent at least this.minimumReplanningWaitTime since they were last replanned
     *
@@ -79,22 +71,20 @@ class SOAgentReplanningHandler(
     * @return list of agents eligible for replanning
     */
   def getActiveAndEligibleForReplanning(currentSimTime: SimTime): List[AgentData] = {
-    if (currentSimTime % requestUpdateCycle != SimTime.Zero) {
-      // nothing to report this round
-      List.empty
-    } else {
-      agentsInSimulation
-        .filter {
-          case (_, agentData) =>
-            val hasNotExceededMaxAssignments: Boolean =
-              agentData.numberOfPathAssignments < this.maxPathAssignments
-            val hasSurpassedMinReplanningWaitTime: Boolean =
-              currentSimTime - agentData.mostRecentTimePlanned.getOrElse(SimTime.Zero) > minimumReplanningWaitTime
-            hasNotExceededMaxAssignments && hasSurpassedMinReplanningWaitTime
-        }
-        .values
-        .toList
-    }
+    agentsInSimulation
+      .filter {
+        case (_, agentData) =>
+          val hasNotExceededMaxAssignments: Boolean =
+            agentData.numberOfPathAssignments < this.maxPathAssignments
+          val hasSurpassedMinReplanningWaitTime: Boolean =
+            currentSimTime - agentData.mostRecentTimePlanned.getOrElse(SimTime.Zero) >= minimumReplanningWaitTime
+          // removed - same as the "hasSurpassedMinReplanningWaitTime"
+//          val hasSurpassedMinRequestUpdateThreshold: Boolean =
+//            currentSimTime - agentData.mostRecentTimePlanned.getOrElse(SimTime.Zero) > minRequestUpdateThreshold
+          hasNotExceededMaxAssignments && hasSurpassedMinReplanningWaitTime // && hasSurpassedMinRequestUpdateThreshold
+      }
+      .values
+      .toList
   }
 
   /**

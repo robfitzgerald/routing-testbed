@@ -1,12 +1,11 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts
 
-import scala.annotation.tailrec
-import scala.util.Random
+import java.io.{FileWriter, PrintWriter}
 
-import cats.data.OptionT
-import cats.effect.SyncIO
-import cats.{Id, Monad}
-import cats.implicits._
+import scala.util.{Failure, Success, Try}
+
+import cats.effect.IO
+import cats.effect.unsafe.implicits.global
 
 import com.typesafe.scalalogging.LazyLogging
 import cse.bdlab.fitzgero.mcts.algorithm.samplingpolicy.banditfunction.UCT_PedrosoRei
@@ -15,7 +14,7 @@ import cse.bdlab.fitzgero.mcts.core.terminationcriterion.TerminationCriterion
 import cse.bdlab.fitzgero.mcts.core.{ActionSelection, BuiltInRandomGenerator, RandomGenerator, RandomSelection}
 import cse.bdlab.fitzgero.mcts.tree.MCTreePedrosoReiReward
 import cse.bdlab.fitzgero.mcts.variant.PedrosoReiMCTS
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, TrueShortestSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
@@ -26,50 +25,31 @@ class LocalMCTSSelectionAlgorithm[V, E](
   exhaustiveSearchSampleLimit: Int,
   minimumAverageBatchTravelImprovement: Cost, // todo: wire this value in to batch selection (positive time value here)
   terminationFunction: SelectionState => Boolean
-) extends SelectionAlgorithm[SyncIO, V, E]
+) extends SelectionAlgorithm[IO, V, E]
     with LazyLogging {
 
   var localSeed: Long = seed
 
   def selectRoutes(
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[SyncIO, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
-  ): SyncIO[SelectionAlgorithm.Result] = {
+  ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
-    if (alts.isEmpty) SyncIO {
-      SelectionAlgorithm.Result()
-    } else if (alts.size == 1) SyncIO {
+    if (alts.isEmpty) IO {
+      SelectionAlgorithm.SelectionAlgorithmResult()
+    }
+    else if (alts.size == 1) {
 
-      // select the true shortest path for this agent
-      val request: Request        = alts.keys.head
-      val requestAlts: List[Path] = alts.values.head
-      requestAlts match {
-        case Nil =>
-          // request had no routes!
-          SelectionAlgorithm.Result()
-        case trueShortestPath :: _ =>
-          // get cost estimate of this route
-          val trueShortestCost: SelectionCost = SelectionAlgorithm
-            .evaluateCostOfSelection(
-              List(trueShortestPath),
-              roadNetwork,
-              pathToMarginalFlowsFunction,
-              combineFlowsFunction,
-              marginalCostFunction
-            )
-            .unsafeRunSync()
-
-          // package result
-          SelectionAlgorithm.Result(
-            selectedRoutes = List(Response(request, 0, trueShortestPath.map { _.edgeId }, trueShortestCost.overallCost)),
-            estimatedCost = trueShortestCost.overallCost,
-            selfishCost = trueShortestCost.overallCost,
-            samples = NonNegativeNumber.One
-          )
-      }
+      TrueShortestSelectionAlgorithm().selectRoutes(
+        alts,
+        roadNetwork,
+        pathToMarginalFlowsFunction,
+        combineFlowsFunction,
+        marginalCostFunction
+      )
     } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
       // problem small enough for an exhaustive search
       SelectionAlgorithm
@@ -80,16 +60,19 @@ class LocalMCTSSelectionAlgorithm[V, E](
           combineFlowsFunction,
           marginalCostFunction
         )
-        .map {
-          case (result, tspCost) =>
-            val avgAlts: Double = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-            logger.info(f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH")
-            logger.info(
-              f"COST_EST: BEST ${result.estimatedCost}, SELFISH $tspCost, DIFF ${tspCost - result.estimatedCost} AVG_DIFF ${(tspCost - result.estimatedCost).value / alts.size}%.2f")
-            result
+        .map { result =>
+          val avgAlts: Double =
+            if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+          logger.info(
+            f"AGENTS: ${result.selectedRoutes.length} AVG_ALTS: $avgAlts%.2f SAMPLES: ${result.samples} - EXHAUSTIVE SEARCH"
+          )
+          logger.info(
+            f"COST_EST: BEST ${result.estimatedCost}, SELFISH ${result.selfishCost}, DIFF ${result.estimatedCost - result.selfishCost} AVG_DIFF ${(result.estimatedCost - result.selfishCost).value / alts.size}%.2f"
+          )
+          result
         }
     } else
-      SyncIO {
+      IO {
 
         // set up MCTS-based route selection solver
         val startTime: Long = System.currentTimeMillis
@@ -109,6 +92,57 @@ class LocalMCTSSelectionAlgorithm[V, E](
         // run algorithm - SIDE EFFECTS in mcts!
         val tree: mcts.Tree = mcts.run()
 
+        // compute tree shape
+//        // hey, maybe we just hard-code this.. val histBins = alts.values.map { _.length }.max
+//        val histBins = 11
+//        val zeroHist = Array.fill(histBins + 1)(0) // bin counts [0, histBins]
+//        def buildHistograms(t: mcts.Tree, minReward: Option[Double] = None): (Array[Int], Array[Int]) = {
+//          val doesntMeetRewardMinimum = minReward.exists(_ > t.reward(mcts.getDecisionCoefficients(t)))
+//          if (doesntMeetRewardMinimum) {
+//            (zeroHist, zeroHist)
+//          } else {
+//
+//            t.children match {
+//              case None =>
+//                val nodesHist  = zeroHist.updated(0, 1)
+//                val visitsHist = zeroHist.updated(0, t.visits.toInt)
+//                (nodesHist, visitsHist)
+//              case Some(children) =>
+//                val histIndex  = children.size
+//                val nodesHist  = zeroHist.updated(histIndex, 1)
+//                val visitsHist = zeroHist.updated(histIndex, t.visits.toInt)
+//                children.values
+//                  .map { child => buildHistograms(child(), minReward) }
+//                  .foldLeft((nodesHist, visitsHist)) {
+//                    case ((nodesAcc, visitsAcc), (nodesChild, visitsChild)) =>
+//                      val updatedNodesAcc  = nodesAcc.zip(nodesChild).map { case (a, b)   => a + b }
+//                      val updatedVisitsAcc = visitsAcc.zip(visitsChild).map { case (a, b) => a + b }
+//                      (updatedNodesAcc, updatedVisitsAcc)
+//                  }
+//            }
+//          }
+//        }
+//        val (nodesHist, visitsHist) = buildHistograms(tree)
+////        println(histogram.zipWithIndex.map { case (c, i)     => s"$i:$c" }.mkString(" "))
+////        println(minRewardHist.zipWithIndex.map { case (c, i) => s"$i:$c" }.mkString(" "))
+//        val treeNodes         = nodesHist.sum
+//        val leaves            = nodesHist(0)
+//        val branches          = nodesHist.tail.sum
+//        val treeEdgeCount     = nodesHist.zipWithIndex.map { case (a, b) => a * b }.sum.toDouble
+//        val avgBranchChildren = treeEdgeCount / branches
+//        val avgChildren       = treeEdgeCount / treeNodes
+//        val hist              = nodesHist.mkString(",")
+//        val avgVisitsHist = nodesHist
+//          .zip(visitsHist)
+//          .map { case (n, v) => f"${if (n == 0) 0.0 else v.toDouble / n}%.2f" }
+//          .mkString(",")
+//
+//        val treeStats =
+//          f",${alts.size},$treeNodes,$leaves,$branches,$avgChildren%.2f,$avgBranchChildren%.2f,${tree.visits},$hist,$avgVisitsHist\n"
+//        val printWriter: PrintWriter = new PrintWriter(new FileWriter("treeStats.csv", true))
+//        printWriter.append(treeStats)
+//        printWriter.close()
+
         val samples: NonNegativeNumber = NonNegativeNumber(tree.visits.toInt).getOrElse(NonNegativeNumber.Zero)
         val bestCost: Cost             = Cost(mcts.globalBestSimulation.toDouble)
 
@@ -122,37 +156,42 @@ class LocalMCTSSelectionAlgorithm[V, E](
         }.toList
 
         // some logging
-        val avgAlts: Double          = if (alts.isEmpty) 0D else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
-        val improvement: Cost        = trueShortestPathsCost - bestCost
-        val averageImprovement: Cost = Cost((trueShortestPathsCost - bestCost).value / alts.size)
+        val avgAlts: Double =
+          if (alts.isEmpty) 0d else alts.map { case (_, alts) => alts.size }.sum.toDouble / alts.size
+        val travelTimeDiff: Cost     = bestCost - trueShortestPathsCost
+        val meanTravelTimeDiff: Cost = Cost((bestCost - trueShortestPathsCost).value / alts.size)
 
         logger.info(f"AGENTS: ${responses.length} AVG_ALTS: $avgAlts%.2f SAMPLES: $samples")
         logger.info(
-          f"COST_EST: BEST $bestCost, SELFISH $trueShortestPathsCost, DIFF ${improvement.value}%.2f AVG_DIFF ${averageImprovement.value}%.2f")
+          f"COST_EST: BEST $bestCost, SELFISH $trueShortestPathsCost, DIFF ${travelTimeDiff.value}%.2f AVG_DIFF ${meanTravelTimeDiff.value}%.2f"
+        )
 
         // update local seed
         this.localSeed = mcts.random.nextInt(Int.MaxValue)
 
-        SelectionAlgorithm.Result(
+        val result = SelectionAlgorithm.SelectionAlgorithmResult(
           selectedRoutes = responses,
           estimatedCost = bestCost,
           selfishCost = trueShortestPathsCost,
-          improvement = improvement,
-          averageImprovement = averageImprovement,
+          travelTimeDiff = travelTimeDiff,
+          averageTravelTimeDiff = meanTravelTimeDiff,
           samples
         )
+
+        result
       }
   }
 
-  class PedrosoReiMCTSRouting(alts: Map[Request, List[Path]],
-                              roadNetwork: RoadNetwork[SyncIO, V, E],
-                              pathToMarginalFlowsFunction: (RoadNetwork[SyncIO, V, E], Path) => SyncIO[List[(EdgeId, Flow)]],
-                              combineFlowsFunction: Iterable[Flow] => Flow,
-                              marginalCostFunction: E => Flow => Cost,
-                              terminationFunction: SelectionAlgorithm.SelectionState => Boolean,
-                              seed: Long,
-                              startTime: Long)
-      extends PedrosoReiMCTS[Array[Int], Int]
+  class PedrosoReiMCTSRouting(
+    alts: Map[Request, List[Path]],
+    roadNetwork: RoadNetwork[IO, V, E],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
+    combineFlowsFunction: Iterable[Flow] => Flow,
+    marginalCostFunction: E => Flow => Cost,
+    terminationFunction: SelectionAlgorithm.SelectionState => Boolean,
+    seed: Long,
+    startTime: Long
+  ) extends PedrosoReiMCTS[Array[Int], Int]
       with Serializable { pedrosoRei =>
     // state? a list of selected alternatives (indices) : List[Int] (in reverse order would be smart)
     // action: another index : Int
@@ -182,13 +221,19 @@ class LocalMCTSSelectionAlgorithm[V, E](
     override var globalWorstSimulation: BigDecimal   = BigDecimal(trueShortestPathSelectionCost.overallCost.value)
     override var bestSolution: Array[Int]            = trueShortestPaths
 
+    val searchSpaceSize: BigDecimal = altsInternal.map { paths => BigDecimal(paths.length) }.product
+
     var bestAgentCosts: List[Cost] = trueShortestPathSelectionCost.agentPathCosts
 
-    override def getSearchCoefficients(tree: MCTreePedrosoReiReward[Array[Int], Int]): UCTScalarPedrosoReiReward.Coefficients = {
+    override def getSearchCoefficients(
+      tree: MCTreePedrosoReiReward[Array[Int], Int]
+    ): UCTScalarPedrosoReiReward.Coefficients = {
       UCTScalarPedrosoReiReward.Coefficients(1.0 / math.sqrt(2), globalBestSimulation, globalWorstSimulation)
     }
 
-    override def getDecisionCoefficients(tree: MCTreePedrosoReiReward[Array[Int], Int]): UCTScalarPedrosoReiReward.Coefficients = {
+    override def getDecisionCoefficients(
+      tree: MCTreePedrosoReiReward[Array[Int], Int]
+    ): UCTScalarPedrosoReiReward.Coefficients = {
       UCTScalarPedrosoReiReward.Coefficients(0, globalBestSimulation, globalWorstSimulation)
     }
 
@@ -218,8 +263,6 @@ class LocalMCTSSelectionAlgorithm[V, E](
           )
           .unsafeRunSync()
 
-//      logger.debug(s"evaluated state ${state.mkString("[", ", ", "]")} with cost ${selectionCost.overallCost}")
-
       // underlying MCTS library will set the bestCost itself, but,
       // we must track the agent path costs ourselves
       if (selectionCost.overallCost < Cost(pedrosoRei.globalBestSimulation.toDouble)) {
@@ -233,7 +276,8 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
     override def selectAction(actions: Seq[Int]): Option[Int] = actionSelection.selectAction(actions)
 
-    override protected val terminationCriterion: TerminationCriterion[Array[Int], Int, MCTreePedrosoReiReward[Array[Int], Int]] =
+    override protected val terminationCriterion
+      : TerminationCriterion[Array[Int], Int, MCTreePedrosoReiReward[Array[Int], Int]] =
       new TerminationCriterion[Array[Int], Int, MCTreePedrosoReiReward[Array[Int], Int]] {
 
         def init(): Unit = ()
@@ -249,18 +293,27 @@ class LocalMCTSSelectionAlgorithm[V, E](
                 Cost(globalBestSimulation.toDouble),
                 pedrosoRei.bestAgentCosts,
                 samples,
+                searchSpaceSize,
                 startTime
               )
 
               // "withinComputationalBudget" has the inverse meaning of a terminationFunction ;-)
               val shouldTerminate: Boolean = terminationFunction(selectionState)
+
+              logger.whenDebugEnabled {
+                if (shouldTerminate) {
+                  val timeElapsed = f"${(System.currentTimeMillis - startTime).toDouble / 1000}%.2f"
+                  logger.debug(s"terminating after $samples samples, $timeElapsed seconds")
+                }
+              }
               !shouldTerminate
           }
         }
 
       }
 
-    override protected def actionSelection: ActionSelection[Array[Int], Int] = RandomSelection(random, generatePossibleActions)
+    override protected def actionSelection: ActionSelection[Array[Int], Int] =
+      RandomSelection(random, generatePossibleActions)
 
     override val random: RandomGenerator = new BuiltInRandomGenerator(Some { seed })
 
@@ -289,11 +342,6 @@ class LocalMCTSSelectionAlgorithm[V, E](
         val numAltsForNextPerson: Int = alts(state.length).length
         val action: Int               = random.nextInt(numAltsForNextPerson)
         val newState: Array[Int]      = addToState(state, action)
-        if (numAltsForNextPerson == action) {
-          newState
-        }
-//        logger.debug(s"old state: ${state.mkString("[", ", ", "]")} - new state: ${newState.mkString("[", ", ", "]")}")
-//        logger.debug(s"agent ${state.length} selected action ${action} from $numAltsForNextPerson alts")
 
         newState
       }

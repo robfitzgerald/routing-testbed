@@ -1,5 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.matsim.simulator
 
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.events.handler.{LinkEnterEventHandler, LinkLeaveEventHandler, PersonStuckEventHandler}
@@ -9,23 +10,51 @@ import org.matsim.api.core.v01.network.Link
 /**
   * keeps track of changes in the road network, based on events where vehicles enter and leave the network
   */
-class RoadNetworkDeltaHandler extends LinkEnterEventHandler with LinkLeaveEventHandler with PersonStuckEventHandler {
+class RoadNetworkDeltaHandler(minNetworkUpdateThreshold: SimTime)
+    extends LinkEnterEventHandler
+    with LinkLeaveEventHandler
+    with PersonStuckEventHandler {
 
+  private var previousTimeUpdated: SimTime                      = SimTime.Zero
   private val linkDeltas: collection.mutable.Map[Id[Link], Int] = collection.mutable.Map.empty
 
-  def clear(): Unit = linkDeltas.clear()
+  def clear(): Unit = this.linkDeltas.clear()
 
-  def getDeltas: Map[Id[Link], Int] = linkDeltas.toMap
-  def getDeltasAsEdgeIds: Map[EdgeId, Int] = linkDeltas.toMap.map{ case (k, v) => EdgeId(k.toString) -> v }
+  /**
+    * return the deltas. guard against null link ids (which is somehow possible). manages persistent data.
+    *
+    * @param currentTime the current time
+    * @return deltas if we have reached a time to report them
+    */
+  def getDeltas(currentTime: SimTime): List[(EdgeId, Flow)] = {
+    val timeToUpdateNetworkFlows: Boolean = currentTime - previousTimeUpdated >= minNetworkUpdateThreshold
+    if (timeToUpdateNetworkFlows) {
+      val deltas: List[(EdgeId, Flow)] =
+        this.linkDeltas.toList
+          .foldLeft(List.empty[(EdgeId, Flow)]) {
+            case (acc, (linkId, marginalVehicleCounts)) =>
+              if (linkId == null) {
+                acc
+              } else {
+                (EdgeId(linkId.toString), Flow(marginalVehicleCounts)) +: acc
+              }
+          }
+      this.clear()
+      previousTimeUpdated = currentTime
+      deltas
+    } else List.empty
+  }
 
   /**
     * increase count of a link due to a vehicle entering a link
-    * @param event
+    * @param event a matsim LinkEnterEvent
     */
   def handleEvent(event: LinkEnterEvent): Unit =
-    linkDeltas.get(event.getLinkId) match {
-      case None => linkDeltas.update(event.getLinkId, 1)
-      case Some(linkIdData) => linkDeltas.update(event.getLinkId, linkIdData + 1)
+    this.linkDeltas.get(event.getLinkId) match {
+      case None =>
+        this.linkDeltas.update(event.getLinkId, 1)
+      case Some(linkIdData) =>
+        this.linkDeltas.update(event.getLinkId, linkIdData + 1)
     }
 
   /**
@@ -33,9 +62,11 @@ class RoadNetworkDeltaHandler extends LinkEnterEventHandler with LinkLeaveEventH
     * @param event
     */
   def handleEvent(event: LinkLeaveEvent): Unit =
-    linkDeltas.get(event.getLinkId) match {
-      case None => linkDeltas.update(event.getLinkId, -1)
-      case Some(linkIdData) => linkDeltas.update(event.getLinkId, linkIdData - 1)
+    this.linkDeltas.get(event.getLinkId) match {
+      case None =>
+        this.linkDeltas.update(event.getLinkId, -1)
+      case Some(linkIdData) =>
+        this.linkDeltas.update(event.getLinkId, linkIdData - 1)
     }
 
   /**
@@ -43,9 +74,11 @@ class RoadNetworkDeltaHandler extends LinkEnterEventHandler with LinkLeaveEventH
     * @param event
     */
   def handleEvent(event: PersonStuckEvent): Unit = {
-    linkDeltas.get(event.getLinkId) match {
-      case None => linkDeltas.update(event.getLinkId, -1)
-      case Some(linkIdData) => linkDeltas.update(event.getLinkId, linkIdData - 1)
+    this.linkDeltas.get(event.getLinkId) match {
+      case None =>
+        this.linkDeltas.update(event.getLinkId, -1)
+      case Some(linkIdData) =>
+        this.linkDeltas.update(event.getLinkId, linkIdData - 1)
     }
   }
 }

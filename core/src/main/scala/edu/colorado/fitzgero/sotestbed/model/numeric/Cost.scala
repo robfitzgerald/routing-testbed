@@ -17,6 +17,7 @@ object Cost {
   def Zero: Cost                       = new Cost(0.0)
   def PositiveInfinity: Cost           = new Cost(Double.PositiveInfinity)
   def apply[C: Numeric](cost: C): Cost = new Cost(cost.toDouble)
+
   implicit val CostNumeric: Numeric[Cost] = new Numeric[Cost] {
     def plus(x: Cost, y: Cost): Cost = Cost(x.value + y.value)
 
@@ -45,6 +46,8 @@ object Cost {
     def toDouble(x: Cost): Double = x.value
 
     def compare(x: Cost, y: Cost): Int = (x.value * 1000).toInt - (y.value * 1000).toInt
+
+    def parseString(str: String): Option[Cost] = scala.util.Try { Cost(str.toDouble) }.toOption
   }
   implicit val CostOrdering: Ordering[Cost] = Ordering.by(_.value)
 }

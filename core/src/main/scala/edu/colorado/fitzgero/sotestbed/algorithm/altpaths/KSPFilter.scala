@@ -1,5 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 
+import scala.annotation.tailrec
 import scala.util.Random
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
@@ -9,6 +10,13 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment}
 
 object KSPFilter {
 
+  /**
+    * a filter function which occurs between generating a set of alternative paths and selecting
+    * an optimal combination from them. it takes the ksp result for an agent, the history of that
+    * * agent's replanning, and a seed value for use with sampling-based approaches. it returns
+    * any update to the alternative paths (such as removing long paths or only keeping the first 5
+    * minutes of each path)
+    */
   type KSPFilterFunction = (AgentHistory, Request, List[Path], Random) => Option[(Request, List[Path])]
 
   private[this] final case class CombinedKSPFilterFunctionAccumulator(
@@ -26,20 +34,21 @@ object KSPFilter {
     */
   def combine(kspFilterFunctions: List[KSPFilterFunction]): KSPFilterFunction = {
 
-    (history: AgentHistory, request: Request, alts: List[Path], random: Random) => {
-      val initialAccumulator: Option[CombinedKSPFilterFunctionAccumulator] =
-        Some{ CombinedKSPFilterFunctionAccumulator(history, request, alts, random) }
-      val finalAccumulator: Option[CombinedKSPFilterFunctionAccumulator] =
-        kspFilterFunctions
-          .foldLeft(initialAccumulator) { (accOpt, fn) =>
-            for {
-              acc <- accOpt
-              (filteredReq, filteredAlts) <- fn(acc.history, acc.request, acc.alts, acc.random)
-            } yield CombinedKSPFilterFunctionAccumulator(acc.history, filteredReq, filteredAlts, acc.random)
-          }
+    (history: AgentHistory, request: Request, alts: List[Path], random: Random) =>
+      {
 
-      finalAccumulator.map{ case CombinedKSPFilterFunctionAccumulator(_, finalReq, finalAlts, _) => (finalReq, finalAlts) }
-    }
+        val initialAccumulator: Option[(Request, List[Path])] = Some((request, alts))
+
+        val result: Option[(Request, List[Path])] = kspFilterFunctions.foldLeft(initialAccumulator) { (acc, fn) =>
+          val filterFunctionResult: Option[(Request, List[Path])] = for {
+            (accReq, accAlts) <- acc
+            result            <- fn(history, accReq, accAlts, random)
+          } yield result
+          filterFunctionResult
+        }
+
+        result
+      }
   }
 
   sealed trait LimitFunction {
@@ -48,32 +57,51 @@ object KSPFilter {
 
   object LimitFunction {
 
-    private[this] final case class ByTravelTimeAccumulator(reversePath: Path = List.empty, totalCost: Cost = Cost.Zero) {
-
-      def addPathSegment(pathSegment: PathSegment): ByTravelTimeAccumulator =
-        this.copy(
-          reversePath = pathSegment +: this.reversePath,
-          totalCost = this.totalCost + pathSegment.cost
-        )
-      def getPath: Path = this.reversePath.reverse
-    }
-
+    /**
+      * filters a path so that it only includes up to the provided accumulative travel time,
+      * starting from the origin.
+      *
+      * @param travelTimeThreshold limit to the number of seconds of the path to filter
+      */
     final case class ByTravelTime(travelTimeThreshold: TravelTimeSeconds) extends LimitFunction {
 
       def limitPath(path: Path): Option[Path] = {
-        val accumulator: ByTravelTimeAccumulator =
-          path.foldLeft(ByTravelTimeAccumulator()) { (acc, pathSegment) =>
-            if (acc.totalCost.value + pathSegment.cost.value > travelTimeThreshold.value) acc
-            else acc.addPathSegment(pathSegment)
+
+        @tailrec
+        def _limit(remaining: Path, accCost: Double = 0.0, reverseSolution: Path = List.empty): Path = {
+          remaining match {
+            case Nil =>
+              reverseSolution
+            case head :: tail =>
+              val thisCost    = head.cost.value
+              val nextAccCost = accCost + thisCost
+              if (nextAccCost > travelTimeThreshold.value) {
+                reverseSolution
+              } else {
+                val nextReverseSolution = head +: reverseSolution
+                _limit(tail, nextAccCost, nextReverseSolution)
+              }
           }
-        val limitedPath: Path = accumulator.getPath
-        if (limitedPath.isEmpty) None
-        else Some { limitedPath }
+        }
+
+        val limitResult = _limit(path).reverse
+        if (limitResult.isEmpty) None else Some(limitResult)
       }
     }
 
-    // at this point, PathSegment doesn't allow us to limit by distance, as we only have "cost"
-    // which is equivalent to the travel time
+    /**
+      * filters a path so that it only includes up to the provided number of links
+      * set in the linkCountThreshold, starting from the origin.
+      *
+      * @param linkCountThreshold limit to number of links in path
+      */
+    final case class ByLinkCount(linkCountThreshold: Int) extends LimitFunction {
+
+      def limitPath(path: Path): Option[Path] = {
+        val result = path.take(linkCountThreshold)
+        Some(result)
+      }
+    }
 
   }
 }

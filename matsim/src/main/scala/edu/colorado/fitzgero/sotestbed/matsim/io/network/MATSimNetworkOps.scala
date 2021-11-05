@@ -11,26 +11,94 @@ import kantan.csv.ops._
 
 object MATSimNetworkOps {
 
-  final case class NetworkStats(totalLengths: Double, speeds: Map[Double, Int]) {
+  /**
+    * iterates through all intersections in a network to find the bounding box of the coordinate space
+    *
+    * @param network road network
+    * @return the bounding box of the intersections
+    */
+  def getBoundingBox(network: Network): BoundingBox = {
+    val result = network.getNodes.asScala.values.foldLeft(BoundingBox()) { (bbox, node) =>
+      val (x, y) = (node.getCoord.getX, node.getCoord.getY)
+      bbox.add(x, y)
+    }
+    result
+  }
+
+  final case class NetworkStats(
+    numLinks: Int,
+    totalLengths: Double,
+    maxLength: Double,
+    avgSpeed: Double,
+    speeds: Map[Double, Int]
+  ) {
+
     override def toString: String =
       f"""
-         |total link lengths: $totalLengths%.2f
+         |total  link lengths: $totalLengths%.2f meters
+         |average link length: ${totalLengths / numLinks}%.2f meters
+         |max     link length: $maxLength%.2f meters
+         |average link speed:  ${avgSpeed / numLinks}%.2f mph 
          |speed data:
-         |${speeds.mkString("  ", ",\n  ", "")}
+         |$speedStats2
          |""".stripMargin
+
+    def speedStats2: String = {
+      val total = speeds.values.foldLeft(0) {
+        _ + _
+      }
+      speeds
+        .map {
+          case (speed, count) =>
+            val asMph: Int = (speed * (3600.0 / 1609.0)).toInt
+            asMph -> count
+        }
+        .groupBy { case (speed, _) => speed }
+        .map {
+          case (speed, counts) =>
+            val percent = (counts.values.sum / total.toDouble) * 100.0
+            f"$speed mph: $percent%.2f%%"
+        }
+        .mkString("\n")
+    }
+
+//    def speedStats: String = {
+//      val total = speeds.values.foldLeft(0) { _ + _ }
+//      val statStrings = speeds.map {
+//        case (speed, count) =>
+//          val asMph: Double = speed * (3600.0 / 1609.0)
+//          f"$speed%.2f meters/sec | $asMph%.2f mph | $count | ${(count.toDouble / total.toDouble) * 100.0}%.2f %%"
+//      }
+//      statStrings.mkString("\n")
+//    }
+
   }
 
   def networkStats(network: Network): NetworkStats = {
-    val totalLengths =
-      network.getLinks.asScala.map { _._2.getLength }.sum
+    val numLinks: Int = network.getLinks.size
+    val lengths: List[Double] =
+      network.getLinks.asScala.map { _._2.getLength }.toList
+    val totalLengths      = lengths.sum
+    val maxLength: Double = lengths.max
+
+    val avgSpeed: Double = network.getLinks.asScala.values.foldLeft(0.0) { (acc, link) =>
+      acc + link.getFreespeed * (3600.0 / 1609.0)
+    }
     val speeds: Map[Double, Int] =
       network.getLinks.asScala.toMap
         .groupBy { _._2.getFreespeed }
         .map { case (speed, links) => (speed, links.size) }
-    NetworkStats(totalLengths, speeds)
+    NetworkStats(numLinks, totalLengths, maxLength, avgSpeed, speeds)
   }
 
-  final case class CountOfCommonEdges(commonEdges: Int, edgesOnlyInA: Int, edgesOnlyInB: Int, lengthDiff: Double, freespeedDiff: Double) {
+  final case class CountOfCommonEdges(
+    commonEdges: Int,
+    edgesOnlyInA: Int,
+    edgesOnlyInB: Int,
+    lengthDiff: Double,
+    freespeedDiff: Double
+  ) {
+
     override def toString: String =
       f"""
          |common links: $commonEdges
@@ -138,7 +206,8 @@ object MATSimNetworkOps {
 
     val writer =
       outFile.asCsvWriter[(String, Double, Double, Boolean, Boolean, Boolean)](
-        rfc.withHeader("WKT", "length_diff", "freespeed_diff", "network_a", "network_b", "both"))
+        rfc.withHeader("WKT", "length_diff", "freespeed_diff", "network_a", "network_b", "both")
+      )
 
     Try {
       for {
@@ -146,14 +215,12 @@ object MATSimNetworkOps {
       } {
         writer.write(link)
       }
-    }.toEither.left.map { t =>
-      new Exception(t)
-    }
+    }.toEither.left.map { t => new Exception(t) }
   }
 
   def writeWKTNetwork(
     network: Network,
-    outFile: Path,
+    outFile: Path
   ): Either[Exception, Unit] = {
     val rowData = {
       for {
@@ -175,8 +242,6 @@ object MATSimNetworkOps {
       } {
         writer.write(link)
       }
-    }.toEither.left.map { t =>
-      new Exception(t)
-    }
+    }.toEither.left.map { t => new Exception(t) }
   }
 }

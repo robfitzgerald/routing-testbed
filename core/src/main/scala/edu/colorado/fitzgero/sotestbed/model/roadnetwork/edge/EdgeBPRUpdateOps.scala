@@ -10,11 +10,11 @@ object EdgeBPRUpdateOps {
     * update a link by replacing the current flow with this flow value
     *
     * @param e a link
-    * @param flow the new flow value
+    * @param flow the marginal flow value
     * @return the updated link
     */
   def edgeUpdateWithFlowCount(e: EdgeBPR, flow: Flow): EdgeBPR = {
-    val flowUpdate: Flow = Flow(math.max(0, flow.value)) // protect against negatives
+    val flowUpdate: Flow = Flow(math.max(0, e.flow.value + flow.value)) // protect against negatives
     e.copy(
       flow = flowUpdate,
       flowHistory = Queue(flowUpdate),
@@ -33,7 +33,7 @@ object EdgeBPRUpdateOps {
     val flowUpdate: Flow = Flow(math.max(0, e.flow.value + flow.value)) // protect against negatives
     e.copy(
       flow = flowUpdate,
-      flowHistory = Queue.empty,
+      flowHistory = Queue(flowUpdate),
       flowHistoryLength = 0
     )
   }
@@ -55,15 +55,15 @@ object EdgeBPRUpdateOps {
 
       // remove the oldest data point from a running average
       // new_average = ((average * nbValues) - value) / (nbValues - 1)
-      val oldestValue: Flow = e.flowHistory.head
-      val avgWithoutOldest: Flow = ((e.flow * Flow(e.flowHistoryLength)) - oldestValue) / Flow(e.flowHistoryLength- 1)
+      val oldestValue: Flow      = e.flowHistory.head
+      val avgWithoutOldest: Flow = ((e.flow * Flow(e.flowHistoryLength)) - oldestValue) / Flow(e.flowHistoryLength - 1)
 
       // update the vehicle count, which is what is actually enqueued
       // new_average = average + ((value - average) / nbValues)
       // guard against negative values
-      val updatedVehicleCount: Flow = Flow(math.max(e.vehicleCount.value + flow.value, 0))
+      val updatedVehicleCount: Flow    = Flow(math.max(e.vehicleCount.value + flow.value, 0))
       val nextFlowHistory: Queue[Flow] = e.flowHistory.tail.enqueue(updatedVehicleCount)
-      val avgWithLatest: Flow = avgWithoutOldest + ((updatedVehicleCount - avgWithoutOldest) / Flow(e.flowHistoryLength))
+      val avgWithLatest: Flow          = avgWithoutOldest + ((updatedVehicleCount - avgWithoutOldest) / Flow(e.flowHistoryLength))
 
       e.copy(
         flow = avgWithLatest,
@@ -76,9 +76,9 @@ object EdgeBPRUpdateOps {
       val nextFlowHistoryLength: Int = e.flowHistoryLength + 1
 
       // update flow-as-count value
-      val updatedVehicleCount: Flow = Flow(math.max(e.vehicleCount.value + flow.value, 0))
+      val updatedVehicleCount: Flow    = Flow(math.max(e.vehicleCount.value + flow.value, 0))
       val nextFlowHistory: Queue[Flow] = e.flowHistory.enqueue(updatedVehicleCount)
-      val avgWithLatest: Flow = e.flow + ((updatedVehicleCount - e.flow) / Flow(nextFlowHistoryLength))
+      val avgWithLatest: Flow          = e.flow + ((updatedVehicleCount - e.flow) / Flow(nextFlowHistoryLength))
 
       e.copy(
         flow = avgWithLatest,
@@ -89,10 +89,10 @@ object EdgeBPRUpdateOps {
     } else {
       // flowRateBufferTime must have changed to be smaller since last edge update. should be rare or never happen
       // but! if it does, we need to downsize our history and traverse the history to compute the average
-      val updatedVehicleCount: Flow = e.vehicleCount + flow
+      val updatedVehicleCount: Flow    = e.vehicleCount + flow
       val nextFlowHistory: Queue[Flow] = e.flowHistory.drop(flowRateBufferTime.value.toInt - 1).enqueue(updatedVehicleCount)
       val revisedAverage: Flow =
-        if (nextFlowHistory.nonEmpty) Flow(nextFlowHistory.reduce(_+_).value / flowRateBufferTime.value)
+        if (nextFlowHistory.nonEmpty) Flow(nextFlowHistory.reduce(_ + _).value / flowRateBufferTime.value)
         else Flow.Zero
 
       e.copy(
@@ -123,10 +123,9 @@ object EdgeBPRUpdateOps {
     val nextFlowHistoryLength = nextFlowHistory.length
 
     e.copy(
-      flow = Flow(nextFlowHistory.reduce(_+_).value / nextFlowHistoryLength),
+      flow = Flow(nextFlowHistory.reduce(_ + _).value / nextFlowHistoryLength),
       flowHistory = nextFlowHistory,
       flowHistoryLength = nextFlowHistoryLength
     )
   }
 }
-

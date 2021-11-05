@@ -1,0 +1,68 @@
+batching-function {
+  min-x = -11721773.66
+  max-x = -11712796.04
+  min-y = 4860786.76
+  max-y = 4875939.84
+}
+
+xdist ydist 8977.63 15153.08
+
+/Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Boulder_CO.xml
+
+total  link lengths: 1142773.98 meters
+average link length: 144.80 meters
+max     link length: 2484.49 meters
+average link speed:  20.29 mph
+speed data:
+10 mph: 0.11%
+37 mph: 0.33%
+25 mph: 20.18%
+20 mph: 3.03%
+74 mph: 0.03%
+6 mph: 1.94%
+45 mph: 0.86%
+49 mph: 0.29%
+35 mph: 6.96%
+18 mph: 0.53%
+31 mph: 0.19%
+40 mph: 1.63%
+55 mph: 0.03%
+30 mph: 4.47%
+15 mph: 58.84%
+
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:552 ... done creating the links.
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:274 = conversion statistics: ==========================
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:275 osm: # nodes read:       3214
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:276 osm: # ways read:        4671
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:277 MATSim: # nodes created: 3212
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:278 MATSim: # links created: 7992
+2020-05-19 21:26:01,354  INFO OsmNetworkReader:286 = end of conversion statistics ====================
+2020-05-19 21:26:01,357  INFO NetworkCleaner:118 running org.matsim.core.network.algorithms.NetworkCleaner algorithm...
+2020-05-19 21:26:01,357  INFO NetworkCleaner:121   checking 3212 nodes and 7992 links for dead-ends...
+2020-05-19 21:26:01,371  INFO NetworkCleaner:139     The biggest cluster consists of 3158 nodes.
+2020-05-19 21:26:01,371  INFO NetworkCleaner:140   done.
+2020-05-19 21:26:01,375  INFO NetworkCleaner:155   resulting network contains 3158 nodes and 7892 links.
+2020-05-19 21:26:01,375  INFO NetworkCleaner:157 done.
+2020-05-19 21:26:01,383  INFO NetworkWriter:69 Writing network to file: /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Boulder_CO.xml...
+2020-05-19 21:26:01,478  INFO NetworkWriter:72 done.
+21:26:01.644 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=15.6464 mph=35.01 count 549
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=11.176 mph=25.01 count 1593
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=24.587200000000003 mph=55.01 count 2
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=13.411200000000001 mph=30.01 count 353
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=6.7056000000000004 mph=15.00 count 45
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=16.666666666666668 mph=37.29 count 26
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=8.333333333333334 mph=18.65 count 42
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=8.940800000000001 mph=20.00 count 239
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=2.7777777777777777 mph=6.22 count 153
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=4.470400000000001 mph=10.00 count 9
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=33.333333333333336 mph=74.58 count 2
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=17.881600000000002 mph=40.01 count 129
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=13.88888888888889 mph=31.08 count 15
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=22.22222222222222 mph=49.72 count 23
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=20.116799999999998 mph=45.01 count 68
+21:26:01.646 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=6.944444444444445 mph=15.54 count 4644
+21:26:01.656 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - total length in meters: 1142773.98
+finished importing, network can be found at /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Boulder_CO.xml
+
+running 10000th sample with current average 536.49
+running 20000th sample with current average 531.90

@@ -4,7 +4,7 @@ import java.io.File
 import java.nio.file.{Path, Paths}
 
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
-import edu.colorado.fitzgero.sotestbed.config.BatchingFunctionConfig.Greedy
+import edu.colorado.fitzgero.sotestbed.config.BatchingFunctionConfig.Random
 import edu.colorado.fitzgero.sotestbed.config.KSPAlgorithmConfig.SvpLoSync
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
 
@@ -28,7 +28,7 @@ class MATSimBatchConfigTest extends SoTestBedBaseTest {
               case so: MATSimConfig.Algorithm.SystemOptimal =>
                 so.name should equal("system optimal")
                 so.batchingFunction match {
-                  case greedy: Greedy => List(5, 10) should contain(greedy.batchWindow)
+                  case greedy: Random => List(5, 10) should contain(greedy.batchWindow)
                   case _              => fail("should have found a Greedy batching algorithm config object")
                 }
             }

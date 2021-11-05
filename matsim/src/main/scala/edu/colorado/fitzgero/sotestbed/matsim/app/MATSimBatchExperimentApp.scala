@@ -2,17 +2,23 @@ package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.{File, FileOutputStream, PrintWriter}
 import java.nio.file.{Files, Path, Paths}
+import java.sql.Timestamp
 
 import scala.util.Try
 
-import cats.data.Writer
 import cats.implicits._
 
+import pureconfig._
+import pureconfig.generic.auto._
 import com.monovore.decline._
-import com.typesafe.config.{Config, ConfigFactory}
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.batch.MATSimBatchConfig
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
-import pureconfig.ConfigSource
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig._
+import edu.colorado.fitzgero.sotestbed.matsim.runner
+import edu.colorado.fitzgero.sotestbed.matsim.runner.MATSimExperimentRunner2
+import org.matsim.api.core.v01.Id
+import org.matsim.api.core.v01.population.Person
 
 object MATSimBatchExperimentApp
     extends CommandApp(
@@ -24,18 +30,26 @@ object MATSimBatchExperimentApp
           Opts.option[String](long = "batchName", short = "n", help = "the top-level directory for this batch output")
 
         val batchConfigOpt: Opts[String] =
-          Opts.option[String](long = "batchConfig", short = "b", help = "a file with arrays at all paths, used to generate variations")
+          Opts.option[String](
+            long = "batchConfig",
+            short = "b",
+            help = "a file with arrays at all paths, used to generate variations"
+          )
 
         val scenarioConfigDirectoryOpt: Opts[String] =
-          Opts.option[String](long = "scenarioConfigDirectory",
-                              short = "s",
-                              help = "a directory with config files (with default parameters) for each named algorithm variant")
+          Opts.option[String](
+            long = "scenarioConfigDirectory",
+            short = "s",
+            help = "a directory with config files (with default parameters) for each named algorithm variant"
+          )
 
         val trialsPerConfigOpt: Opts[Int] =
           Opts.option[Int]("trials", short = "t", help = "number of trials per variation").withDefault(1)
 
         val batchSeedOps: Opts[Long] =
-          Opts.option[Long](long = "seed", help = "a seed value to offset how populations are generated ").withDefault(0)
+          Opts
+            .option[Long](long = "seed", help = "a seed value to offset how populations are generated ")
+            .withDefault(0)
 
         (batchNameOpt, batchConfigOpt, scenarioConfigDirectoryOpt, trialsPerConfigOpt, batchSeedOps)
           .mapN {
@@ -59,7 +73,8 @@ object MATSimBatchExperimentApp
                   }
 
                   println(
-                    s"generated $goodConfsCount valid configs for batch with $trials trials per conf -> ${goodConfsCount * trials} total trials")
+                    s"generated $goodConfsCount valid configs for batch with $trials trials per conf -> ${goodConfsCount * trials} total trials"
+                  )
 
                   if (goodConfsCount == 0) {
                     // todo: revert to default conf?
@@ -79,7 +94,9 @@ object MATSimBatchExperimentApp
                         .getOrElse(Paths.get("/tmp"))
 
                     if (Files.exists(batchLoggerPath)) {
-                      println(s"path $batchLoggerPath already exists. will only generate experiments that do not overwrite previous ones")
+                      println(
+                        s"path $batchLoggerPath already exists. will only generate experiments that do not overwrite previous ones"
+                      )
                       //              System.exit(1)
                     } else {
                       Files.createDirectories(batchLoggerPath)
@@ -89,7 +106,7 @@ object MATSimBatchExperimentApp
 
                     val batchLogger: PrintWriter = if (!Files.exists(batchLoggerFile)) {
                       val batchLogger: PrintWriter = new PrintWriter(batchLoggerFile.toFile)
-                      val batchHeader: String      = "trial,message\n"
+                      val batchHeader: String      = "trial,time,message\n"
                       batchLogger.write(batchHeader)
                       println(s"created batch logging file at $batchLoggerFile")
                       batchLogger
@@ -101,11 +118,12 @@ object MATSimBatchExperimentApp
                     val batchOverviewFile: Path = batchLoggerPath.resolve("result.csv")
                     if (!Files.exists(batchOverviewFile)) {
                       val batchOverview: PrintWriter = new PrintWriter(batchOverviewFile.toFile)
-                      val paramsHeader: String = confs.headOption match {
-                        case None    => ""
-                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
-                      }
-                      val batchOverviewHeader: String = s"$paramsHeader,avgTTSecs,avgDistMeters,avgSpeedMph\n"
+//                      val paramsHeader: String = confs.headOption match {
+//                        case None    => ""
+//                        case Some(c) => c.variationHint.keys.toList.sorted.mkString(",")
+//                      }
+                      val batchOverviewHeader: String =
+                        s"configuration,${AgentBaseMetrics.Header},${AgentPerformanceMetrics.Header}\n"
                       batchOverview.write(batchOverviewHeader)
                       batchOverview.close()
                       println(s"created batch overview file at $batchOverviewFile")
@@ -120,72 +138,80 @@ object MATSimBatchExperimentApp
 
                       confWithBatchName = conf.copy(io = conf.io.copy(batchName = batchName))
                       trial <- 0 until trials
-                      scenarioData = MATSimConfig.IO.ScenarioData(
+                      scenarioData = MATSimRunConfig.ScenarioData(
                         algorithm = confWithBatchName.algorithm.name,
                         variationName = popSize.toString,
+                        popSize = popSize,
                         trialNumber = trial,
                         headerColumnOrder = variationHint.keys.toList.sorted,
                         scenarioParameters = variationHint
                       )
-                      confWithScenarioData = confWithBatchName.copy(io = confWithBatchName.io.copy(scenarioData = Some {
-                        scenarioData
-                      }))
                       popFileName: String    = s"population-$batchName-$popSize-$trial.xml"
-                      variationPopFile: File = confWithScenarioData.io.batchLoggingDirectory.resolve(popFileName).toFile
-                      matsimConfig           = confWithScenarioData.copy(io = confWithScenarioData.io.copy(populationFile = variationPopFile))
+                      variationPopFile: File = confWithBatchName.io.batchLoggingDirectory.resolve(popFileName).toFile
+                      matsimConfigFinal = confWithBatchName.copy(io =
+                        confWithBatchName.io.copy(populationFile = variationPopFile)
+                      )
+                      matsimRunConfig = MATSimRunConfig(matsimConfigFinal, scenarioData)
                     } {
                       if (conf.algorithm.name != "selfish") {
                         // NOOP - only running selfish exp. here
-                      } else if (Files.isDirectory(matsimConfig.io.experimentDirectory)) {
+                      } else if (Files.isDirectory(matsimRunConfig.experimentDirectory)) {
                         // don't overwrite if already exists
                         println(s"selfish trial $trial already exists. skipping.")
                         batchLogger.write(s"$trial,run already exists - skipping\n")
                       } else {
 
-                        Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
+                        Files.createDirectories(matsimRunConfig.experimentLoggingDirectory)
 
                         if (!variationPopFile.isFile) {
 
                           // generate the population
                           MATSimPopulationRunner.generateUniformPopulation(
-                            networkFile = matsimConfig.io.matsimNetworkFile,
-                            polygonFileOption = matsimConfig.io.populationPolygonFile,
+                            networkFile = matsimConfigFinal.io.matsimNetworkFile,
+                            polygonFileOption = matsimConfigFinal.io.populationPolygonFile,
                             popFileDestination = variationPopFile,
                             popSize = popSize,
-                            adoptionRate = matsimConfig.routing.adoptionRate,
-                            workActivityMinTime = matsimConfig.population.workActivityMinTime,
-                            workActivityMaxTime = matsimConfig.population.workActivityMaxTime,
-                            workDurationHours = matsimConfig.population.workDurationHours,
+                            adoptionRate = matsimConfigFinal.routing.adoptionRate,
+                            workActivityMinTime = matsimConfigFinal.population.workActivityMinTime,
+                            workActivityMaxTime = matsimConfigFinal.population.workActivityMaxTime,
+                            workDurationHours = matsimConfigFinal.population.workDurationHours,
                             seed = Some {
                               trial + batchSeed
                             }
                           ) match {
                             case Left(e) =>
                               println(s"population generation for population-$trial exited with fatal error $e")
-                              batchLogger.write(s"$trial,${e.toString}\n")
+                              val time = new Timestamp(System.currentTimeMillis)
+                              batchLogger.write(s"$trial,$time,${e.toString}\n")
                             case Right(_) =>
                               ()
                           }
+                        }
 
-                          // run experiment
-                          val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, trial + batchSeed, Some { scenarioData })
+                        // run experiment
+                        val experiment: MATSimExperimentRunner2 =
+                          runner.MATSimExperimentRunner2(matsimRunConfig, trial + batchSeed)
 
-                          Try {
-                            experiment.run()
-                          }.toEither match {
-                            case Left(e) =>
-                              println(s"trial $trial exit with fatal error $e")
-                              batchLogger.write(s"$trial,${e.toString}\n")
-                            case Right(result) =>
-                              result match {
-                                case Left(e) =>
-                                  println(s"trial $trial exit with handled error")
-                                  batchLogger.write(s"$trial,${e.toString}\n")
-                                case Right(_) =>
-                                  println(s"trial $trial exited normally")
-                                  batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
-                              }
-                          }
+                        Try {
+                          experiment.run()
+                        }.toEither match {
+                          case Left(e) =>
+                            println(
+                              s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}"
+                            )
+                            val time = new Timestamp(System.currentTimeMillis)
+                            batchLogger.write(s"$trial,$time,${e.getClass} ${e.getCause} ${e.getMessage}\n")
+                          case Right(result) =>
+                            result match {
+                              case Left(e) =>
+                                println(s"trial $trial exit with handled error")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${e.getClass} ${e.getCause} ${e.getMessage}\n")
+                              case Right(_) =>
+                                println(s"trial $trial exited normally")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${matsimRunConfig.experimentDirectory}\n")
+                            }
                         }
                       }
                     }
@@ -198,80 +224,101 @@ object MATSimBatchExperimentApp
                       conf                                                                                              <- confReaderResult
                       confWithBatchName = conf.copy(io = conf.io.copy(batchName = batchName))
                       trial <- 0 until trials
-                      seed          = trial + batchSeed
-                      variationName = MATSimBatchConfig.createVariationName(variationHint)
-                      scenarioData = MATSimConfig.IO.ScenarioData(
+                      seed = trial + batchSeed
+//                      variationName = MATSimBatchConfig.createVariationName(variationHint)
+                      variationName = MATSimBatchConfig
+                        .createVariationNameWithFallback(confWithBatchName, popSize, config)
+                      scenarioData = MATSimRunConfig.ScenarioData(
                         algorithm = confWithBatchName.algorithm.name,
                         variationName = variationName,
+                        popSize = popSize,
                         trialNumber = trial,
                         headerColumnOrder = variationHint.keys.toList.sorted,
                         scenarioParameters = variationHint
                       )
-                      confWithScenarioData = confWithBatchName.copy(io = confWithBatchName.io.copy(scenarioData = Some {
-                        scenarioData
-                      }))
+//                      confWithScenarioData   = confWithBatchName.copy(io = confWithBatchName.io.copy(scenarioData = scenarioData))
                       popFileName: String    = s"population-$batchName-$popSize-$trial.xml"
-                      variationPopFile: File = confWithScenarioData.io.batchLoggingDirectory.resolve(popFileName).toFile
-                      matsimConfig           = confWithScenarioData.copy(io = confWithScenarioData.io.copy(populationFile = variationPopFile))
+                      variationPopFile: File = confWithBatchName.io.batchLoggingDirectory.resolve(popFileName).toFile
+                      matsimConfigFinal = confWithBatchName.copy(io =
+                        confWithBatchName.io.copy(populationFile = variationPopFile)
+                      )
+                      matsimRunConfig = MATSimRunConfig(matsimConfigFinal, scenarioData)
                     } {
                       if (conf.algorithm.name == "selfish") {
                         // NOOP - running SO experiments here
-                      } else if (Files.isDirectory(matsimConfig.io.experimentDirectory)) {
+                      } else if (Files.isDirectory(matsimRunConfig.experimentDirectory)) {
                         // don't overwrite if already exists
-                        println(s"optimal scenario $variationName run already exists. skipping.")
+                        println(s"optimal scenario $variationName run trial $trial already exists. skipping.")
                         batchLogger.write(s"$trial,$variationName run already exists - skipping\n")
                       } else {
 
-                        Files.createDirectories(matsimConfig.io.experimentLoggingDirectory)
+                        Files.createDirectories(matsimRunConfig.experimentLoggingDirectory)
 
-                        // todo: save the config to a file. posted to stacko:
-                        //  https://stackoverflow.com/questions/60119481/standardized-method-for-writing-an-arbitrary-typesafe-config-to-a-hocon-file
+                        implicit val matsimPersonIdWriter: ConfigWriter[Id[Person]] =
+                          ConfigWriter[String].contramap[Id[Person]](_.toString)
+                        val configValue  = ConfigWriter[MATSimRunConfig].to(matsimRunConfig)
+                        val configString = configValue.render()
+                        val configOutputFile: File =
+                          matsimRunConfig.experimentLoggingDirectory.resolve("configuration.json").toFile
+                        val configOutputPW: PrintWriter = new PrintWriter(configOutputFile)
+                        configOutputPW.write(configString)
+                        configOutputPW.close()
 
-                        val variationOutput: String           = variationHint.mkString("\n")
-                        val variationOutputFile: File         = matsimConfig.io.experimentLoggingDirectory.resolve("variation.txt").toFile
-                        val variationPrintWriter: PrintWriter = new PrintWriter(variationOutputFile.toString)
+                        val variationOutput: String = variationHint.mkString("\n")
+                        val variationOutputFile: File =
+                          matsimRunConfig.experimentLoggingDirectory.resolve("variation.txt").toFile
+                        val variationPrintWriter: PrintWriter = new PrintWriter(variationOutputFile)
                         variationPrintWriter.write(variationOutput)
                         variationPrintWriter.close()
 
                         if (!variationPopFile.isFile) {
                           // generate the population
                           MATSimPopulationRunner.generateUniformPopulation(
-                            networkFile = matsimConfig.io.matsimNetworkFile,
-                            polygonFileOption = matsimConfig.io.populationPolygonFile,
+                            networkFile = matsimConfigFinal.io.matsimNetworkFile,
+                            polygonFileOption = matsimConfigFinal.io.populationPolygonFile,
                             popFileDestination = variationPopFile,
                             popSize = popSize,
-                            adoptionRate = matsimConfig.routing.adoptionRate,
-                            workActivityMinTime = matsimConfig.population.workActivityMinTime,
-                            workActivityMaxTime = matsimConfig.population.workActivityMaxTime,
-                            workDurationHours = matsimConfig.population.workDurationHours,
+                            adoptionRate = matsimConfigFinal.routing.adoptionRate,
+                            workActivityMinTime = matsimConfigFinal.population.workActivityMinTime,
+                            workActivityMaxTime = matsimConfigFinal.population.workActivityMaxTime,
+                            workDurationHours = matsimConfigFinal.population.workDurationHours,
                             seed = Some {
                               seed
                             }
                           ) match {
                             case Left(e) =>
                               println(s"population generation for population-$trial exited with fatal error $e")
-                              batchLogger.write(s"$trial,${e.toString}\n")
+                              val time = new Timestamp(System.currentTimeMillis)
+                              batchLogger.write(s"$trial,$time,${e.toString}\n")
                             case Right(_) =>
                               ()
                           }
                         }
 
-                        val experiment: MATSimExperimentRunner = MATSimExperimentRunner(matsimConfig, trial + batchSeed, Some { scenarioData })
+                        val experiment: MATSimExperimentRunner2 =
+                          runner.MATSimExperimentRunner2(matsimRunConfig, trial + batchSeed)
 
                         Try {
                           experiment.run()
                         }.toEither match {
                           case Left(e) =>
-                            println(s"trial $trial exit with fatal error $e")
-                            batchLogger.write(s"$trial,${e.toString}\n")
+                            println(
+                              s"trial $trial exit with fatal error ${e.getClass} ${e.getCause} ${e.getMessage}\n${e.getStackTrace.map { _.toString }.mkString("\n")}"
+                            )
+                            val time = new Timestamp(System.currentTimeMillis)
+                            batchLogger.write(s"$trial,$time,FAILURE - ${e.getClass} ${e.getCause} ${e.getMessage}\n")
                           case Right(result) =>
                             result match {
                               case Left(e) =>
                                 println(s"trial $trial exit with handled error")
-                                batchLogger.write(s"$trial,${e.toString}\n")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(
+                                  s"$trial,$time,FAILURE - ${e.getClass} ${e.getCause} ${e.getMessage}\n"
+                                )
                               case Right(_) =>
                                 println(s"trial $trial exited normally")
-                                batchLogger.write(s"$trial,${matsimConfig.io.experimentDirectory}\n")
+                                val time = new Timestamp(System.currentTimeMillis)
+                                batchLogger.write(s"$trial,$time,${matsimRunConfig.experimentDirectory}\n")
                             }
                         }
                       }

@@ -1,12 +1,15 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import cats.Monad
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.Batching.{BatchingInstruction, BatchingStrategy}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 trait BatchingFunction {
 
@@ -19,8 +22,10 @@ trait BatchingFunction {
     * @param currentTime the current sim time
     * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
     */
-  def updateBatchingStrategy[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
-                                                activeRouteRequests: List[RouteRequestData],
-                                                currentTime: SimTime): F[Option[List[List[Request]]]]
+  def updateBatchingStrategy(
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    activeRouteRequests: List[RouteRequestData],
+    currentTime: SimTime
+  ): IO[Option[List[(String, List[Request])]]]
 
 }

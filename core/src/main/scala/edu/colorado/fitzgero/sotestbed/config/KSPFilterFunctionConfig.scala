@@ -104,7 +104,8 @@ object KSPFilterFunctionConfig {
         val currentDistance: Meters    = history.last.remainingRouteDistance
         val proportion: Double         = math.min(1.0, math.max(0.0, currentDistance.value / originalDistance.value))
         val allowSOReplanning: Boolean = random.nextDouble() < proportion
-        if (allowSOReplanning) Some { (request, alts) } else Some { (request, alts.take(1)) }
+        if (allowSOReplanning) Some { (request, alts) }
+        else Some { (request, alts.take(1)) }
       }
   }
 
@@ -142,8 +143,10 @@ object KSPFilterFunctionConfig {
           path        <- paths
           limitedPath <- limitFunction.limitPath(path)
         } yield limitedPath
-        if (limitedPaths.isEmpty) None
-        else Some { (req, limitedPaths) }
+        val result: Option[(Request, List[Path])] =
+          if (limitedPaths.isEmpty) None
+          else Some { (req, limitedPaths) }
+        result
       }
   }
 
@@ -152,6 +155,26 @@ object KSPFilterFunctionConfig {
     val fns: List[KSPFilterFunction] = List(
       LimitedEdgeVisits(maxEdgeVisits).build(),
       SampleFromRemainingDistanceProportion.build(),
+      LimitPath(KSPFilter.LimitFunction.ByTravelTime(TravelTimeSeconds(travelTimeThreshold))).build()
+    )
+
+    /**
+      * builds a function which takes the ksp result for an agent, the history of that
+      * agent's replanning, and a seed value for use with sampling-based approaches
+      *
+      * @return the request filtered
+      */
+    def build(): KSPFilterFunction = KSPFilter.combine(fns)
+
+  }
+
+  final case class TravelTimeAndLinkCount(maxEdgeVisits: Int, travelTimeThreshold: Double, linkCount: Int)
+      extends KSPFilterFunctionConfig {
+
+    val fns: List[KSPFilterFunction] = List(
+      LimitedEdgeVisits(maxEdgeVisits).build(),
+      SampleFromRemainingDistanceProportion.build(),
+      LimitPath(KSPFilter.LimitFunction.ByLinkCount(linkCount)).build(),
       LimitPath(KSPFilter.LimitFunction.ByTravelTime(TravelTimeSeconds(travelTimeThreshold))).build()
     )
 

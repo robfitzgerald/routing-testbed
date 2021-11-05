@@ -7,6 +7,8 @@ import scala.annotation.tailrec
 import scala.util.Try
 
 import com.typesafe.config.{Config, ConfigValueFactory}
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
+import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, KSPAlgorithmConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig
 import pureconfig._
 import pureconfig.error.{ConfigReaderFailures, ThrowableFailure}
@@ -34,6 +36,58 @@ object MATSimBatchConfig {
       .trim
   }
 
+  def createVariationNameWithFallback(matsimConfig: MATSimConfig, popSize: Int, config: Config): String = {
+    if (config.hasPath("name")) {
+      config.getString("name")
+    } else {
+      createVariationNameV2(matsimConfig, popSize)
+    }
+  }
+
+  /**
+    * just highlighting the most important parameters and returning their values in lexi order
+    * @param config
+    * @return
+    */
+  def createVariationNameV2(config: MATSimConfig, popSize: Int): String = {
+    val populationSize: String = popSize.toString
+    val adoptionRate: String   = config.routing.adoptionRate.toString
+    val batchWindow: String    = config.routing.batchWindow.value.toString
+    val k: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish        => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal => so.kspAlgorithm.k.toString
+    }
+    val theta: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal =>
+        so.kspAlgorithm match {
+          case KSPAlgorithmConfig.SvpLoSync(_, theta, _, _) => theta.value.toString
+        }
+    }
+    val batchingFunction: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal =>
+        so.batchingFunction match {
+          case BatchingFunctionConfig.NoBatching                        => "0"
+          case _: BatchingFunctionConfig.Random                         => "0"
+          case _: BatchingFunctionConfig.Greedy                         => "0"
+          case bf: BatchingFunctionConfig.CoordinateGridGrouping        => bf.batchType
+          case _: BatchingFunctionConfig.LabelBasedTrajectoryClustering => "traj"
+        }
+    }
+    val gridCellSideLength: String = config.algorithm match {
+      case _: MATSimConfig.Algorithm.Selfish        => "0"
+      case so: MATSimConfig.Algorithm.SystemOptimal => so.grid.gridCellSideLength.toString
+    }
+    val maxPathAssignments: String    = config.routing.maxPathAssignments.toString
+    val minReplanningWaitTime: String = config.routing.minimumReplanningWaitTime.value.toString
+    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sqlen=$gridCellSideLength-mP=$maxPathAssignments-mRWT=$minReplanningWaitTime"
+  }
+
+  def createVariationNameV3(config: MATSimConfig, popSize: Int): String = {
+    config.hashCode().toString
+  }
+
   final case class Variation(
     config: Config,
     configReaderResult: ConfigReader.Result[MATSimConfig],
@@ -59,7 +113,7 @@ object MATSimBatchConfig {
       } else {
         // override the config at this variation's path with this variation's value
         val (thisPath, thisValue) = variation.head
-        val nextConfig: Config    = config.withValue(thisPath, ConfigValueFactory.fromAnyRef(thisValue))
+        val nextConfig: Config    = config.withValue(thisPath.trim, ConfigValueFactory.fromAnyRef(thisValue.trim))
         appendMetaConfigEntry(nextConfig, variation.tail)
       }
     }
@@ -78,7 +132,9 @@ object MATSimBatchConfig {
           variation.toMap.get("algorithm.name") match {
             case None =>
               val error: ConfigReaderFailures =
-                ConfigReaderFailures(ThrowableFailure(new IOError(new Throwable("cannot find algorithm.name in batch file")), None))
+                ConfigReaderFailures(
+                  ThrowableFailure(new IOError(new Throwable("cannot find algorithm.name in batch file")), None)
+                )
               Variation(batchConfParsed, Left(error), Map.empty, 0)
 
             case Some(algorithmName) =>
@@ -86,7 +142,12 @@ object MATSimBatchConfig {
 
               if (!Files.isRegularFile(defaultConfigFile)) {
                 val error: ConfigReaderFailures = ConfigReaderFailures(
-                  ThrowableFailure(new IOError(new Throwable(s"config file for algorithm variation does not exist: $defaultConfigFile")), None)
+                  ThrowableFailure(
+                    new IOError(
+                      new Throwable(s"config file for algorithm variation does not exist: $defaultConfigFile")
+                    ),
+                    None
+                  )
                 )
                 Variation(batchConfParsed, Left(error), Map.empty, 0)
               } else {
@@ -103,7 +164,9 @@ object MATSimBatchConfig {
                       thisVariationConfig.getValue("pop.size").unwrapped.toString.trim.toInt
                     } match {
                       case util.Failure(error) =>
-                        val configReaderFailure: ConfigReaderFailures = ConfigReaderFailures(ThrowableFailure(new IOError(error), None))
+                        val configReaderFailure: ConfigReaderFailures = ConfigReaderFailures(
+                          ThrowableFailure(new IOError(error), None)
+                        )
                         Variation(thisVariationConfig, Left(configReaderFailure), Map.empty, 0)
                       case util.Success(popSize) =>
                         val thisVariationMATSimConfig: ConfigReader.Result[MATSimConfig] =

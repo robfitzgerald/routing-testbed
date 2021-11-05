@@ -1,0 +1,27 @@
+2020-05-08 11:35:33,949  INFO OsmNetworkReader:552 ... done creating the links.
+2020-05-08 11:35:33,949  INFO OsmNetworkReader:274 = conversion statistics: ==========================
+2020-05-08 11:35:33,949  INFO OsmNetworkReader:275 osm: # nodes read:       1108
+2020-05-08 11:35:33,949  INFO OsmNetworkReader:276 osm: # ways read:        1522
+2020-05-08 11:35:33,949  INFO OsmNetworkReader:277 MATSim: # nodes created: 1108
+2020-05-08 11:35:33,949  INFO OsmNetworkReader:278 MATSim: # links created: 2679
+2020-05-08 11:35:33,950  INFO OsmNetworkReader:286 = end of conversion statistics ====================
+2020-05-08 11:35:33,951  INFO NetworkCleaner:118 running org.matsim.core.network.algorithms.NetworkCleaner algorithm...
+2020-05-08 11:35:33,951  INFO NetworkCleaner:121   checking 1108 nodes and 2679 links for dead-ends...
+2020-05-08 11:35:33,960  INFO NetworkCleaner:139     The biggest cluster consists of 1097 nodes.
+2020-05-08 11:35:33,960  INFO NetworkCleaner:140   done.
+2020-05-08 11:35:33,962  INFO NetworkCleaner:155   resulting network contains 1097 nodes and 2663 links.
+2020-05-08 11:35:33,962  INFO NetworkCleaner:157 done.
+2020-05-08 11:35:33,973  INFO NetworkWriter:69 Writing network to file: /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Louisville_CO.xml...
+2020-05-08 11:35:34,038  INFO NetworkWriter:72 done.
+11:35:34.191 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=6.944444444444445 mph=15.54 count 2495
+11:35:34.195 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=15.6464 mph=35.01 count 35
+11:35:34.195 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=17.881600000000002 mph=40.01 count 16
+11:35:34.195 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - m/s=8.333333333333334 mph=18.65 count 117
+11:35:34.205 [main] INFO  e.c.f.s.m.i.n.osm.OSMNetworkLoader$ - total length in meters: 379146.02
+finished importing, network can be found at /Users/robertfitzgerald/dev/ucd/phd/projects/2019su/SOTestbed/matsim/src/main/resources/matsim/network/1km_buffer/Louisville_CO.xml
+
+monte carlo lower bounds sampling
+
+running 10000th sample with current average 359.77
+running 20000th sample with current average 357.72
+running 30000th sample with current average 357.48

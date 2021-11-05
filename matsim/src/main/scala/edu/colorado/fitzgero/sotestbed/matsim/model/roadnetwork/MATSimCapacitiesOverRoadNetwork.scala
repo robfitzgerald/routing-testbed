@@ -16,13 +16,12 @@ import org.matsim.core.config.{Config, ConfigUtils}
 import org.matsim.core.controler.Controler
 import org.matsim.core.network.NetworkUtils
 
-
 object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
 
   def apply(
-    roadNetwork: LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR],
+    roadNetwork: LocalAdjacencyListFlowNetwork,
     config: MATSimConfig
-  ): Either[Throwable, LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR]] = {
+  ): Either[Throwable, LocalAdjacencyListFlowNetwork] = {
 
     Try {
       // load a copy of the MATSim Scenario in order to inspect capacity values
@@ -38,7 +37,7 @@ object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
       val edgeLookup: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
 
       // update edge attributes with the MATSim network capacity value
-      val (result, errors) = roadNetwork.edges.values.foldLeft((roadNetwork, List.empty[String])) { (acc, edgeTriplet) =>
+      val (result, errors) = roadNetwork.edgesMap.values.foldLeft((roadNetwork, List.empty[String])) { (acc, edgeTriplet) =>
         val (rn, errors) = acc
         edgeTriplet.attr match {
           case edgeBPR: EdgeBPR =>
@@ -47,12 +46,12 @@ object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
                 (rn, f"failed to find edge ${edgeTriplet.edgeId} in MATSim network" +: errors)
               case Some(link) =>
                 // not properly scaling this Capacity value here
-                val cap: Capacity = Capacity(link.getCapacity.toInt)
-                val updatedEdgeBPR: EdgeBPR = edgeBPR.copy(capacity = cap)
+                val cap: Capacity                            = Capacity(link.getCapacity.toInt)
+                val updatedEdgeBPR: EdgeBPR                  = edgeBPR.copy(capacity = cap)
                 val updatedEdgeTriplet: EdgeTriplet[EdgeBPR] = edgeTriplet.copy(attr = updatedEdgeBPR)
-                val updatedRoadNetwork: LocalAdjacencyListFlowNetwork[Coordinate, EdgeBPR] =
+                val updatedRoadNetwork: LocalAdjacencyListFlowNetwork =
                   rn.copy(
-                    edges = rn.edges.updated(edgeTriplet.edgeId, updatedEdgeTriplet)
+                    edgesMap = rn.edgesMap.updated(edgeTriplet.edgeId, updatedEdgeTriplet)
                   )
                 (updatedRoadNetwork, errors)
 
@@ -60,7 +59,9 @@ object MATSimCapacitiesOverRoadNetwork extends LazyLogging {
         }
       }
 
-      errors.foreach{e => logger.error(e)}
+      errors.foreach { e =>
+        logger.error(e)
+      }
 
       result
     }.toEither

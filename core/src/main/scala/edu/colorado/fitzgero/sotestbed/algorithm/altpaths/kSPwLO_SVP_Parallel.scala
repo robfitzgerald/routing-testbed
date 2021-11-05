@@ -4,7 +4,7 @@ import cats.implicits._
 import cats.{Monad, Parallel}
 
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
 
 /**
@@ -26,14 +26,16 @@ class kSPwLO_SVP_Parallel[F[_]: Monad: Parallel, V, E](
   def generateAlts(
     requests: List[Request],
     roadNetwork: RoadNetwork[F, V, E],
-    costFunction: E => Cost,
+    costFunction: E => Cost
   ): F[KSPAlgorithm.AltPathsResult] = {
-    if (requests.isEmpty) Monad[F].pure { KSPAlgorithm.AltPathsResult(Map.empty) } else {
+    if (requests.isEmpty) Monad[F].pure { KSPAlgorithm.AltPathsResult(Map.empty) }
+    else {
       // if we do not meet the user-specified minimum batch size, then override
       // with a simple true shortest path search
+      val startTime: RunTime = RunTime.Now
       val terminationFunctionOverride: KSPAlgorithm.AltPathsState => Boolean =
-        if (requests.length < minBatchSize) {
-          state: KSPAlgorithm.AltPathsState => state.pathsSeen == NonNegativeNumber.One
+        if (requests.length < minBatchSize) { state: KSPAlgorithm.AltPathsState =>
+          state.pathsSeen == NonNegativeNumber.One
         } else {
           terminationFunction
         }
@@ -48,16 +50,12 @@ class kSPwLO_SVP_Parallel[F[_]: Monad: Parallel, V, E](
           )
         }
       } yield {
-
+        val runTime: RunTime = RunTime.Now - startTime
         KSPAlgorithm.AltPathsResult(
-          alts
-            .flatten
-            .map{ case kSPwLO_SVP_Algorithm.SingleSVPResult(req, alts, _) => req -> alts.take(k) }
-            .toMap
+          alts.flatten.map { case kSPwLO_SVP_Algorithm.SingleSVPResult(req, alts, _) => req -> alts.take(k) }.toMap,
+          runtime = runTime
         )
       }
     }
   }
 }
-
-

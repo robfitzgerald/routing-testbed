@@ -8,34 +8,41 @@ import scala.concurrent.duration.Duration
 
 import cats.Monad
 
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import pureconfig._
 import pureconfig.configurable._
 import pureconfig.ConvertHelpers._
 import pureconfig.generic.auto._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.{ActiveAgentHistory, BatchingFunction}
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.config.{BatchingFunctionConfig, CombineFlowsFunctionConfig, EdgeUpdateFunctionConfig, KSPAlgorithmConfig, KSPFilterFunctionConfig, MarginalCostFunctionConfig, PathToMarginalFlowsFunctionConfig, RoutingReportConfig, SelectionAlgorithmConfig}
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.IO.ScenarioData
+import edu.colorado.fitzgero.sotestbed.config.{
+  BatchFilterFunctionConfig,
+  BatchingFunctionConfig,
+  CombineFlowsFunctionConfig,
+  EdgeUpdateFunctionConfig,
+  KSPAlgorithmConfig,
+  KSPFilterFunctionConfig,
+  MarginalCostFunctionConfig,
+  PathToMarginalFlowsFunctionConfig,
+  RoutingReportConfig,
+  SelectionAlgorithmConfig
+}
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 final case class MATSimConfig(
-  io: MATSimConfig.IO,
+  io: MATSimConfig.Io,
   run: MATSimConfig.Run,
   routing: MATSimConfig.Routing,
   population: MATSimConfig.Population,
   algorithm: MATSimConfig.Algorithm
-) {
-
-  /**
-    * converts this scenario to a selfish experiment (no system optimal agents)
-    * @return updated Run configuration
-    */
-  def toSelfishExperiment: MATSimConfig = ???
-}
+)
 
 object MATSimConfig {
 
@@ -57,118 +64,85 @@ object MATSimConfig {
     adoptionRate: Double,
     maxPathAssignments: Int,
     minimumReplanningLeadTime: TravelTimeSeconds, // broken during a fix of the reporting, would need to route RoadNetwork into batching ops
-    minimumReplanningWaitTime: SimTime, // we ignore replanning for agents which have not traveled at least this long between replanning events
+    minimumReplanningWaitTime: SimTime,           // we ignore replanning for agents which have not traveled at least this long between replanning events
     minimumAverageImprovement: Cost,
-    requestUpdateCycle: SimTime,
+    minRequestUpdateThreshold: SimTime, // batching manager state updates
+    minNetworkUpdateThreshold: SimTime, // road network state updates
+    minBatchSearchSpace: Int,           // batch filter function parameter, also pre-filter based on this value times k as an upper-bound
     minBatchSize: Int,
-    selfish    : Routing.Selfish
+    selfish: Routing.Selfish
   ) {
-    require(minimumAverageImprovement >= Cost.Zero, "matsimConfig.routing.minimumAverageImprovement should be non-negative")
-    require(requestUpdateCycle > SimTime.Zero, "matsimConfig.routing.requestUpdateCycle should be non-negative")
+    require(
+      minimumAverageImprovement >= Cost.Zero,
+      "matsimConfig.routing.minimumAverageImprovement should be non-negative"
+    )
+    require(
+      minRequestUpdateThreshold >= SimTime.Zero,
+      "matsimConfig.routing.minRequestUpdateThreshold should be non-negative"
+    )
+    require(
+      minNetworkUpdateThreshold >= SimTime.Zero,
+      "matsimConfig.routing.minNetworkUpdateThreshold should be non-negative"
+    )
   }
 
   object Routing {
+
     // how will selfish agents be routed
     sealed trait Selfish {
       def lastIteration: Int
     }
+
     object Selfish {
-      final case class MATSim(
+
+      final case class Matsim(
         lastIteration: Int,
         soRoutingIterationCycle: Int,
-        soFirstIteration: Boolean, // overrides the iteration cycle for so-routing and simply has it run on iteration 0
+        soFirstIteration: Boolean // overrides the iteration cycle for so-routing and simply has it run on iteration 0
       ) extends Selfish {
-        require(soRoutingIterationCycle <= lastIteration,
-          "matsimConfig.routing.selfish.matsim.soRoutingIterationCycle needs to be less than or equal to lastIteration")
+        require(
+          soRoutingIterationCycle <= lastIteration,
+          "matsimConfig.routing.selfish.matsim.soRoutingIterationCycle needs to be less than or equal to lastIteration"
+        )
       }
+
       final case class Dijkstra(
         pathToMarginalFlowsFunction: PathToMarginalFlowsFunctionConfig,
         combineFlowsFunction: CombineFlowsFunctionConfig,
-        marginalCostFunction: MarginalCostFunctionConfig,
+        marginalCostFunction: MarginalCostFunctionConfig
       ) extends Selfish {
         def lastIteration: Int = 0
       }
     }
   }
 
-  final case class IO(
+  final case class Io(
     matsimNetworkFile: File,
     populationPolygonFile: Option[File],
-    matsimConfigFile : File,
+    matsimConfigFile: File,
     routingReportConfig: RoutingReportConfig,
-    populationFile   : File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
-    matsimLogLevel   : String = "INFO",
-    batchName        : String = System.currentTimeMillis.toString,
-    scenarioData     : Option[ScenarioData] = None,
-    outputBaseDirectory: Path = Paths.get("/tmp"),
+    heatmapLogCycleMinutes: Int = 15,
+    heatmapH3Resolution: Int = 9,
+    populationFile: File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
+    matsimLogLevel: String = "INFO",
+    batchName: String = System.currentTimeMillis.toString,
+    outputBaseDirectory: Path = Paths.get("/tmp")
   ) {
+
     def batchLoggingDirectory: Path = {
       outputBaseDirectory.resolve(batchName)
-    }
-
-    def experimentLoggingDirectory: Path = {
-      this.scenarioData match {
-        case None => outputBaseDirectory
-        case Some(scenarioData) => scenarioData.toTrialPath(outputBaseDirectory, batchName)
-      }
-    }
-
-    def experimentDirectory: Path = {
-      this.scenarioData match {
-        case None => outputBaseDirectory.resolve(batchName)
-        case Some(scenarioData) => scenarioData.toExperimentPath(outputBaseDirectory, batchName)
-      }
-    }
-  }
-
-  object IO {
-    final case class ScenarioData(
-      algorithm: String,
-      trialNumber      : Int,
-      variationName    : String,
-      headerColumnOrder: List[String],
-      scenarioParameters: Map[String, String]
-    ) {
-      // prints this scenario's run parameters as csv row entries in the correct order
-      def toCSVRow: String =
-        headerColumnOrder
-          .map{ colName => this.scenarioParameters.getOrElse(colName, "") }
-          .mkString(",")
-
-      def toVariationPath(basePath: Path, batchName: String): Path =
-        algorithm match {
-          case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}-logging")
-          case _ =>
-            basePath.resolve(batchName).resolve(variationName)
-        }
-
-      def toTrialPath(basePath: Path, batchName: String): Path =
-        algorithm match {
-          case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}-logging")
-          case _ =>
-            basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString)
-        }
-
-      def toExperimentPath(basePath: Path, batchName: String): Path =
-        algorithm match {
-          case "selfish" =>
-            basePath.resolve(batchName).resolve(s"selfish").resolve(s"$variationName-${trialNumber.toString}")
-          case _ =>
-            basePath.resolve(batchName).resolve(variationName).resolve(trialNumber.toString).resolve(algorithm)
-        }
-
     }
   }
 
   final case class Population(
     workActivityMinTime: LocalTime,
     workActivityMaxTime: LocalTime,
-    workDurationHours: Int
+    workDurationHours: Int,
+    size: Int
   )
 
   sealed trait Algorithm {
+
     /**
       * the algorithm name is interpreted from the type of the algorithm (algorithm.type)
       * and the associated file name by the experiment batch runner, in the case of
@@ -177,19 +151,31 @@ object MATSimConfig {
       */
     def name: String
     def selfishOnly: Boolean
+    def edgeUpdateFunction: EdgeUpdateFunctionConfig
+    def marginalCostFunction: MarginalCostFunctionConfig
   }
+
   object Algorithm {
+
     final case class Selfish(
-      edgeUpdateFunction: EdgeUpdateFunctionConfig
+      edgeUpdateFunction: EdgeUpdateFunctionConfig,
+      marginalCostFunction: MarginalCostFunctionConfig
     ) extends Algorithm {
-      override def name: String = "selfish"
+      override def name: String         = "selfish"
       override def selfishOnly: Boolean = true
 
       def build[F[_]: Monad, V, E](): RoutingAlgorithm[F, V, E] = new RoutingAlgorithm[F, V, E] {
-        def route(requests: List[Request], activeAgentHistory: ActiveAgentHistory, roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] =
+
+        def route(
+          requests: List[Request],
+          activeAgentHistory: ActiveAgentHistory,
+          roadNetwork: RoadNetwork[F, V, E]
+        ): F[RoutingAlgorithm.Result] =
           throw new IllegalStateException("algorithm.type is selfish, so we shouldn't be doing any routing.")
       }
+
       def batchingStub: BatchingFunction = new BatchingFunction {
+
         /**
           * takes the current batching strategy and any updates about replan-able agents, and spits out an
           * update to that batching strategy
@@ -199,9 +185,11 @@ object MATSimConfig {
           * @param currentTime          the current sim time
           * @return an update to the batching strategy, or None if there's nothing to replan (empty list)
           */
-        def updateBatchingStrategy[F[_] : Monad, V, E](roadNetwork: RoadNetwork[F, V, E],
+        def updateBatchingStrategy(
+          roadNetwork: RoadNetwork[cats.effect.IO, Coordinate, EdgeBPR],
           activeRouteRequests: List[RouteRequestData],
-          currentTime: SimTime): F[Option[List[List[Request]]]] = Monad[F].pure{ None }
+          currentTime: SimTime
+        ): cats.effect.IO[Option[List[(String, List[Request])]]] = cats.effect.IO.pure { None }
       }
     }
 
@@ -214,10 +202,28 @@ object MATSimConfig {
       combineFlowsFunction: CombineFlowsFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
       batchingFunction: BatchingFunctionConfig,
+      batchFilterFunction: BatchFilterFunctionConfig,
       kspFilterFunction: KSPFilterFunctionConfig,
+      grid: SystemOptimal.GridConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {
       override def selfishOnly: Boolean = false
+    }
+
+    object SystemOptimal {
+
+      final case class GridConfig(
+        minX: Double,
+        maxX: Double,
+        minY: Double,
+        maxY: Double,
+        gridCellSideLength: Double,
+        srid: Int
+      ) {
+
+        def build(): Either[Error, CoordinateGrid2] =
+          CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid)
+      }
     }
   }
 

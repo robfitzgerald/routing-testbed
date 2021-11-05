@@ -56,13 +56,17 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
                                                            marginalCostFunction)
         selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
       } yield {
+
         RoutingAlgorithm.Result(
           altsResult.alternatives,
           Map.empty, // update w/ ksp filter
           selectionResult.selectedRoutes, // when ksp filter, be sure to add TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths
           activeAgentHistory,
           kspRuntime,
-          selectionRuntime
+          selectionRuntime,
+          travelTimeDiff = selectionResult.travelTimeDiff,
+          meanTravelTimeDiff = selectionResult.averageTravelTimeDiff,
+          samples = selectionResult.samples.value
         )
       }
     }

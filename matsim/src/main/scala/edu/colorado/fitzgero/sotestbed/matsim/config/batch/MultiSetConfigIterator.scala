@@ -1,11 +1,10 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.batch
 
 import scala.annotation.tailrec
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 import scala.collection.JavaConverters._
 
 import com.typesafe.config.Config
-
 
 /**
   * builds an iterator which creates all combinations for this meta-config
@@ -19,13 +18,21 @@ case class MultiSetConfigIterator(config: Config) {
     for {
       entry <- config.entrySet().asScala.toList
     } yield {
-      val array: Array[String] = entry.getValue.unwrapped.toString
-        .stripPrefix("[")
-        .stripSuffix("]")
-        .split(",")
-      entry.getKey -> array
+      Try {
+        val array: Array[String] = entry.getValue.unwrapped.toString
+          .stripPrefix("[")
+          .stripSuffix("]")
+          .split(",")
+        entry.getKey -> array
+      } match {
+        case Failure(exception) =>
+          val msg = s"failure on entry $entry"
+          throw new Error(msg, exception)
+        case Success(keyValuePair) =>
+          keyValuePair
+      }
     }
-    }.toMap
+  }.toMap
 
   /**
     * lists all of the variations on the meta-level config arrays for
@@ -36,9 +43,9 @@ case class MultiSetConfigIterator(config: Config) {
 
     @tailrec
     def recurse(
-      pointer : MultiSetPointer,
-      solution: List[List[(String, String)]] = List.empty)
-    : List[List[(String, String)]] = {
+      pointer: MultiSetPointer,
+      solution: List[List[(String, String)]] = List.empty
+    ): List[List[(String, String)]] = {
 
       pointer.getValues(multiSet) match {
         case None => throw new IllegalStateException("nope")
@@ -88,7 +95,7 @@ object MultiSetConfigIterator {
         }
       }
 
-      _step().map{next => this.copy(pos = next)}
+      _step().map { next => this.copy(pos = next) }
     }
 
     /**
@@ -107,7 +114,9 @@ object MultiSetConfigIterator {
       }.toOption
     }
   }
+
   object MultiSetPointer {
+
     /**
       * builds a MultiSetPointer from a multiset
       * @param multiSet a multiset, where each set is a map from Typesafe Config path to a config value at that path
@@ -116,7 +125,7 @@ object MultiSetConfigIterator {
     def fromMultiSet(multiSet: Map[String, Array[String]]): MultiSetPointer = {
       MultiSetPointer(
         pos = Array.fill(multiSet.size)(0),
-        max = multiSet.map{ case (_, values) => values.length - 1 }.toArray
+        max = multiSet.map { case (_, values) => values.length - 1 }.toArray
       )
     }
   }

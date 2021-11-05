@@ -56,7 +56,7 @@ object MATSimPopulationRunner {
               roadNetwork,
               matsimNetwork,
               popSize,
-              adoptionRate,
+//              adoptionRate,
               workActivityMinTime,
               workActivityMaxTime,
               workDurationHours,
@@ -74,7 +74,7 @@ object MATSimPopulationRunner {
               networkSRID = 3857, // assumed to be web mercator
               matsimNetwork,
               popSize,
-              adoptionRate,
+//              adoptionRate,
               workActivityMinTime,
               workActivityMaxTime,
               workDurationHours,

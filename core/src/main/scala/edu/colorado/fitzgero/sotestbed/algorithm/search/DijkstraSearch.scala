@@ -1,7 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.search
 
 import scala.annotation.tailrec
-import scala.collection.immutable
 
 import cats.Monad
 import cats.data.OptionT
@@ -24,11 +23,9 @@ object DijkstraSearch {
     * @tparam E edge type
     * @return
     */
-  def vertexOrientedShortestPath[F[_] : Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E],
-                                       costFunction: E => Cost)(
-      srcVertexId: VertexId,
-      dstVertexId: VertexId,
-      direction: TraverseDirection): F[Option[Path]] = {
+  def vertexOrientedShortestPath[F[_]: Monad, V, E](
+    roadNetworkModel: RoadNetwork[F, V, E],
+    costFunction: E => Cost)(srcVertexId: VertexId, dstVertexId: VertexId, direction: TraverseDirection): F[Option[Path]] = {
 
     if (srcVertexId == dstVertexId) {
       Monad[F].pure {
@@ -49,15 +46,13 @@ object DijkstraSearch {
       } yield {
         for {
           spanningTree <- spanningTreeOption
-          path <- backtrack(spanningTree)(treeDestination)
+          path         <- backtrack(spanningTree)(treeDestination)
         } yield {
           path
         }
       }
     }
   }
-
-
 
   /**
     * search for a path from source edge to destination edge which is minimal cost
@@ -70,14 +65,12 @@ object DijkstraSearch {
     * @tparam E edge type
     * @return
     */
-  def edgeOrientedShortestPath[F[_] : Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E],
-                                     costFunction          : E => Cost)(
-      srcEdgeId: EdgeId,
-      dstEdgeId: EdgeId,
-      direction: TraverseDirection): F[Option[Path]] = {
+  def edgeOrientedShortestPath[F[_]: Monad, V, E](
+    roadNetworkModel: RoadNetwork[F, V, E],
+    costFunction: E => Cost)(srcEdgeId: EdgeId, dstEdgeId: EdgeId, direction: TraverseDirection): F[Option[Path]] = {
     if (srcEdgeId == dstEdgeId) {
-      Monad[F].pure{
-        Some{EmptyPath}
+      Monad[F].pure {
+        Some { EmptyPath }
       }
     } else {
 
@@ -95,8 +88,6 @@ object DijkstraSearch {
     }
   }
 
-
-
   /**
     * picks the minimum path from the provided starting point
     * @param spanningTree the constructed minimum cost tree
@@ -105,14 +96,11 @@ object DijkstraSearch {
     */
   def backtrack[E](spanningTree: MinSpanningTree[E])(startPoint: VertexId): Option[Path] = {
 
-    @tailrec def _backtrack(
-        traversalVertex: VertexId,
-        solution: List[MinSpanningTraversal[E]] = List.empty): List[MinSpanningTraversal[E]] = {
+    @tailrec def _backtrack(traversalVertex: VertexId, solution: List[MinSpanningTraversal[E]] = List.empty): List[MinSpanningTraversal[E]] = {
 
       spanningTree.traverse(traversalVertex) match {
         case None => solution
         case Some(MinSpanningTree.TraverseData(minSpanningTraversal, edgeTriplet)) =>
-
           val nextTraversalIndex: VertexId =
             spanningTree.traverseDirection match {
               case TraverseDirection.Forward => edgeTriplet.src
