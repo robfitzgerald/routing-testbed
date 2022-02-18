@@ -15,6 +15,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.{
   BatchingManager
 }
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{Karma, KarmaSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
@@ -31,20 +32,12 @@ abstract class RoutingExperiment2
   final case class ExperimentState(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     batchingManager: BatchingManager,
+    bank: Map[String, Karma],
     simulatorState: HandCrankedSimulator.SimulatorState = HandCrankedSimulator.SimulatorState.Uninitialized
   )
 
   /**
     * run an experiment using a hand-cranked simulator and a set of algorithms
-    *
-    * @param config
-    * @param roadNetwork
-    * @param ueRoutingAlgorithm
-    * @param updateFunction
-    * @param soRoutingAlgorithm
-    * @param batchWindow
-    * @param  minRequestUpdateThreshold
-    * @return
     */
   final def run(
     config: SimulatorConfiguration,
@@ -52,6 +45,7 @@ abstract class RoutingExperiment2
     ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, Coordinate, EdgeBPR]],
     updateFunction: Edge.UpdateFunction[EdgeBPR],
     soRoutingAlgorithm: Option[RoutingAlgorithm2],
+    bank: Map[String, Karma],
     batchWindow: SimTime,
     minRequestUpdateThreshold: SimTime
   ): IO[ExperimentState] = {
@@ -59,7 +53,7 @@ abstract class RoutingExperiment2
     def _run(startState: ExperimentState): IO[ExperimentState] = {
 
       val experiment: IO[ExperimentState] = startState.iterateUntilM {
-        case ExperimentState(r0, b0, _) =>
+        case ExperimentState(r0, b0, k0, _) =>
           for {
             _              <- advance() // should return updated simulator
             currentSimTime <- getCurrentSimTime
@@ -71,20 +65,20 @@ abstract class RoutingExperiment2
             ueResults <- RoutingExperiment2.runUE(ueRoutingAlgorithm, ueRequests, r1)
             b1                  = b0.updateAgentBatchData(soUpdate)
             (b2, batchRequests) = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
-
-            soResults <- soRoutingAlgorithm
-              .map { _.runSO(r1, batchRequests, currentSimTime, b2) }
-              .getOrElse(IO.pure(List.empty))
+            soOutput <- soRoutingAlgorithm
+              .map { _.runSO(r1, batchRequests, currentSimTime, b2, k0) }
+              .getOrElse(IO.pure((List.empty, k0)))
+            (soResults, k1) = soOutput
             resolvedResults = BatchingManager.resolveRoutingResultBatches(List(ueResults) ::: soResults.map { _._2 })
             _ <- assignReplanningRoutes(resolvedResults)
             dataForReports = List(("ue", ueResults)) ::: soResults
             _  <- updateReports(dataForReports, r1, currentSimTime)
             s1 <- getState
           } yield {
-            ExperimentState(r1, b2, s1)
+            ExperimentState(r1, b2, k1, s1)
           }
       } {
-        case ExperimentState(_, _, s) =>
+        case ExperimentState(_, _, _, s) =>
           // termination condition
           s == HandCrankedSimulator.SimulatorState.Finished
       }
@@ -97,11 +91,17 @@ abstract class RoutingExperiment2
       }
     }
 
+    val initialState = ExperimentState(
+      roadNetwork,
+      BatchingManager(batchWindow, minRequestUpdateThreshold),
+      bank
+    )
     val simulationResult = for {
-      _ <- initializeSimulator(config)
-      initialExperimentState = ExperimentState(roadNetwork, BatchingManager(batchWindow, minRequestUpdateThreshold))
-      result <- _run(initialExperimentState)
+      _      <- initializeSimulator(config)
+      result <- _run(initialState)
     } yield {
+      // handle closing the PrintWriter in the Karma selection algorithm (sigh)
+      soRoutingAlgorithm.foreach { RoutingExperiment2.close }
       result
     }
 
@@ -142,4 +142,10 @@ object RoutingExperiment2 {
     result
   }
 
+  def close(alg: RoutingAlgorithm2): Unit = {
+    alg.selectionRunner.selectionAlgorithm match {
+      case k: KarmaSelectionAlgorithm => k.close()
+      case _                          => ()
+    }
+  }
 }

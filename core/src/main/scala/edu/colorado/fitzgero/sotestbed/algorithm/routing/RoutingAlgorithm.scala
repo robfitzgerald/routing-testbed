@@ -2,6 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.AltsResultData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent._
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}

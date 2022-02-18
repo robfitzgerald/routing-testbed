@@ -23,6 +23,12 @@ object AssignmentAlgorithm {
     exploredBudget: Double = 0.01
   ) extends AssignmentAlgorithm
 
+  case class Karma(
+    driverPolicyMappingUnit: Double,
+    networkPolicyScale: Double,
+    bankMaxKarma: Double
+  ) extends AssignmentAlgorithm
+
   case class Rl(
     host: String,
     port: Int,
@@ -43,10 +49,11 @@ object AssignmentAlgorithm {
   implicit class AlgorithmOps(algorithm: AssignmentAlgorithm) {
 
     def algorithmName: String = algorithm match {
-      case Base    => "base"
-      case _: Rand => "rand"
-      case _: Mcts => "mcts"
-      case _: Rl   => "qmix"
+      case Base     => "base"
+      case _: Rand  => "rand"
+      case _: Mcts  => "mcts"
+      case _: Karma => "karma"
+      case _: Rl    => "qmix"
     }
 
     def toHocon: String = algorithm match {
@@ -92,6 +99,23 @@ object AssignmentAlgorithm {
            |      explored = $exploredBudget
            |    }
            |    compute-budget-test-rate = 100
+           |  }
+           |}""".stripMargin
+      case Karma(driverPolicyMappingUnit, networkPolicyScale, bankMaxKarma) =>
+        s"""algorithm = {
+           |  type = system-optimal
+           |  name = "karma"
+           |  selection-algorithm = {
+           |    type = karma-selection
+           |    driver-policy.type = delay-with-karma-mapping
+           |    driver-policy.unit = $driverPolicyMappingUnit
+           |    network-policy.type = bernoulli-sample-policy
+           |    network-policy.scale = $networkPolicyScale
+           |    network-policy.seed = 0
+           |    congestion-observation.type = max-from-batch
+           |    bank-config.type = uniform
+           |    bank-config.max = $bankMaxKarma
+           |    bank-config.seed = 0
            |  }
            |}""".stripMargin
       case Rl(host, port, space, groupingFile) =>

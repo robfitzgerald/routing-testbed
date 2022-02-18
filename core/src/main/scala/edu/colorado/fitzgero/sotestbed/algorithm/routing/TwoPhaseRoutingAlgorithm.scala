@@ -36,9 +36,11 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
   limitSelectionRuntime: Boolean = true
 ) extends RoutingAlgorithm[F, V, E] {
 
-  final override def route(reqs: List[Request],
-                           activeAgentHistory: ActiveAgentHistory,
-                           roadNetwork: RoadNetwork[F, V, E]): F[RoutingAlgorithm.Result] = {
+  final override def route(
+    reqs: List[Request],
+    activeAgentHistory: ActiveAgentHistory,
+    roadNetwork: RoadNetwork[F, V, E]
+  ): F[RoutingAlgorithm.Result] = {
 
     val startTime: RunTime      = RunTime(System.currentTimeMillis)
     val costFunction: E => Cost = e => marginalCostFunction(e)(Flow.Zero)
@@ -49,17 +51,21 @@ class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
       for {
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
         kspRuntime = RunTime(System.currentTimeMillis) - startTime
-        selectionResult <- selectionAlgorithm.selectRoutes(altsResult.alternatives,
-                                                           roadNetwork,
-                                                           pathToMarginalFlowsFunction,
-                                                           combineFlowsFunction,
-                                                           marginalCostFunction)
+        selectionResult <- selectionAlgorithm.selectRoutes(
+          "unbatched",
+          altsResult.alternatives,
+          roadNetwork,
+          Map.empty,
+          pathToMarginalFlowsFunction,
+          combineFlowsFunction,
+          marginalCostFunction
+        )
         selectionRuntime = RunTime(System.currentTimeMillis) - kspRuntime
       } yield {
 
         RoutingAlgorithm.Result(
           altsResult.alternatives,
-          Map.empty, // update w/ ksp filter
+          Map.empty,                      // update w/ ksp filter
           selectionResult.selectedRoutes, // when ksp filter, be sure to add TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm.useKSPResultPaths
           activeAgentHistory,
           kspRuntime,

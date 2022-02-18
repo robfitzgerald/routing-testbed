@@ -42,7 +42,7 @@ case class SelfishSyncRoutingBPR[V](
     // IO[List[Option[(Request, Path, SelectionCost)]]]
     val searchResultsF = requests.traverse { req =>
       val thisSearchResult = for {
-        pathOpt <- search(req.origin, req.destination, TraverseDirection.Forward)
+        pathOpt <- search(req.location, req.destination, TraverseDirection.Forward)
       } yield {
         val cost = pathOpt match {
           case Some(path) =>

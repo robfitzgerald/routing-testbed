@@ -8,20 +8,20 @@ import cats.effect.IO
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.RLSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
 import edu.colorado.fitzgero.sotestbed.config.{RoutingReportConfig, SelectionAlgorithmConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment2
+import edu.colorado.fitzgero.sotestbed.matsim.io.population.Bank
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
-import edu.colorado.fitzgero.sotestbed.rllib.{Observation, PolicyClientOps}
-import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.{EndEpisodeRequest, GetActionRequest}
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
@@ -127,7 +127,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             }
         }
 
-      val soRoutingAlgorithmOrError: Either[Error, Option[RoutingAlgorithm2]] =
+      val soAssetsOrError: Either[Error, Option[(RoutingAlgorithm2, Map[String, Karma])]] =
         config.algorithm match {
           case so: Algorithm.SystemOptimal =>
             val soAlgorithmOrError = for {
@@ -143,7 +143,8 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   seed = seed
                 )
               }
-              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] = so.selectionAlgorithm.build()
+              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] =
+                so.selectionAlgorithm.build(config.experimentLoggingDirectory)
 
               val sel: SelectionRunner[Coordinate] =
                 SelectionRunner(
@@ -153,6 +154,15 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   marginalCostFunction = so.marginalCostFunction.build(),
                   minimumAverageImprovement = config.routing.minimumAverageImprovement
                 )
+
+              val bank: Map[String, Karma] = so.selectionAlgorithm match {
+                case k: SelectionAlgorithmConfig.KarmaSelection =>
+                  val agentStrings = agentsUnderControl.map { _.toString }
+                  k.bankConfig.build(agentStrings)
+                case _ =>
+                  Map.empty
+              }
+
               val alg = RoutingAlgorithm2(
                 altPathsAlgorithmRunner = ksp,
                 batchingFunction = so.batchingFunction.build(grid),
@@ -162,7 +172,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                 k = so.kspAlgorithm.k,
                 minSearchSpaceSize = config.routing.minBatchSearchSpace
               )
-              Some(alg)
+              Some(alg, bank)
             }
 
             soAlgorithmOrError
@@ -171,34 +181,47 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             Right(None)
         }
 
-      val experimentIO: IO[experiment.ExperimentState] = for {
-        soAlgorithm <- IO.fromEither(soRoutingAlgorithmOrError)
+      val experimentIO: IO[(experiment.ExperimentState, Map[String, Karma])] = for {
+        soAssets <- IO.fromEither(soAssetsOrError)
+        soRoutingAlgorithm = soAssets.map { case (alg, _) => alg }
+        bank               = soAssets.map { case (_, bank) => bank }.getOrElse(Map.empty)
         experimentFinishState <- experiment.run(
           config = config,
           roadNetwork = network,
           ueRoutingAlgorithm = ueRoutingAlgorithm,
-          soRoutingAlgorithm = soAlgorithm,
+          soRoutingAlgorithm = soRoutingAlgorithm,
+          bank = bank,
           updateFunction = config.algorithm.edgeUpdateFunction.build(),
           batchWindow = config.routing.batchWindow,
           minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
         )
-      } yield experimentFinishState
+      } yield (experimentFinishState, bank)
 
       for {
-        _ <- experimentIO
+        tuple <- experimentIO
+        (_, initialBank) = tuple
       } yield {
         experiment.close()
-        // if there's an RL trainer with an episode started, let's end that episode
-        soRoutingAlgorithmOrError match {
-          case Right(Some(ra)) =>
+
+        soAssetsOrError match {
+          case Right(Some((ra, finalBank))) =>
+            // report final bank balance
+
+            val bankResult =
+              Bank
+                .writeFinalLedger(initialBank, finalBank, config.experimentLoggingDirectory)
+                .map { bankFilePath => logger.info(f"bank file written to $bankFilePath") }
+
+            // if there's an RL trainer with an episode started, let's end that episode
             ra.selectionRunner.selectionAlgorithm match {
               case rlsa: RLSelectionAlgorithm =>
                 for {
+                  _ <- bankResult
                   _ <- rlsa.reportAgentsAreDone()
                   _ <- rlsa.close()
                 } yield ()
               case _ =>
-                IO.pure()
+                bankResult
             }
           case _ =>
             IO.pure()

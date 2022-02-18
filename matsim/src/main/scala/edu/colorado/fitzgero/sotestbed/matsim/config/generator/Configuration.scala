@@ -69,35 +69,35 @@ object Configuration {
 
     // runtime split between batching and assignment
     // batching as 1/4 of the compute budget, up to 10 seconds
-//    val maxBatchingRuntime  = if (batchWindow > 20) 10000 else batchWindowMs / 4
-//    val batchingRuntimeMs   = random.uniformInRange(1000, maxBatchingRuntime)
-//    val assignmentRuntimeMs = batchWindowMs - batchingRuntimeMs
+    val maxBatchingRuntime  = if (batchWindow > 20) 10000 else batchWindowMs / 4
+    val batchingRuntimeMs   = random.uniformInRange(1000, maxBatchingRuntime)
+    val assignmentRuntimeMs = batchWindowMs - batchingRuntimeMs
 
     // sub-batching parameters
-//    val bfOmegaDelta              = random.uniformInRange(0.0, 1.0)
-//    val bfOmegaBeta               = 1.0 - bfOmegaDelta
-//    val bfOmegaA                  = random.uniformInRange(0.0, 1.0)
-//    val bfOmegaS                  = 1.0 - bfOmegaA
-//    val bfTrajHistoryLimitSeconds = random.uniformInRange(30, 200)
+    val bfOmegaDelta              = random.uniformInRange(0.0, 1.0)
+    val bfOmegaBeta               = 1.0 - bfOmegaDelta
+    val bfOmegaA                  = random.uniformInRange(0.0, 1.0)
+    val bfOmegaS                  = 1.0 - bfOmegaA
+    val bfTrajHistoryLimitSeconds = random.uniformInRange(30, 200)
 
     // batch filter parameter
-//    val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100, Some(20))
+    val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100, Some(20))
 
     // assignment parameter
-//    val assignmentExloredPct = 0.1 //random.gaussianInRange(0.00000001, 0.1, 1.0, 0.005)
+    val assignmentExloredPct = 0.1 //random.gaussianInRange(0.00000001, 0.1, 1.0, 0.005)
 
     val altsConfig = AltPathsFunction.KSPWithLimitedOverlap(altsK, altsTheta, altsIterations)
-//    val batchingFunctionConfig = BatchingFunction.TrajectoryClustering(
-//      bfOmegaDelta,
-//      bfOmegaBeta,
-//      bfOmegaA,
-//      bfOmegaS,
-//      batchingRuntimeMs,
-//      bfTrajHistoryLimitSeconds
-//    )
-    val batchingFunctionConfig = BatchingFunction.NoBatching
-//    val batchFilterFunctionConfig = BatchFilterFunction.TopK(bffSubBatchK)
-    val batchFilterFunctionConfig = BatchFilterFunction.NoFilter
+    val batchingFunctionConfig = BatchingFunction.TrajectoryClustering(
+      bfOmegaDelta,
+      bfOmegaBeta,
+      bfOmegaA,
+      bfOmegaS,
+      batchingRuntimeMs,
+      bfTrajHistoryLimitSeconds
+    )
+//    val batchingFunctionConfig = BatchingFunction.NoBatching
+    val batchFilterFunctionConfig = BatchFilterFunction.TopK(bffSubBatchK)
+//    val batchFilterFunctionConfig = BatchFilterFunction.NoFilter
     val selfishAlgorithm = SelfishConfig(
       namePrefix,
       s"""$namePrefix-selfish""",
@@ -109,13 +109,14 @@ object Configuration {
       bprBeta
     )
 
-//    val mctsCoefficientInput = random.gaussianInRange(2.0, 4.0, 16.0, 4)
-//    val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
+    val mctsCoefficientInput = random.gaussianInRange(2.0, 4.0, 16.0, 4)
+    val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
     val soAlgorithms = List(
       AssignmentAlgorithm.Base,
-//      AssignmentAlgorithm.Rand(assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct),
-//      AssignmentAlgorithm.Mcts(mctsCoefficient, assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct),
-      AssignmentAlgorithm.Rl("http://localhost", 9900, Space.V1, new File("grouping.json"))
+      AssignmentAlgorithm.Karma(1, 1, 10),
+      AssignmentAlgorithm.Rand(assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct),
+      AssignmentAlgorithm.Mcts(mctsCoefficient, assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct)
+//      AssignmentAlgorithm.Rl("http://localhost", 9900, Space.V1, new File("grouping.json"))
     )
 
     val confs: List[SysOptConfig] = for {
@@ -308,7 +309,8 @@ object Configuration {
                   (rand.computeBudgetMs.toString, rand.exploredBudget.toString)
                 case mcts: AssignmentAlgorithm.Mcts =>
                   (mcts.computeBudgetMs.toString, mcts.exploredBudget.toString)
-                case _: AssignmentAlgorithm.Rl => ("", "")
+                case _: AssignmentAlgorithm.Karma => ("", "")
+                case _: AssignmentAlgorithm.Rl    => ("", "")
               }
 
               val mctsCoefficient = c.assignmentAlgorithm match {

@@ -137,7 +137,9 @@ if __name__ == "__main__":
         #  about the env spaces from the client.
         # "observation_space": obs_space,
         # "action_space": act_space,
-        "multiagent": multiagent_conf,
+        "multiagent": dict(multiagent_conf, **{
+            "count_steps_by": "env_steps"
+        }),
         #
         # Use the `PolicyServerInput` to generate experiences.
         "input": _input,
@@ -169,28 +171,17 @@ if __name__ == "__main__":
         trainer = QMixTrainer(
             config=dict(config, **{
                 # "num_envs_per_worker": 5,  # test with vectorization on
-                # "env_config": {
-                #     "avail_action": 3,
-                # },
-                # "grouping": grouping,
                 "mixer": "qmix",
                 "framework": args.framework, # only "torch" allowed here
-                "buffer_size": 50,
-                # "rollout_fragment_length": 4,
-                # "train_batch_size": 32,
-                # "exploration_config": {
-                #     "epsilon_timesteps": 5000,
-                #     "final_epsilon": 0.05,
-                # },
-                # "num_workers": 0,
-                # "mixer": grid_search([None, "qmix"]),
-                # "env_config": {
-                #     "separate_state_space": True,
-                #     "one_hot_state_encoding": True
-                # },
-                # Use GPUs iff `RLLIB_NUM_GPUS` env var set to > 0.
-                # "num_gpus": int(os.environ.get("RLLIB_NUM_GPUS", "0")),
-
+                "buffer_size": 10,  # replay buffer size, in samples.
+                                     # see https://ai.stackexchange.com/questions/11640/how-large-should-the-replay-buffer-be
+                                     # wait, or, in batches? from docs: "Size of the replay buffer in batches (not timesteps!)."
+                "batch_mode": "truncate_episodes",  # don't wait until end of episode to build a batch
+                "rollout_fragment_length": 4,  # number of steps to be performed per rollout
+                                               # https://robotics.stackexchange.com/questions/16596/what-is-the-definition-of-rollout-in-neural-network-or-openai-gym
+                "train_batch_size": 32,  # number of samples sent to Trainer.train_on_batch
+                "timesteps_per_iteration": 10,  # "Number of env steps to optimize for before returning" (?)
+                "learning_starts": 0
             })
         )
 
@@ -203,20 +194,21 @@ if __name__ == "__main__":
                     "rollout_fragment_length": 1000,
                     "train_batch_size": 4000,
                     "framework": args.framework,
-                }))
-
-    checkpoint_path = CHECKPOINT_FILE.format(args.run) if args.checkpoint_path is None else args.checkpoint_path
+                })
+        )
 
     # Attempt to restore from checkpoint, if possible.
-    if not args.no_restore:
-        if os.path.exists(checkpoint_path):
+    if not args.no_restore and args.checkpoint_path is not None:
+        if os.path.exists(args.checkpoint_path):
             # checkpoint_path = open(checkpoint_path).read()
-            print("Restoring from checkpoint path", checkpoint_path)
-            trainer.restore(checkpoint_path)
+            print("Restoring from checkpoint path", args.checkpoint_path)
+            trainer.restore(args.checkpoint_path)
         else:
             raise IOError(f'provided checkpoint {args.checkpoint_path} does not exist')
 
-    # what's up
+    # overwrite now to set a checkpoint to use going forward
+    live_checkpoint_path = CHECKPOINT_FILE.format(args.run) if args.checkpoint_path is None else args.checkpoint_path
+
     print("beginning training loop with policies, observation space, action space:")
     print(multiagent_conf)
     print(obs_space)
@@ -225,7 +217,7 @@ if __name__ == "__main__":
     # Serving and training loop.
     while True:
         print(pretty_print(trainer.train()))
-        checkpoint = trainer.save()
+        checkpoint = trainer.save(checkpoint_dir=args.checkpoint_path)
         print("Last checkpoint", checkpoint)
-        with open(checkpoint_path, "w") as f:
+        with open(live_checkpoint_path, "w") as f:
             f.write(checkpoint)

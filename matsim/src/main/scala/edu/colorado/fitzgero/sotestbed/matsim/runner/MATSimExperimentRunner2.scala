@@ -133,7 +133,9 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
                   seed = seed
                 )
               }
-              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] = so.selectionAlgorithm.build()
+              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] =
+                so.selectionAlgorithm.build(config.experimentLoggingDirectory)
+
               val sel: SelectionRunner[Coordinate] =
                 SelectionRunner(
                   selectionAlgorithm = selectionAlgorithm,
@@ -169,7 +171,8 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
           soRoutingAlgorithm = soAlgorithm,
           updateFunction = config.algorithm.edgeUpdateFunction.build(),
           batchWindow = config.routing.batchWindow,
-          minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
+          minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
+          bank = Map.empty
         )
       } yield experimentFinishState
 

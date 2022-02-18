@@ -16,6 +16,7 @@ import cse.bdlab.fitzgero.mcts.tree.MCTreePedrosoReiReward
 import cse.bdlab.fitzgero.mcts.variant.PedrosoReiMCTS
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, TrueShortestSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
@@ -31,8 +32,10 @@ class LocalMCTSSelectionAlgorithm[V, E](
   var localSeed: Long = seed
 
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
     roadNetwork: RoadNetwork[IO, V, E],
+    bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
@@ -44,8 +47,10 @@ class LocalMCTSSelectionAlgorithm[V, E](
     else if (alts.size == 1) {
 
       TrueShortestSelectionAlgorithm().selectRoutes(
+        "user-optimal",
         alts,
         roadNetwork,
+        bank,
         pathToMarginalFlowsFunction,
         combineFlowsFunction,
         marginalCostFunction
@@ -175,7 +180,7 @@ class LocalMCTSSelectionAlgorithm[V, E](
           selfishCost = trueShortestPathsCost,
           travelTimeDiff = travelTimeDiff,
           averageTravelTimeDiff = meanTravelTimeDiff,
-          samples
+          samples = samples
         )
 
         result

@@ -25,7 +25,15 @@ object AgentBatchData {
     remainingRoute: List[RouteRequestData.EdgeData],
     remainingRouteDistance: Meters,
     lastReplanningTime: Option[SimTime]
-  ) extends AgentBatchData
+  ) extends AgentBatchData {
+
+    def overallTravelTime: SimTime = {
+      val ttList: List[Long] =
+        experiencedRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } } ++
+          remainingRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }
+      if (ttList.nonEmpty) SimTime(ttList.sum) else SimTime.Zero
+    }
+  }
 
   object RouteRequestData {
 

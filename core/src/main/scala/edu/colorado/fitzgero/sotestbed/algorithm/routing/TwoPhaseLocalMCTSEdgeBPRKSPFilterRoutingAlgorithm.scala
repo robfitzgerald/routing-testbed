@@ -95,8 +95,10 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
         val selectionResult: SelectionAlgorithm.SelectionAlgorithmResult =
           selectionAlgorithm
             .selectRoutes(
+              "unbatched",
               filteredAlts,
               roadNetwork,
+              Map.empty,
               pathToMarginalFlowsFunction,
               combineFlowsFunction,
               marginalCostFunction

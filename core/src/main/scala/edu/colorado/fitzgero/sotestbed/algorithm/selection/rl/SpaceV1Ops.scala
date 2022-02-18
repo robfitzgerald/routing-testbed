@@ -49,7 +49,7 @@ object SpaceV1Ops {
     val result = for {
       (request, _) <- agents
       agentId = AgentId(request.agent)
-      currentEdge          <- roadNetwork.edge(request.origin).unsafeRunSync
+      currentEdge          <- roadNetwork.edge(request.location).unsafeRunSync
       currentDstNodeId     <- roadNetwork.destination(currentEdge.edgeId).unsafeRunSync
       currentDstNode       <- roadNetwork.vertex(currentDstNodeId).unsafeRunSync
       destinationEdge      <- roadNetwork.edge(request.destination).unsafeRunSync

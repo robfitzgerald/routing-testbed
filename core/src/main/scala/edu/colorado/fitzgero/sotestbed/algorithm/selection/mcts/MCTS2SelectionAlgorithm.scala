@@ -15,6 +15,7 @@ import cse.bdlab.fitzgero.mcts.model.value.ValueFunction.PedrosoRei
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.PathOrdering.TravelTimeAscending
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.selection._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.config.SelectionComputeBudgetFunctionConfig
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
@@ -39,8 +40,10 @@ class MCTS2SelectionAlgorithm(
   val localRandom: Random = new Random(seed)
 
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: EdgeBPR => Flow => Cost
@@ -52,8 +55,10 @@ class MCTS2SelectionAlgorithm(
     else if (alts.size == 1) {
 
       TrueShortestSelectionAlgorithm().selectRoutes(
+        "user-optimal",
         alts,
         roadNetwork,
+        bank,
         pathToMarginalFlowsFunction,
         combineFlowsFunction,
         marginalCostFunction

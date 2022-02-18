@@ -7,6 +7,7 @@ import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -39,8 +40,10 @@ final class RLSelectionAlgorithm(
     * @return
     */
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: EdgeBPR => Flow => Cost

@@ -43,7 +43,7 @@ class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: Edg
       latestRouteRequestData <- routingResult.agentHistory.getMostRecentDataFor(request.agent)
       decisionNumber = observedRouteRequestData.length
       decisionTag    = DecisionTag(currentSimTime, resultIndex)
-      Coordinate(lon, lat) <- edgeToCoord(request.origin)
+      Coordinate(lon, lat) <- edgeToCoord(request.location)
       selectedPathIndex = response.pathIndex
       alts <- routingResult.kspResult.get(request)
       altsCoords = alts.map { path => edgesToCoords(path) }
@@ -86,7 +86,7 @@ class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: Edg
         timeExperienced = travelTimeExperienced,
         timeEstRemaining = travelTimeRemaining,
         timeEstOverall = travelTimeExperienced + travelTimeRemaining,
-        currentLink = request.origin,
+        currentLink = request.location,
         lat = lat,
         lon = lon
       )

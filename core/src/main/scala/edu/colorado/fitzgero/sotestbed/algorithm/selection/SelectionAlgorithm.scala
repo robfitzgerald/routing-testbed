@@ -5,6 +5,7 @@ import scala.annotation.tailrec
 import cats.Monad
 import cats.implicits._
 
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost._
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
@@ -17,8 +18,10 @@ abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
   // invariant: at least one path exists for each request
 
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
     roadNetwork: RoadNetwork[F, V, E],
+    bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: E => Flow => Cost
@@ -31,18 +34,9 @@ abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
 
 object SelectionAlgorithm {
 
-  /**
-    * result of applying a selection algorithm
-    *
-    * @param selectedRoutes
-    * @param estimatedCost
-    * @param selfishCost
-    * @param travelTimeDiff
-    * @param averageTravelTimeDiff
-    * @param samples
-    */
   final case class SelectionAlgorithmResult(
     selectedRoutes: List[Response] = List.empty,
+    updatedBank: Map[String, Karma] = Map.empty,
     estimatedCost: Cost = Cost.Zero,
     selfishCost: Cost = Cost.Zero,
     travelTimeDiff: Cost = Cost.Zero,

@@ -389,7 +389,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                             val thisRequest: Request =
                               Request(
                                 agent = personId.toString,
-                                origin = reasonableStartEdgeId,
+                                location = reasonableStartEdgeId,
                                 destination = EdgeId(endLinkId.toString),
                                 requestClass = RequestClass.UE,
                                 travelMode = TravelMode.Car,
@@ -619,7 +619,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                                   val thisRequest: Request =
                                                     Request(
                                                       agent = personId.toString,
-                                                      origin = sourceEdgeId,
+                                                      location = sourceEdgeId,
                                                       destination = destinationEdgeId,
                                                       requestClass = RequestClass.SO(),
                                                       travelMode = TravelMode.Car,

@@ -9,6 +9,7 @@ import cats.effect.IO
 import com.typesafe.scalalogging.LazyLogging
 import cse.bdlab.fitzgero.mcts.model.state.combinatorial.MultiChoiceStateOps._
 import cse.bdlab.fitzgero.mcts.model.state.combinatorial.{MultiChoice, MultiChoiceState}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.random.ComputeBudgetFunctionOps.ComputeBudgetFunctionOpsInstance
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionAlgorithmHelper}
 import edu.colorado.fitzgero.sotestbed.config.SelectionComputeBudgetFunctionConfig
@@ -31,8 +32,10 @@ class Rand2SelectionAlgorithm(
   val random: Random = new Random(seed)
 
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
     marginalCostFunction: EdgeBPR => Flow => Cost

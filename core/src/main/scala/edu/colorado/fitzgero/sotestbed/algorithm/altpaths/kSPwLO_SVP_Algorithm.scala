@@ -29,14 +29,26 @@ object kSPwLO_SVP_Algorithm {
     for {
       // construct forward and reverse spanning trees
       fwdTree <- OptionT {
-        SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.origin, request.destination, TraverseDirection.Forward)
+        SpanningTree.edgeOrientedSpanningTree(
+          roadNetwork,
+          costFunction,
+          request.location,
+          request.destination,
+          TraverseDirection.Forward
+        )
       }
       revTree <- OptionT {
-        SpanningTree.edgeOrientedSpanningTree(roadNetwork, costFunction, request.origin, request.destination, TraverseDirection.Reverse)
+        SpanningTree.edgeOrientedSpanningTree(
+          roadNetwork,
+          costFunction,
+          request.location,
+          request.destination,
+          TraverseDirection.Reverse
+        )
       }
       // construct PathSegments for the origin and destination edge which are not included in the spanning trees
-      originPathSegment <- OptionT { roadNetwork.edge(request.origin) }.map { e =>
-        PathSegment(request.origin, costFunction(e.attribute))
+      originPathSegment <- OptionT { roadNetwork.edge(request.location) }.map { e =>
+        PathSegment(request.location, costFunction(e.attribute))
       }
       destinationPathSegment <- OptionT { roadNetwork.edge(request.destination) }.map { e =>
         PathSegment(request.destination, costFunction(e.attribute))
@@ -50,7 +62,7 @@ object kSPwLO_SVP_Algorithm {
         } yield {
           KSPAlgorithm.VertexWithDistance(vertexId, cost)
         }
-        }.sortBy { _.cost }
+      }.sortBy { _.cost }
       if intersectionVertices.nonEmpty
     } yield {
 
@@ -66,7 +78,7 @@ object kSPwLO_SVP_Algorithm {
         if (terminationFunction(searchState)) searchState
         else {
           searchState.intersectionVertices.headOption match {
-            case None                                                                           => searchState
+            case None                                                                      => searchState
             case Some(KSPAlgorithm.VertexWithDistance(thisIntersectionVertexId, thisCost)) =>
               // construct a path from the intersection through both spanning trees
               val possiblyUpdatedState: Option[KSPAlgorithm.AltPathsState] = for {
@@ -122,7 +134,9 @@ object kSPwLO_SVP_Algorithm {
       val KSPAlgorithm.AltPathsState(_, _, pathsSeen, altsWithCosts) = _svp(startState)
 
       // sort in order discovered which should also be a sort by cost; only return the path
-      val alts: List[Path] = altsWithCosts.reverse.map { case (path, _) => originPathSegment +: path :+ destinationPathSegment }
+      val alts: List[Path] = altsWithCosts.reverse.map {
+        case (path, _) => originPathSegment +: path :+ destinationPathSegment
+      }
 
       SingleSVPResult(request, alts, pathsSeen)
     }
@@ -138,9 +152,7 @@ object kSPwLO_SVP_Algorithm {
   def costOfOverlap(longerPath: Path, shorterPath: Path): Cost = {
 
     val altPathMap: Map[EdgeId, Cost] =
-      longerPath.map { pathSegment =>
-        (pathSegment.edgeId, pathSegment.cost)
-      }.toMap
+      longerPath.map { pathSegment => (pathSegment.edgeId, pathSegment.cost) }.toMap
 
     val thisPathOverlapCost: Cost = {
       for {
