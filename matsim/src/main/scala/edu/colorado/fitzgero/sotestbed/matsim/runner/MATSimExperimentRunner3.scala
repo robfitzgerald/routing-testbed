@@ -25,8 +25,8 @@ import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
-import kantan.csv._
-import kantan.csv.ops._
+//import kantan.csv._
+//import kantan.csv.ops._
 
 case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
@@ -166,10 +166,10 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   Map.empty
               }
 
-              // write initial bank to file system
-              val initBankFile = config.experimentLoggingDirectory.resolve("karma_bank_initial.csv").toFile
-              val writer       = initBankFile.asCsvWriter[(String, Long)](rfc.withHeader("agentId", "balance"))
-              writer.write(bank.toList.map { case (a, k) => (a, k.value) })
+//              // write initial bank to file system
+//              val initBankFile = config.experimentLoggingDirectory.resolve("karma_bank_initial.csv").toFile
+//              val writer       = initBankFile.asCsvWriter[(String, Long)](rfc.withHeader("agentId", "balance"))
+//              writer.write(bank.toList.map { case (a, k) => (a, k.value) })
 
               val alg = RoutingAlgorithm2(
                 altPathsAlgorithmRunner = ksp,
@@ -189,7 +189,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             Right(None)
         }
 
-      val experimentIO: IO[(experiment.ExperimentState, Map[String, Karma])] = for {
+      val experimentIO: IO[experiment.ExperimentState] = for {
         soAssets <- IO.fromEither(soAssetsOrError)
         soRoutingAlgorithm = soAssets.map { case (alg, _) => alg }
         bank               = soAssets.map { case (_, bank) => bank }.getOrElse(Map.empty)
@@ -203,11 +203,10 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
           batchWindow = config.routing.batchWindow,
           minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
         )
-      } yield (experimentFinishState, bank)
+      } yield experimentFinishState
 
       for {
-        tuple <- experimentIO
-        (_, finalBank) = tuple
+        finalState <- experimentIO
       } yield {
         experiment.close()
 
@@ -217,7 +216,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
 
             val bankResult =
               Bank
-                .writeFinalLedger(initialBank, finalBank, config.experimentLoggingDirectory)
+                .writeFinalLedger(initialBank, finalState.bank, config.experimentLoggingDirectory)
                 .map { bankFilePath => logger.info(f"bank file written to $bankFilePath") }
 
             // if there's an RL trainer with an episode started, let's end that episode
