@@ -1,13 +1,17 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 
+import scala.annotation.tailrec
 import scala.math.Numeric.Implicits.infixNumericOps
 import scala.math.Ordering.Implicits.infixOrderingOps
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import cats.implicits._
 
-object KarmaOps {
+import com.typesafe.scalalogging.LazyLogging
+
+object KarmaOps extends LazyLogging {
 
   /**
     * compute the urgency of a trip based on experienced delay
@@ -46,43 +50,228 @@ object KarmaOps {
     bids: List[Bid],
     bank: Map[String, Karma],
     maxKarma: Karma
-  ): Map[String, Karma] = {
-    // first, withdraw the amount each agent has bid from the bank
-    val withdrawals =
-      bids.foldLeft(bank) { (acc, bid) =>
-        val prev = acc.getOrElse(bid.request.agent, Karma(0.0))
-        acc.updated(bid.request.agent, prev - bid.value)
-      }
-
-    val n                = bids.length
-    val agents           = bids.map { _.request.agent }.toSet
-    val bidsSmallToLarge = bids.filter { _.value > Karma(0.0) }.sortBy { _.value }
-
-    // redistribute the funds by stepping through each bid and paying slices of
-    // the bid amount uniformly across all other agents in the sub-batch
-    val redistributed = bidsSmallToLarge.foldLeft(withdrawals) { (acc, bid) =>
-      val sender      = bid.request.agent
-      val bidPortion  = Karma(bid.value.toDouble / (n - 1))
-      val otherAgents = agents - sender
-
-      val recipientUpdate = otherAgents.foldLeft(acc) { (innerAcc, receiver) =>
-        val receiverPrev = acc.getOrElse(receiver, Karma(0.0))
-        val receiverNext = receiverPrev + bidPortion
-        if (receiverNext <= maxKarma) {
-          innerAcc.updated(receiver, receiverNext)
-        } else {
-          // only pay as much as we can to this agent, retain the rest
-          val retained   = receiverNext - maxKarma
-          val senderPrev = acc.getOrElse(sender, Karma(0.0))
-          acc
-            .updated(sender, senderPrev + retained)
-            .updated(receiver, maxKarma)
+  ): Either[Error, Map[String, Karma]] = {
+    if (bids.lengthCompare(1) <= 0) Right(bank)
+    else {
+      // first, withdraw the amount each agent has bid from the bank
+//      val bankAfterWithdrawalOrError = BankOps.processWithdrawals(bank, bids, maxKarma)
+//      val initial                    = bankAfterWithdrawalOrError.map { b => (b, Karma.Zero) }
+      val initial: Either[Error, (Map[String, Karma], Karma)] = Right((bank, Karma.Zero))
+      val transactionResults = bids.combinations(2).foldLeft(initial) { (acc, pair) =>
+        acc.flatMap {
+          case (innerBank, unallocatedKarma) =>
+            logger.debug(f"bidA: ${pair(0)} | bidB: ${pair(1)} | bank size ${innerBank.size}")
+            pair match {
+              case bid1 :: bid2 :: Nil =>
+                val transactionResult = resolveTransactionsInBankWithRemainingUnallocatedFunds(
+                  bank = innerBank,
+                  agentA = bid1.request.agent,
+                  bidA = bid1.value,
+                  agentB = bid2.request.agent,
+                  bidB = bid2.value,
+                  numAgents = bids.length,
+                  max = maxKarma
+                )
+                transactionResult.map {
+                  case (b, r) =>
+                    logger.debug(f"after ${bid1.request.agent}, ${bid2.request.agent} transaction, $r unallocated")
+                    (b, r + unallocatedKarma)
+                }
+              case other =>
+                Left(new Error(s"bids.combinations(2) result created non-pair: $other"))
+            }
         }
       }
 
-      recipientUpdate
+      transactionResults.flatMap {
+        case (innerBank, unallocated) =>
+          if (unallocated == Karma.Zero) Right(innerBank)
+          else {
+            // somehow re-distribute these unallocated funds. working up
+            // from the agents with the least karma, we can give them each a
+            // portion until we are clear (sounds like a recursive fn)
+            redistributeUnallocatedKarma(innerBank, bids, unallocated, maxKarma)
+          }
+      }
+    }
+  }
+
+  /**
+    * resolves the bids these two agents made, updating the bank. if
+    * either transaction leads to an agent's balance exceeding "max",
+    * we pass karma back to the original agent. however, if that agent
+    * cannot receive this remainder, it is held aside as remaining
+    * unallocated funds to be redistributed to the broader group at a
+    * later point.
+    *
+    * @param bank the bank to update
+    * @param agentA an agent in a transaction
+    * @param bidA the bid associated with that agent
+    * @param agentB another agent in a transaction
+    * @param bidB the bid associated with the other agent
+    * @param numAgents total number of agents in auction
+    * @param max maximum karma balance allowed for any agent
+    * @return the updated bank and any unallocated karma, or, an error
+    */
+  def resolveTransactionsInBankWithRemainingUnallocatedFunds(
+    bank: Map[String, Karma],
+    agentA: String,
+    bidA: Karma,
+    agentB: String,
+    bidB: Karma,
+    numAgents: Int,
+    max: Karma
+  ): Either[Error, (Map[String, Karma], Karma)] = {
+    val emptyBids = bidA == Karma.Zero && bidB == Karma.Zero
+    val sameBid   = bidA == bidB
+    if (emptyBids || sameBid) {
+      Right((bank, Karma.Zero))
+    } else if (numAgents == 1) {
+      val str = s"A: $agentA $bidA | B: $agentB $bidB"
+      Left(new Error(s"resolve transactions between 2 agents but numAgents == 1; state: ($str)"))
+    } else {
+      val result = for {
+        balanceA <- BankOps.getBalance(bank, agentA)
+        balanceB <- BankOps.getBalance(bank, agentB)
+      } yield {
+        // compute the portion of the bid each agent should transact here
+        // todo: maybe just compute the transaction and remainders and then
+        //  call BankOps.transact here instead of reproducing that logic
+
+        logger.debug(f"agent $agentA initial balance $balanceA bid $bidA")
+        logger.debug(f"agent $agentB initial balance $balanceB bid $bidB")
+        val portionA     = Karma(math.floor(bidA.value / (numAgents - 1)).toLong)
+        val portionB     = Karma(math.floor(bidB.value / (numAgents - 1)).toLong)
+        val transactionA = -portionA + portionB
+        val transactionB = -portionB + portionA
+        logger.debug(f"agent $agentA transacting $transactionA")
+        logger.debug(f"agent $agentB transacting $transactionB")
+        val (updatedBalanceA, remainderA) = balanceAndRemainder(balanceA, transactionA, max)
+        val (updatedBalanceB, remainderB) = balanceAndRemainder(balanceB, transactionB, max)
+        // it is possible that the bid transaction exceeded the allowed maximum,
+        // in which case we need to attempt to give back the remainder to the sender.
+        val updatedBalanceAWithRemainder = updatedBalanceA + remainderB
+        val updatedBalanceBWithRemainder = updatedBalanceB + remainderA
+        val (finalBalanceA, finalRemainderA) =
+          if (updatedBalanceAWithRemainder <= max) (updatedBalanceAWithRemainder, Karma.Zero)
+          else (max, updatedBalanceAWithRemainder - max)
+        val (finalBalanceB, finalRemainderB) = {
+          if (updatedBalanceBWithRemainder <= max) (updatedBalanceBWithRemainder, Karma.Zero)
+          else (max, updatedBalanceBWithRemainder - max)
+        }
+        logger.debug(f"final balance limited to $max")
+        logger.debug(
+          f"agent $agentA updated balance $updatedBalanceA + remainder $remainderB => final balance $finalBalanceA"
+        )
+        logger.debug(
+          f"agent $agentB updated balance $updatedBalanceB + remainder $remainderA => final balance $finalBalanceB"
+        )
+
+        if (finalBalanceA < Karma.Zero) {
+          Left(new Error(s"agent $agentA final balance after transaction is negative"))
+        } else if (finalBalanceB < Karma.Zero) {
+          Left(new Error(s"agent $agentB final balance after transaction is negative"))
+        } else {
+          val updatedBank = bank
+            .updated(agentA, finalBalanceA)
+            .updated(agentB, finalBalanceB)
+          val thisRemainder = finalRemainderA + finalRemainderB
+          Right((updatedBank, thisRemainder))
+        }
+      }
+      result.flatten
+    }
+  }
+
+  /**
+    * helper function for
+    * @param startBalance
+    * @param transaction
+    * @param max
+    * @return
+    */
+  def balanceAndRemainder(
+    startBalance: Karma,
+    transaction: Karma,
+    max: Karma
+  ): (Karma, Karma) = {
+    val updatedBalance = startBalance + transaction
+    if (updatedBalance <= max) (updatedBalance, Karma.Zero)
+    else {
+      val remainder = updatedBalance - max
+      (max, remainder)
+    }
+  }
+
+  /**
+    * redistributes unallocated funds. required for maintaining a fixed
+    * zero-sum auction, that we don't leak funds during the auction when
+    * agents are due payouts from bids but are maxxed out. those agents
+    * return their extra funds to this pool which is distributed back to the group.
+    *
+    * redistribution sorts the agents by their remaining bank headroom (the max amount
+    * less their balance), ascending, and then attempts to uniformly re-distribute
+    * the unallocated funds in a greedy traversal of the sorted agents.
+    *
+    * @param bank
+    * @param bids
+    * @param unallocated
+    * @param max
+    * @return
+    */
+  def redistributeUnallocatedKarma(
+    bank: Map[String, Karma],
+    bids: List[Bid],
+    unallocated: Karma,
+    max: Karma
+  ): Either[Error, Map[String, Karma]] = {
+    if (unallocated == Karma.Zero) {
+      logger.debug("no unallocated funds")
+      Right(bank)
+    } else {
+
+      // track each agent's balance and headroom
+      case class Row(agent: String, balance: Karma, headroom: Karma)
+      val headroomPerAgentAscendingOrError = bids
+        .traverse { bid =>
+          BankOps
+            .getBalance(bank, bid.request.agent)
+            .map { bal => Row(bid.request.agent, bal, max - bal) }
+        }
+        .map { _.sortBy { _.headroom } }
+
+      @tailrec
+      def _redistribute(
+        headroomPerAgentAscending: List[Row],
+        remaining: Karma = unallocated,
+        bankUpdates: Map[String, Karma] = bank
+      ): Map[String, Karma] = {
+        if (remaining == Karma.Zero) bankUpdates
+        else
+          headroomPerAgentAscending match {
+            case Nil                                   => bankUpdates
+            case Row(agent, balance, headroom) :: tail =>
+              // find the uniform payout split at this point in the traversal, and bound
+              // that split by the agent's remaining headroom
+              val payoutTargetAmount: Long = remaining.value / headroomPerAgentAscending.length
+              val payoutAmount             = Karma(math.min(payoutTargetAmount, headroom.value))
+
+              val updatedRemaining = remaining - payoutAmount
+              val updatedBalance   = balance + payoutAmount
+
+              logger.debug(f"agent $agent receiving $payoutAmount as redistribution funds")
+              logger.debug(
+                f"agent $agent prev balance $balance headroom $headroom (max $max) next balance $updatedBalance"
+              )
+              val updatedBank = bank.updated(agent, updatedBalance)
+              _redistribute(tail, updatedRemaining, updatedBank)
+          }
+      }
+
+      val resultOrError = headroomPerAgentAscendingOrError.map { _redistribute(_) }
+
+      resultOrError
     }
 
-    redistributed
   }
 }

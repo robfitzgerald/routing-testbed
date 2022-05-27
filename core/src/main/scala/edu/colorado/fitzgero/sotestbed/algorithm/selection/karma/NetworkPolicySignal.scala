@@ -16,16 +16,15 @@ object NetworkPolicySignal {
   /**
     * a system-optimal policy instance where a random system-optimal strategy is
     * applied to some percentage of the drivers
-    * @param percent the percentage of drivers to assign a random so route
+    * @param thresholdPercent the percentage of drivers to assign a random so route
     */
-  case class BernoulliDistributionSampling(percent: Double, random: Random, congestion: Double)
-      extends NetworkPolicySignal
+  case class ThresholdSampling(thresholdPercent: Double, random: Random) extends NetworkPolicySignal
 
-  object BernoulliDistributionSampling {
+  object ThresholdSampling {
 
-    def build(percent: Double, seed: Long, congestion: Double): Either[Error, BernoulliDistributionSampling] = {
+    def build(percent: Double, seed: Long): Either[Error, ThresholdSampling] = {
       if (percent < 0.0 || percent > 1.0) Left(new Error(s"percent must be in [0, 1], got $percent"))
-      else Right(BernoulliDistributionSampling(percent, new Random(seed), congestion))
+      else Right(ThresholdSampling(percent, new Random(seed)))
     }
   }
 
@@ -33,19 +32,19 @@ object NetworkPolicySignal {
     * a system-optimal policy instance where some percentage of drivers may take
     * their user-optimal path, and the remaining must take a route that is some degree system-optimal
     *
-    * @param percent the percentage of drivers to assign a random so route
-    * @param degreePct percentage of unfair the remaining routes should be
+    * @param thresholdPercent the percentage of drivers to assign a random so route
+    * @param bernoulliPercent percentage of unfair the remaining routes should be
     */
-  case class BernoulliDistSampleWithSODegree(percent: Double, degreePct: Double, congestion: Double)
+  case class BernoulliDistributionSampling(thresholdPercent: Double, bernoulliPercent: Double)
       extends NetworkPolicySignal
 
-  object BernoulliDistSampleWithSODegree {
+  object BernoulliDistributionSampling {
 
-    def build(pct: Double, deg: Double, congestion: Double): Either[Error, BernoulliDistSampleWithSODegree] = {
+    def build(pct: Double, deg: Double): Either[Error, BernoulliDistributionSampling] = {
       if (pct < 0.0 || pct > 1.0) Left(new Error(s"percent must be in [0, 1], got $pct"))
       else if (deg < 0.0 || deg > 1.0) Left(new Error(s"degreePct must be in [0, 1], got $deg"))
       else {
-        Right(BernoulliDistSampleWithSODegree(pct, deg, congestion))
+        Right(BernoulliDistributionSampling(pct, deg))
       }
     }
   }
@@ -56,7 +55,7 @@ object NetworkPolicySignal {
     *
     * @param dist the beta distribution to sample from
     */
-  case class BetaDistributionSampling(dist: BetaDistributionImpl, congestion: Double) extends NetworkPolicySignal
+  case class BetaDistributionSampling(dist: BetaDistributionImpl) extends NetworkPolicySignal
 
   object BetaDistributionSampling {
 
@@ -69,88 +68,106 @@ object NetworkPolicySignal {
       * @param beta beta parameter
       * @return either a beta distribution policy, or, an error
       */
-    def apply(alpha: Double, beta: Double, congestion: Double): Either[Error, BetaDistributionSampling] = {
+    def apply(alpha: Double, beta: Double): Either[Error, BetaDistributionSampling] = {
       if (alpha < 0.0) Left(new Error(s"alpha must be positive, got $alpha"))
       else if (beta < 0.0) Left(new Error(s"beta must be positive, got $beta"))
       else {
         val dist = new BetaDistributionImpl(alpha, beta)
-        Right(BetaDistributionSampling(dist, congestion))
+        Right(BetaDistributionSampling(dist))
       }
     }
   }
 
+  /**
+    * gets the coefficients for this network signal as a comma-delimited string for logging
+    * @return
+    */
+  def getLogHeader(networkPolicy: NetworkPolicyConfig): String = networkPolicy match {
+    case NetworkPolicyConfig.UserOptimal              => ""
+    case _: NetworkPolicyConfig.BernoulliProportional => "p"
+    case _: NetworkPolicyConfig.BernoulliScaled       => "p"
+  }
+
   implicit class NetworkPolicySignalOps(sig: NetworkPolicySignal) {
 
-    def congestion: Option[Double] = sig match {
-      case UserOptimal                              => None
-      case bds: BernoulliDistributionSampling       => Some(bds.congestion)
-      case bdswsod: BernoulliDistSampleWithSODegree => Some(bdswsod.congestion)
-      case bds: BetaDistributionSampling            => Some(bds.congestion)
-    }
-
-    // corresponds with [[NetworkPolicy.signalHeader]]
-    def getCoefs: String = sig match {
-      case NetworkPolicySignal.UserOptimal         => ","
-      case bernie: BernoulliDistributionSampling   => s"${bernie.percent},"
-      case bernie: BernoulliDistSampleWithSODegree => s"${bernie.percent},${bernie.degreePct}"
-      case beta: BetaDistributionSampling          => s"${beta.dist.getAlpha},${beta.dist.getBeta}"
+    /**
+      * gets the coefficients for this network signal as a comma-delimited string for logging
+      * @return
+      */
+    def getLogData: String = sig match {
+      case NetworkPolicySignal.UserOptimal => ""
+      case bernie: ThresholdSampling       => s"${bernie.thresholdPercent}"
+      // not yet implemented as [[NetworkPolicyConfig]] types:
+      case bernie: BernoulliDistributionSampling => s"${bernie.thresholdPercent},${bernie.bernoulliPercent}"
+      case beta: BetaDistributionSampling        => s"${beta.dist.getAlpha},${beta.dist.getBeta}"
     }
 
     def assign(bids: List[Bid], alts: Map[Request, List[Path]]): List[(Bid, Int, Path)] =
-      sig match {
-        case UserOptimal =>
-          pickPaths(bids, alts, uoPathSelection)
-        case sop: BernoulliDistributionSampling =>
-          val bidsLowestToHighest = bids.sortBy { _.value }
-          val numAgentsSo         = percentToDiscreteRange(sop.percent, alts.size)
-          val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
-          val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
-          // pick a random path for the SO agents
-          val routesSo = pickPaths(bidsSo, alts, (bid, paths) => {
-            val selectedPathIdx = sop.random.nextInt(paths.length)
-            val path            = paths(selectedPathIdx)
-            (bid, selectedPathIdx, path)
-          })
-          val routesUo = pickPaths(bidsUo, alts, uoPathSelection)
-          routesSo ++ routesUo
+      if (bids.lengthCompare(1) == 0) {
+        pickPaths(bids, alts, uoPathSelection)
+      } else {
+        sig match {
 
-        case sopad: BernoulliDistSampleWithSODegree =>
-          val bidsLowestToHighest = bids.sortBy { _.value }
-          val numAgentsSo         = percentToDiscreteRange(sopad.percent, alts.size)
-          val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
-          val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
-          // pick a path of some degree of optimal for the SO agents
-          val routesSo = pickPaths(
-            bidsSo,
-            alts,
-            (bid, paths) => {
-              val selectedPathIdx = percentToDiscreteRange(sopad.degreePct, paths.length)
+          case UserOptimal =>
+            pickPaths(bids, alts, uoPathSelection)
+
+          case sop: ThresholdSampling =>
+            val bidsLowestToHighest = bids.sortBy { _.value }
+            val numAgentsSo         = percentToDiscreteRange(sop.thresholdPercent, alts.size)
+            val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
+            val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
+
+            // pick a random path for the redirected agents from range [1, n)
+            // as path 0 is the true shortest path
+            val routesRedirected = pickPaths(bidsSo, alts, (bid, paths) => {
+              val selectedPathIdx = sop.random.nextInt(paths.length - 1) + 1
               val path            = paths(selectedPathIdx)
               (bid, selectedPathIdx, path)
-            }
-          )
-          val routesUo = pickPaths(bidsUo, alts, uoPathSelection)
-          routesSo ++ routesUo
+            })
+            val routesShortestPath = pickPaths(bidsUo, alts, uoPathSelection)
+            val result             = routesRedirected ++ routesShortestPath
+            result
 
-        case BetaDistributionSampling(dist, _) =>
-          val samples                = for { _ <- bids.indices } yield dist.sample()
-          val samplesLowestToHighest = samples.sorted.toList
-          val bidsHighestToLowest    = bids.sortBy { -_.value }
-          val lookup                 = bidsHighestToLowest.zip(samplesLowestToHighest).toMap
-          val routes = pickPaths(
-            bids,
-            alts,
-            (bid, paths) => {
-              lookup.get(bid) match {
-                case None => throw new IllegalStateException()
-                case Some(sample) =>
-                  val selectedPathIdx = percentToDiscreteRange(sample, paths.length)
-                  val path            = paths(selectedPathIdx)
-                  (bid, selectedPathIdx, path)
+          case sopad: BernoulliDistributionSampling =>
+            val bidsLowestToHighest = bids.sortBy { _.value }
+            val numAgentsSo         = percentToDiscreteRange(sopad.thresholdPercent, alts.size)
+            val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
+            val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
+
+            // pick a path of some degree of optimal for the SO agents
+            val routesRedirected = pickPaths(
+              bidsSo,
+              alts,
+              (bid, paths) => {
+                val selectedPathIdx = percentToDiscreteRange(sopad.bernoulliPercent, paths.length)
+                val path            = paths(selectedPathIdx)
+                (bid, selectedPathIdx, path)
               }
-            }
-          )
-          routes
+            )
+            val routesShortestPath = pickPaths(bidsUo, alts, uoPathSelection)
+            val result             = routesRedirected ++ routesShortestPath
+            result
+
+          case BetaDistributionSampling(dist) =>
+            val samples                = for { _ <- bids.indices } yield dist.sample()
+            val samplesLowestToHighest = samples.sorted.toList
+            val bidsHighestToLowest    = bids.sortBy { -_.value }
+            val lookup                 = bidsHighestToLowest.zip(samplesLowestToHighest).toMap
+            val routes = pickPaths(
+              bids,
+              alts,
+              (bid, paths) => {
+                lookup.get(bid) match {
+                  case None => throw new IllegalStateException()
+                  case Some(sample) =>
+                    val selectedPathIdx = percentToDiscreteRange(sample, paths.length)
+                    val path            = paths(selectedPathIdx)
+                    (bid, selectedPathIdx, path)
+                }
+              }
+            )
+            routes
+        }
       }
   }
 
@@ -160,8 +177,18 @@ object NetworkPolicySignal {
     * @param max something like a collection size or count of classes in a classifier
     * @return the pct value as a discrete value
     */
-  def percentToDiscreteRange(pct: Double, max: Int): Int = math.min(max - 1, max * pct).toInt
+  def percentToDiscreteRange(pct: Double, max: Int): Int = {
+    val result = math.min(max - 1, max * pct).toInt
+    result
+  }
 
+  /**
+    * combinator that applies a function which selects paths based on a bid
+    * @param bids bids to apply to path selection
+    * @param alts the original requests and their alternative path sets
+    * @param fn function to pick paths based on bid
+    * @return the selected path, it's index, along with the bid
+    */
   def pickPaths(
     bids: List[Bid],
     alts: Map[Request, List[Path]],

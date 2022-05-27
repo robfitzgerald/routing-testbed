@@ -35,7 +35,7 @@ final case class BatchingManager(
             storedHistory = b.storedHistory.processArrivalFor(agentId)
           )
         case routeRequestData: RouteRequestData =>
-          b.storedHistory.getMostRecentDataFor(routeRequestData.request.agent) match {
+          b.storedHistory.getNewestData(routeRequestData.request.agent) match {
             case None =>
               // first update, simply apply the update
               this.copy(

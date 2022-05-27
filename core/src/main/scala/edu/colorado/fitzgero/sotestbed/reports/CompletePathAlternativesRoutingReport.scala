@@ -41,7 +41,7 @@ class CompletePathAlternativesRoutingReport(routingResultFile: File, costFunctio
         .get(request.agent)
         .map { _.orderedHistory }
         .getOrElse(List.empty)
-      latestRouteRequestData <- routingResult.agentHistory.getMostRecentDataFor(request.agent)
+      latestRouteRequestData <- routingResult.agentHistory.getNewestData(request.agent)
       decisionNumber = observedRouteRequestData.length
       decisionTag    = DecisionTag(currentSimTime, resultIndex)
       Coordinate(lon, lat) <- edgeToCoord(request.location)

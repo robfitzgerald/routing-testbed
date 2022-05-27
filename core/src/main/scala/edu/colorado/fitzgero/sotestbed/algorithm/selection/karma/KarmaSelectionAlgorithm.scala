@@ -3,11 +3,14 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 import java.io.PrintWriter
 
 import cats.effect.IO
+import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.KarmaSelectionAlgorithm.header
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.CongestionObservationType.CongestionObservationResult
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.KarmaSelectionAlgorithm.karmaLogHeader
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.config.BankConfig
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
@@ -17,20 +20,37 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
-  networkPolicy: NetworkPolicy,
-  congestionObservation: CongestionObservation,
+  networkPolicy: NetworkPolicyConfig,
+  congestionObservation: CongestionObservationType,
   bankConfig: BankConfig,
   seed: Option[Long],
   experimentDirectory: java.nio.file.Path
 ) extends SelectionAlgorithm[IO, Coordinate, EdgeBPR]
     with LazyLogging {
 
-  val logFilePath: java.nio.file.Path = experimentDirectory.resolve("karma_log.csv")
-  val pw: PrintWriter                 = new PrintWriter(logFilePath.toFile)
-  val logHeader: String               = header(networkPolicy.header, networkPolicy.signalHeader, driverPolicy.header)
-  pw.write(logHeader + "\n")
+  val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve("karma_log.csv")
+  val networkLogFile: java.nio.file.Path   = experimentDirectory.resolve("karma_network_log.csv")
+  val selectionPw: PrintWriter             = new PrintWriter(selectionLogFile.toFile)
+  val networkPw: PrintWriter               = new PrintWriter(networkLogFile.toFile)
 
-  def close(): Unit = pw.close()
+  val networkLogHeader: String = List(
+    "batchId",
+    networkPolicy.logHeader,
+    NetworkPolicySignal.getLogHeader(networkPolicy)
+  ).mkString(",")
+
+  selectionPw.write(karmaLogHeader + "\n")
+  networkPw.write(networkLogHeader + "\n")
+
+  val gen: NetworkPolicySignalGenerator = networkPolicy.buildGenerator
+
+  /**
+    * this close method is used as it is called in RoutingExperiment2's .close() method
+    */
+  def close(): Unit = {
+    selectionPw.close()
+    networkPw.close()
+  }
 
   /**
     * sorry...
@@ -55,8 +75,10 @@ case class KarmaSelectionAlgorithm(
     */
   def build(
     activeAgentHistory: ActiveAgentHistory,
+    networkObservations: Map[String, CongestionObservationResult],
     networkPolicySignals: Map[String, NetworkPolicySignal],
-    pw: PrintWriter
+    selectionLog: PrintWriter,
+    networkLog: PrintWriter
   ): SelectionAlgorithm[IO, Coordinate, EdgeBPR] = new SelectionAlgorithm[IO, Coordinate, EdgeBPR] {
 
     import KarmaSelectionAlgorithm._
@@ -71,8 +93,8 @@ case class KarmaSelectionAlgorithm(
       marginalCostFunction: EdgeBPR => Flow => Cost
     ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
-      // copied in from other selection algorithms, kinda messy
-      def costFn =
+      val linkCostFn: EdgeBPR => Cost = (edge: EdgeBPR) => marginalCostFunction(edge)(Flow.Zero)
+      val collabCostFn =
         (paths: List[Path]) =>
           SelectionAlgorithm.evaluateCostOfSelection(
             paths,
@@ -85,15 +107,15 @@ case class KarmaSelectionAlgorithm(
       // run the driver policy and network policy, and use the result to select
       // a path for each driver agent
       // get the costs associated with the trips
-      for {
-        bids   <- driverPolicy.applyDriverPolicy(alts.keys.toList, bank, activeAgentHistory)
-        signal <- IO.fromOption(networkPolicySignals.get(batchId))(new Error(s"unknown batch id $batchId"))
+      val result = for {
+        bids   <- driverPolicy.applyDriverPolicy(alts.keys.toList, bank, activeAgentHistory, roadNetwork, linkCostFn)
+        signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
         selections = signal.assign(bids, alts)
         paths      = selections.map { case (_, _, path) => path }
-        costsUo <- costFn(alts.values.flatMap {
-          _.headOption
-        }.toList)
-        costsSo <- costFn(paths)
+        routesUo   = alts.values.flatMap(_.headOption).toList
+        costsUo     <- collabCostFn(routesUo)
+        costsSo     <- collabCostFn(paths)
+        updatedBank <- IO.fromEither(KarmaOps.resolveBidsUniformly(bids, bank, bankConfig.max))
       } yield {
         // construct the responses
         val responses = selections.zip(costsSo.agentPathCosts).map {
@@ -103,7 +125,6 @@ case class KarmaSelectionAlgorithm(
             }
             Response(bid.request, index, edgeList, cost)
         }
-        val updatedBank = KarmaOps.resolveBidsUniformly(bids, bank, bankConfig.max)
 
         // some stuff for logging
         val selfishCost = costsUo.overallCost
@@ -130,50 +151,66 @@ case class KarmaSelectionAlgorithm(
           ratioOfSearchSpaceExplored = 0.0
         )
 
+        // log info about the karma selection process
         val bidLookup = bids.map { b => b.request.agent -> b }.toMap
-        for {
-          response <- responses
-        } {
-          val bidValue = bidLookup.get(response.request.agent).map { _.value }.getOrElse(Karma(0.0))
-          val row = LogRow(
-            batchId = batchId,
-            agentId = response.request.agent,
-            startBalance = bank.getOrElse(response.request.agent, Karma(-1)),
-            endBalance = updatedBank.getOrElse(response.request.agent, Karma(-1)),
-            congestion = signal.congestion.getOrElse(-1),
-            route = response.pathIndex,
-            driverCols = bidValue.value.toString,
-            networkCols = networkPolicy.getCoefString,
-            sigCols = signal.getCoefs
-          )
-          pw.write(row.toLogRow)
-          pw.flush()
+        val loggingOrError = responses.traverse { response =>
+          val agent = response.request.agent
+          for {
+            bid          <- bidLookup.getOrError(agent)
+            startBalance <- bank.getOrError(agent)
+            endBalance   <- updatedBank.getOrError(agent)
+          } yield {
+            val selectionRow = KarmaSelectionLogRow(
+              batchId = batchId,
+              agentId = agent,
+              startBalance = startBalance,
+              endBalance = endBalance,
+              bidValue = bid.value,
+              route = response.pathIndex
+            )
+
+            selectionRow
+          }
         }
 
-        selectionAlgorithmResult
+        val innerResult = loggingOrError.map { logDataList =>
+          // log karma data for each agent
+          logDataList.foreach { selectionRow => selectionLog.write(selectionRow.toLogRow + "\n") }
+
+          // log the network policy for this batch
+          val networkRow = List(batchId, networkPolicy.getLogData, signal.getLogData).mkString(",")
+          networkLog.write(networkRow + "\n")
+
+          selectionLog.flush()
+          networkLog.flush()
+
+          selectionAlgorithmResult
+        }
+
+        IO.fromEither(innerResult)
       }
+
+      result.flatten
     }
   }
 }
 
 object KarmaSelectionAlgorithm {
 
-  def header(networkCols: String, sigCols: String, driverCols: String): String =
-    s"batchId,agentId,startKarma,endKarma,congestion,route,$networkCols,$driverCols"
+  final case class KarmaBatchData(batchId: String, obs: CongestionObservationResult, signal: NetworkPolicySignal)
 
-  case class LogRow(
+  val karmaLogHeader: String = "batchId,agentId,startKarma,endKarma,bidValue,selectedRoute"
+
+  case class KarmaSelectionLogRow(
     batchId: String,
     agentId: String,
     startBalance: Karma,
     endBalance: Karma,
-    congestion: Double,
-    route: Int,
-    driverCols: String,
-    networkCols: String,
-    sigCols: String
+    bidValue: Karma,
+    route: Int
   ) {
 
     def toLogRow: String =
-      s"$batchId,$agentId,$startBalance,$endBalance,$congestion,$route,$driverCols,$networkCols,$sigCols\n"
+      s"$batchId,$agentId,$startBalance,$endBalance,$bidValue,$route"
   }
 }

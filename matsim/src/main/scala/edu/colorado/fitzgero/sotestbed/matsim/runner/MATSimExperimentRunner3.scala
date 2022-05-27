@@ -25,6 +25,9 @@ import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 
+import kantan.csv._
+import kantan.csv.ops._
+
 case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
   /**
@@ -163,6 +166,11 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   Map.empty
               }
 
+              // write initial bank to file system
+              val initBankFile = config.experimentLoggingDirectory.resolve("karma_bank_initial.csv").toFile
+              val writer       = initBankFile.asCsvWriter[(String, Long)](rfc.withHeader("agentId", "balance"))
+              writer.write(bank.toList.map { case (a, k) => (a, k.value) })
+
               val alg = RoutingAlgorithm2(
                 altPathsAlgorithmRunner = ksp,
                 batchingFunction = so.batchingFunction.build(grid),
@@ -199,12 +207,12 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
 
       for {
         tuple <- experimentIO
-        (_, initialBank) = tuple
+        (_, finalBank) = tuple
       } yield {
         experiment.close()
 
         soAssetsOrError match {
-          case Right(Some((ra, finalBank))) =>
+          case Right(Some((ra, initialBank))) =>
             // report final bank balance
 
             val bankResult =

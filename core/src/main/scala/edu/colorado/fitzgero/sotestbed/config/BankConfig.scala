@@ -20,13 +20,19 @@ object BankConfig {
 
     def build(agentsUnderControl: Set[String]): Map[String, Karma] = bankConfig match {
       case Fixed(value, _) =>
-        agentsUnderControl.map { a => (a, value) }.toMap
+        val bank = agentsUnderControl.map { a => (a, value) }.toMap
+        bank
       case Uniform(max, seed) =>
         val rnd = new Random(seed)
-        agentsUnderControl.map { a => (a, Karma(rnd.nextDouble * max.value)) }.toMap
+        val bank = agentsUnderControl.map { a =>
+          val unifKarmaValue = Karma((rnd.nextDouble * max.value).toLong)
+          (a, unifKarmaValue)
+        }.toMap
+        bank
       case Median(max) =>
         val median = Karma(max.value / 2)
-        agentsUnderControl.map { a => (a, median) }.toMap
+        val bank   = agentsUnderControl.map { a => (a, median) }.toMap
+        bank
     }
 
     def max: Karma = bankConfig match {

@@ -26,7 +26,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.{
   SelectionRunnerResult
 }
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{
-  CongestionObservation,
+  CongestionObservationType,
   Karma,
   KarmaSelectionAlgorithm,
   NetworkPolicySignal
@@ -206,22 +206,46 @@ object RoutingAlgorithm2 {
     selectionRunner.selectionAlgorithm match {
       case k: KarmaSelectionAlgorithm =>
         // special handling for Karma-based selection
-        k.networkPolicy
-          .generatePolicySignal(
-            roadNetwork,
-            marginalCostFunction = selectionRunner.marginalCostFunction,
-            selectionRunnerRequest,
-            k.congestionObservation,
-            new Random(k.seed.getOrElse(System.currentTimeMillis))
-          )
-          .map { nps =>
-            val updatedAlgorithm = k.build(
-              batchingManager.storedHistory,
-              nps.toMap,
-              k.pw
-            )
-            selectionRunner.copy(selectionAlgorithm = updatedAlgorithm)
+        // for each batch, observe the congestion effects of that batch
+        val batchesWithCongestionObservations = selectionRunnerRequest
+          .flatTraverse {
+            case SelectionRunnerRequest(batchId, batch) =>
+              val batchEdgeIds = batch.keys.toList.map { _.location }.distinct
+              val observationIO = k.congestionObservation.observeCongestion(
+                roadNetwork,
+                selectionRunner.marginalCostFunction,
+                batchEdgeIds
+              )
+              observationIO.map {
+                case None      => List.empty
+                case Some(obs) => List(batchId -> obs)
+              }
           }
+
+        // for each batch with observations, compute the network signal
+        val batchesWithSignals = batchesWithCongestionObservations
+          .map {
+            _.map {
+              case (batchId, obs) =>
+                val signal = k.gen.generateSignal(obs)
+                (batchId, obs, signal)
+            }
+          }
+
+        // pass the generated batch data to the inner Karma algorithm
+        batchesWithSignals.map { batches =>
+          val observations = batches.map { case (bId, obs, _) => bId -> obs }.toMap
+          val signals      = batches.map { case (bId, _, sig) => bId -> sig }.toMap
+          val fixedKarmaSelection = k.build(
+            batchingManager.storedHistory,
+            observations,
+            signals,
+            k.selectionPw,
+            k.networkPw
+          )
+
+          selectionRunner.copy(selectionAlgorithm = fixedKarmaSelection)
+        }
 
       case _ => IO.pure(selectionRunner)
     }
@@ -247,10 +271,10 @@ object RoutingAlgorithm2 {
       IO.pure((List.empty[Option[SelectionRunnerResult]], bank))
     requests.foldLeft(initial) { (acc, r) =>
       acc.flatMap {
-        case (results, updatingBank) =>
-          runner.run(r, roadNetwork, bank).map {
-            case None                        => (None +: results, updatingBank)
-            case Some((result, updatedBank)) => (Some(result) +: results, updatedBank)
+        case (results, innerBank) =>
+          runner.run(r, roadNetwork, innerBank).map {
+            case None                             => (None +: results, innerBank)
+            case Some((result, updatedInnerBank)) => (Some(result) +: results, updatedInnerBank)
           }
       }
     }
@@ -316,7 +340,7 @@ object RoutingAlgorithm2 {
     costFunction: EdgeBPR => Cost
   )(agentId: String): IO[List[PathSegment]] = {
     val result = for {
-      mostRecentOption <- IO.pure(batchingManager.storedHistory.getMostRecentDataFor(agentId))
+      mostRecentOption <- IO.pure(batchingManager.storedHistory.getNewestData(agentId))
     } yield {
       mostRecentOption match {
         case None =>

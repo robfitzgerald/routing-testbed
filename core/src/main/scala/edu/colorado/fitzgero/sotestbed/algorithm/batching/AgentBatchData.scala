@@ -1,8 +1,12 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
+import cats.effect.IO
+import cats.implicits._
+
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, SimTime}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, PathSegment}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 sealed trait AgentBatchData
@@ -27,11 +31,28 @@ object AgentBatchData {
     lastReplanningTime: Option[SimTime]
   ) extends AgentBatchData {
 
-    def overallTravelTime: SimTime = {
-      val ttList: List[Long] =
-        experiencedRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } } ++
-          remainingRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }
-      if (ttList.nonEmpty) SimTime(ttList.sum) else SimTime.Zero
+    def overallTravelTimeEstimate(
+      roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+      costFunction: EdgeBPR => Cost
+    ): IO[SimTime] = {
+      val ttExperienced: List[Long] = experiencedRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }
+      val ttRemainingIO: IO[List[Long]] = remainingRoute
+        .traverse { e =>
+          roadNetwork.edge(e.edgeId).map {
+            case None     => None
+            case Some(ea) => Some(costFunction(ea.attribute).value.toLong)
+          }
+        }
+        .map { _.flatten }
+
+      val result = for {
+        ttRemaining <- ttRemainingIO
+      } yield {
+        val ttList = ttExperienced ++ ttRemaining
+        if (ttList.nonEmpty) SimTime(ttList.sum) else SimTime.Zero
+      }
+
+      result
     }
   }
 
@@ -40,7 +61,8 @@ object AgentBatchData {
     /**
       * attributes associated with an Edge traversal
       * @param edgeId
-      * @param estimatedTimeAtEdge
+      * @param estimatedTimeAtEdge observation of agent time at this edge. zero if the agent
+      *                            has not yet traversed this edge
       * @param linkSourceCoordinate
       * @param linkDestinationCoordinate
       */
