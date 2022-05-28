@@ -83,9 +83,9 @@ object NetworkPolicySignal {
     * @return
     */
   def getLogHeader(networkPolicy: NetworkPolicyConfig): String = networkPolicy match {
-    case NetworkPolicyConfig.UserOptimal              => ""
-    case _: NetworkPolicyConfig.BernoulliProportional => "p"
-    case _: NetworkPolicyConfig.BernoulliScaled       => "p"
+    case NetworkPolicyConfig.UserOptimal                        => ""
+    case _: NetworkPolicyConfig.CongestionProportionalThreshold => "p"
+    case _: NetworkPolicyConfig.ScaledProportionalThreshold     => "p"
   }
 
   implicit class NetworkPolicySignalOps(sig: NetworkPolicySignal) {

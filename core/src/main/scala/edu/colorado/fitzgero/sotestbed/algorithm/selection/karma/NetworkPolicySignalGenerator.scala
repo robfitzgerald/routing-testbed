@@ -10,9 +10,9 @@ object NetworkPolicySignalGenerator {
 
   case object UserOptimalGenerator extends NetworkPolicySignalGenerator
 
-  case class ProportionalBernoulliGenerator(rng: Random) extends NetworkPolicySignalGenerator
+  case class ThresholdSamplingGenerator(rng: Random) extends NetworkPolicySignalGenerator
 
-  case class ScaledBernoulliGenerator(scale: Double, rng: Random) extends NetworkPolicySignalGenerator
+  case class ScaledThresholdSamplingGenerator(scale: Double, rng: Random) extends NetworkPolicySignalGenerator
 
   implicit class GeneratorOps(gen: NetworkPolicySignalGenerator) {
 
@@ -20,11 +20,11 @@ object NetworkPolicySignalGenerator {
       gen match {
         case UserOptimalGenerator =>
           NetworkPolicySignal.UserOptimal
-        case ProportionalBernoulliGenerator(rng) =>
+        case ThresholdSamplingGenerator(rng) =>
           val pct    = math.min(1.0, math.max(0.0, obs.increaseAccumulated))
           val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
           signal
-        case ScaledBernoulliGenerator(scale, rng) =>
+        case ScaledThresholdSamplingGenerator(scale, rng) =>
           val pct    = math.min(1.0, math.max(0.0, obs.increaseAccumulated * scale))
           val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
           signal

@@ -30,7 +30,7 @@ object NetworkPolicyConfig {
     *
     * @param seed random number generator seed value
     */
-  case class BernoulliProportional(seed: Option[Long]) extends NetworkPolicyConfig
+  case class CongestionProportionalThreshold(seed: Option[Long]) extends NetworkPolicyConfig
 
   /**
     * generates a network signal that is a Bernoulli distribution, where
@@ -50,30 +50,30 @@ object NetworkPolicyConfig {
     *              before it is used as the Bernoulli "p" parameter.
     * @param seed random number generator seed value
     */
-  case class BernoulliScaled(scale: Double, seed: Option[Long]) extends NetworkPolicyConfig
+  case class ScaledProportionalThreshold(scale: Double, seed: Option[Long]) extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
 
     def buildGenerator: NetworkPolicySignalGenerator = policy match {
       case UserOptimal => NetworkPolicySignalGenerator.UserOptimalGenerator
-      case BernoulliProportional(seed) =>
+      case CongestionProportionalThreshold(seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
-        NetworkPolicySignalGenerator.ProportionalBernoulliGenerator(rng)
-      case BernoulliScaled(scale, seed) =>
+        NetworkPolicySignalGenerator.ThresholdSamplingGenerator(rng)
+      case ScaledProportionalThreshold(scale, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
-        NetworkPolicySignalGenerator.ScaledBernoulliGenerator(scale, rng)
+        NetworkPolicySignalGenerator.ScaledThresholdSamplingGenerator(scale, rng)
     }
 
     def logHeader: String = policy match {
-      case UserOptimal              => ""
-      case _: BernoulliProportional => ""
-      case _: BernoulliScaled       => "scale"
+      case UserOptimal                        => ""
+      case _: CongestionProportionalThreshold => ""
+      case _: ScaledProportionalThreshold     => "scale"
     }
 
     def getLogData: String = policy match {
-      case UserOptimal               => ""
-      case BernoulliProportional(_)  => ""
-      case BernoulliScaled(scale, _) => scale.toString
+      case UserOptimal                           => ""
+      case CongestionProportionalThreshold(_)    => ""
+      case ScaledProportionalThreshold(scale, _) => scale.toString
     }
   }
 }
