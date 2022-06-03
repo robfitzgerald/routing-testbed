@@ -29,11 +29,19 @@ object CongestionObservationType {
     */
   case object MaxFromBatch extends CongestionObservationType
 
+  /**
+    * combines an observation accumulation method combined with a transform on the output
+    * @param observation observation type
+    * @param transform transform to apply
+    */
+  case class WithTransform(observation: CongestionObservationType, transform: CongestionTransformType)
+      extends CongestionObservationType
+
   // ..others? weighted mean, by volume? or, expand the sample beyond the
   // request batch link locations to a broader neighborhood? or,
   // get the in-links/out-links for each?
 
-  case class CongestionObservationResult(
+  final case class CongestionObservationResult(
     observationType: CongestionObservationType,
     freeFlowValues: List[Double],
     linkCounts: List[Double],
@@ -44,7 +52,37 @@ object CongestionObservationType {
     increaseAccumulated: Double
   )
 
+  final case class AccumulatedObservation(
+    freeFlowAccumulated: Double,
+    observedAccumulated: Double,
+    agentCounts: Double,
+    increaseAccumulated: Double
+  )
+
   implicit class CongestionObservationExtensionMethods(c: CongestionObservationType) {
+
+    def accumulateObservations(
+      freeFlowTravelTimes: List[Double],
+      observedTravelTimes: List[Double],
+      agentCounts: List[Double],
+      n: Int
+    ): AccumulatedObservation = c match {
+      case MeanFromBatch =>
+        val ffAcc         = freeFlowTravelTimes.sum / n
+        val observedAcc   = observedTravelTimes.sum / n
+        val linkCountsAcc = agentCounts.sum / n
+        val increaseAcc   = (observedAcc - ffAcc) / ffAcc
+        AccumulatedObservation(ffAcc, observedAcc, linkCountsAcc, increaseAcc)
+      case MaxFromBatch =>
+        val ffAcc         = freeFlowTravelTimes.max
+        val observedAcc   = observedTravelTimes.max
+        val linkCountsAcc = agentCounts.max
+        val increaseAcc   = (observedAcc - ffAcc) / ffAcc
+        AccumulatedObservation(ffAcc, observedAcc, linkCountsAcc, increaseAcc)
+      case WithTransform(observation, transform) =>
+        val obs = observation.accumulateObservations(freeFlowTravelTimes, observedTravelTimes, agentCounts, n)
+        transform.applyTransform(obs)
+    }
 
     /**
       * observes the network conditions at the locations listed
@@ -70,40 +108,27 @@ object CongestionObservationType {
         val observations = for {
           edgeIdAndAttr <- edgeData
         } yield {
-          val observed  = marginalCostFunction(edgeIdAndAttr.attribute)(Flow.Zero)
-          val linkCount = edgeIdAndAttr.attribute.flow.value
-          val ff        = edgeIdAndAttr.attribute.freeFlowCost
-          (linkCount, ff.value, observed.value)
+          val observed   = marginalCostFunction(edgeIdAndAttr.attribute)(Flow.Zero)
+          val agentCount = edgeIdAndAttr.attribute.flow.value
+          val ff         = edgeIdAndAttr.attribute.freeFlowCost
+          (agentCount, ff.value, observed.value)
         }
 
         if (observations.isEmpty) None
         else {
-          val n                                      = observations.length
-          val (linkCounts, freeFlowTTs, observedTTs) = observations.unzip3
-          val (ffAcc, observedAcc, linkCountsAcc, increaseAcc) = c match {
-            case MeanFromBatch =>
-              val ffAcc         = freeFlowTTs.sum / n
-              val observedAcc   = observedTTs.sum / n
-              val linkCountsAcc = linkCounts.sum / n
-              val increaseAcc   = (observedAcc - ffAcc) / ffAcc
-              (ffAcc, observedAcc, linkCountsAcc, increaseAcc)
-            case MaxFromBatch =>
-              val ffAcc         = freeFlowTTs.max
-              val observedAcc   = observedTTs.max
-              val linkCountsAcc = linkCounts.max
-              val increaseAcc   = (observedAcc - ffAcc) / ffAcc
-              (ffAcc, observedAcc, linkCountsAcc, increaseAcc)
-          }
+          val n                                       = observations.length
+          val (agentCounts, freeFlowTTs, observedTTs) = observations.unzip3
+          val acc                                     = c.accumulateObservations(freeFlowTTs, observedTTs, agentCounts, n)
 
           val result = CongestionObservationResult(
             observationType = MeanFromBatch,
             freeFlowValues = freeFlowTTs,
-            linkCounts = linkCounts,
+            linkCounts = agentCounts,
             observedValues = observedTTs,
-            freeFlowAccumulated = ffAcc,
-            observedAccumulated = observedAcc,
-            linkCountsAccumulated = linkCountsAcc,
-            increaseAccumulated = increaseAcc
+            freeFlowAccumulated = acc.freeFlowAccumulated,
+            observedAccumulated = acc.observedAccumulated,
+            linkCountsAccumulated = acc.agentCounts,
+            increaseAccumulated = acc.increaseAccumulated
           )
           Some(result)
         }

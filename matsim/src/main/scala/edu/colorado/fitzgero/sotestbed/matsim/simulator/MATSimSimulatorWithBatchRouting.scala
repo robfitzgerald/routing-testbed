@@ -144,6 +144,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
     // file system configuration
     val experimentPath: Path = config.experimentDirectory
     Files.createDirectories(experimentPath)
+    logger.info(s"experiment path: $experimentPath")
 
     // matsim configuration
     Logger.getLogger("org.matsim").setLevel(Level.toLevel(config.io.matsimLogLevel))
@@ -1024,6 +1025,8 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
     // attempt to grab the deltas. empty if we are restricted by this.minNetworkUpdateThreshold.
     // if we aren't, we get the deltas and the RoadNetworkDeltaHandler is reset.
     val updatedEdges: List[(EdgeId, Flow)] = roadNetworkDeltaHandler.getDeltas(currentTime)
+
+    // todo: get zeroes here too!
 
     updatedEdges
   }
