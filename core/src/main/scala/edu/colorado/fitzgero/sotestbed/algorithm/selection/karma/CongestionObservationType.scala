@@ -3,7 +3,6 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 import cats.effect.IO
 import cats.implicits._
 
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -14,18 +13,22 @@ sealed trait CongestionObservationType
 object CongestionObservationType {
 
   /**
-    * observes only the travel time increase at the request link location
-    * when calculating the observed congestion effect
+    * samples mean congestion increase across the entire road network
     */
-//  case object Disaggregate extends CongestionObservation
+  case object MeanFromNetwork extends CongestionObservationType
 
   /**
-    * takes the mean congestion effect across a batch of requests
+    * samples max congestion increase across the entire road network
+    */
+  case object MaxFromNetwork extends CongestionObservationType
+
+  /**
+    * takes the mean congestion increase across a batch of requests
     */
   case object MeanFromBatch extends CongestionObservationType
 
   /**
-    * takes the max congestion effect across a batch of requests
+    * takes the max congestion increase across a batch of requests
     */
   case object MaxFromBatch extends CongestionObservationType
 
@@ -41,64 +44,59 @@ object CongestionObservationType {
   // request batch link locations to a broader neighborhood? or,
   // get the in-links/out-links for each?
 
+  final case class LinkObservation(
+    flowCounts: Double = 0.0,
+    freeFlowTravelTime: Double = 0.0,
+    observedTravelTime: Double = 0.0
+  ) {
+    val increase: Double = (this.observedTravelTime - this.freeFlowTravelTime) / this.freeFlowTravelTime
+
+    def +(that: LinkObservation): LinkObservation = this.copy(
+      flowCounts = this.flowCounts + that.flowCounts,
+      freeFlowTravelTime = this.freeFlowTravelTime + that.freeFlowTravelTime,
+      observedTravelTime = this.observedTravelTime + that.observedTravelTime
+    )
+
+    def /(n: Int): LinkObservation = this.copy(
+      flowCounts = this.flowCounts / n,
+      freeFlowTravelTime = this.freeFlowTravelTime / n,
+      observedTravelTime = this.observedTravelTime / n
+    )
+  }
+
+  object LinkObservation {
+    def empty: LinkObservation = LinkObservation()
+  }
+
   final case class CongestionObservationResult(
     observationType: CongestionObservationType,
-    freeFlowValues: List[Double],
-    linkCounts: List[Double],
-    observedValues: List[Double],
     freeFlowAccumulated: Double,
     observedAccumulated: Double,
     linkCountsAccumulated: Double,
     increaseAccumulated: Double
   )
 
-  final case class AccumulatedObservation(
-    freeFlowAccumulated: Double,
-    observedAccumulated: Double,
-    agentCounts: Double,
-    increaseAccumulated: Double
-  )
-
   implicit class CongestionObservationExtensionMethods(c: CongestionObservationType) {
 
-    def accumulateObservations(
-      freeFlowTravelTimes: List[Double],
-      observedTravelTimes: List[Double],
-      agentCounts: List[Double],
-      n: Int
-    ): AccumulatedObservation = c match {
-      case MeanFromBatch =>
-        val ffAcc         = freeFlowTravelTimes.sum / n
-        val observedAcc   = observedTravelTimes.sum / n
-        val linkCountsAcc = agentCounts.sum / n
-        val increaseAcc   = (observedAcc - ffAcc) / ffAcc
-        AccumulatedObservation(ffAcc, observedAcc, linkCountsAcc, increaseAcc)
-      case MaxFromBatch =>
-        val ffAcc         = freeFlowTravelTimes.max
-        val observedAcc   = observedTravelTimes.max
-        val linkCountsAcc = agentCounts.max
-        val increaseAcc   = (observedAcc - ffAcc) / ffAcc
-        AccumulatedObservation(ffAcc, observedAcc, linkCountsAcc, increaseAcc)
-      case WithTransform(observation, transform) =>
-        val obs = observation.accumulateObservations(freeFlowTravelTimes, observedTravelTimes, agentCounts, n)
-        transform.applyTransform(obs)
+    def selectEdges(
+      roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+      agentEdges: List[EdgeId]
+    ): List[EdgeId] = c match {
+      case MeanFromNetwork               => roadNetwork.edgeIds
+      case MaxFromNetwork                => roadNetwork.edgeIds
+      case MeanFromBatch                 => agentEdges
+      case MaxFromBatch                  => agentEdges
+      case WithTransform(observation, _) => observation.selectEdges(roadNetwork, agentEdges)
     }
 
-    /**
-      * observes the network conditions at the locations listed
-      * @param roadNetwork the network state
-      * @param marginalCostFunction marginal cost/flow function
-      * @param edges locations in network to observe
-      * @return network conditions observations, or None if
-      */
-    def observeCongestion(
+    def sampleNetwork(
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
       marginalCostFunction: EdgeBPR => Flow => Cost,
-      edges: List[EdgeId]
-    ): IO[Option[CongestionObservationResult]] = {
+      edgesToSample: List[EdgeId]
+    ): IO[List[LinkObservation]] = {
 
       val edgeDataF =
-        edges.traverse { edgeId =>
+        edgesToSample.traverse { edgeId =>
           roadNetwork.edge(edgeId).flatMap {
             case None                => IO.raiseError(new Error(s"missing edge $edgeId"))
             case Some(edgeIdAndAttr) => IO.pure(edgeIdAndAttr)
@@ -111,30 +109,62 @@ object CongestionObservationType {
           val observed   = marginalCostFunction(edgeIdAndAttr.attribute)(Flow.Zero)
           val agentCount = edgeIdAndAttr.attribute.flow.value
           val ff         = edgeIdAndAttr.attribute.freeFlowCost
-          (agentCount, ff.value, observed.value)
+          LinkObservation(agentCount, ff.value, observed.value)
         }
-
-        if (observations.isEmpty) None
-        else {
-          val n                                       = observations.length
-          val (agentCounts, freeFlowTTs, observedTTs) = observations.unzip3
-          val acc                                     = c.accumulateObservations(freeFlowTTs, observedTTs, agentCounts, n)
-
-          val result = CongestionObservationResult(
-            observationType = MeanFromBatch,
-            freeFlowValues = freeFlowTTs,
-            linkCounts = agentCounts,
-            observedValues = observedTTs,
-            freeFlowAccumulated = acc.freeFlowAccumulated,
-            observedAccumulated = acc.observedAccumulated,
-            linkCountsAccumulated = acc.agentCounts,
-            increaseAccumulated = acc.increaseAccumulated
-          )
-          Some(result)
-        }
-
+        observations
       }
     }
-  }
 
+    def accumulate(obs: List[LinkObservation]): Option[LinkObservation] =
+      if (obs.isEmpty) None
+      else {
+        val acc = c match {
+          case MeanFromNetwork =>
+            val meanObs = obs.foldLeft(LinkObservation.empty) { _ + _ } / obs.length
+            Some(meanObs)
+          case MaxFromNetwork =>
+            val maxObs = obs.maxBy(_.increase)
+            Some(maxObs)
+          case MeanFromBatch =>
+            val meanObs = obs.foldLeft(LinkObservation.empty) { _ + _ } / obs.length
+            Some(meanObs)
+          case MaxFromBatch =>
+            val maxObs = obs.maxBy(_.increase)
+            Some(maxObs)
+          case WithTransform(observation, _) =>
+            observation.accumulate(obs)
+        }
+        acc
+      }
+
+    /**
+      * observes the network conditions at the locations listed
+      * @param roadNetwork the network state
+      * @param marginalCostFunction marginal cost/flow function
+      * @param agentEdges locations in network where driver agents are
+      * @return network conditions observations, or None if
+      */
+    def observeCongestion(
+      roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+      marginalCostFunction: EdgeBPR => Flow => Cost,
+      agentEdges: List[EdgeId]
+    ): IO[Option[CongestionObservationResult]] = {
+      val edges = c.selectEdges(roadNetwork, agentEdges)
+      val result = for {
+        sample <- c.sampleNetwork(roadNetwork, marginalCostFunction, edges)
+        accumulated = c.accumulate(sample)
+      } yield {
+        accumulated.map { acc =>
+          CongestionObservationResult(
+            observationType = c,
+            freeFlowAccumulated = acc.freeFlowTravelTime,
+            observedAccumulated = acc.observedTravelTime,
+            linkCountsAccumulated = acc.flowCounts,
+            increaseAccumulated = acc.increase
+          )
+        }
+      }
+      result
+    }
+  }
 }

@@ -1,6 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.CongestionObservationType.AccumulatedObservation
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.CongestionObservationType.CongestionObservationResult
 
 sealed trait CongestionTransformType
 
@@ -17,7 +17,7 @@ object CongestionTransformType {
     /**
       * applies a transform to the accumulated increased travel time value
       */
-    def applyTransform(obs: AccumulatedObservation): AccumulatedObservation =
+    def applyTransform(obs: CongestionObservationResult): CongestionObservationResult =
       t match {
         case TanHTransform(xFactor) =>
           val x                   = obs.increaseAccumulated * xFactor

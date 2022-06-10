@@ -23,9 +23,10 @@ case class KarmaSelectionAlgorithm(
   networkPolicy: NetworkPolicyConfig,
   congestionObservation: CongestionObservationType,
   bankConfig: BankConfig,
+  marginalCostFunction: EdgeBPR => Flow => Cost,
   seed: Option[Long],
   experimentDirectory: java.nio.file.Path
-) extends SelectionAlgorithm[IO, Coordinate, EdgeBPR]
+) extends SelectionAlgorithm
     with LazyLogging {
 
   val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve("karma_log.csv")
@@ -63,7 +64,7 @@ case class KarmaSelectionAlgorithm(
     bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: EdgeBPR => Flow => Cost
+    ignoreCostFunction: EdgeBPR => Flow => Cost
   ): IO[SelectionAlgorithm.SelectionAlgorithmResult] =
     IO.raiseError(new Error("cannot call selectRoutes before calling KarmaSelectionAlgorithm.build()"))
 
@@ -79,7 +80,7 @@ case class KarmaSelectionAlgorithm(
     networkPolicySignals: Map[String, NetworkPolicySignal],
     selectionLog: PrintWriter,
     networkLog: PrintWriter
-  ): SelectionAlgorithm[IO, Coordinate, EdgeBPR] = new SelectionAlgorithm[IO, Coordinate, EdgeBPR] {
+  ): SelectionAlgorithm = new SelectionAlgorithm {
 
     import KarmaSelectionAlgorithm._
 
@@ -90,10 +91,10 @@ case class KarmaSelectionAlgorithm(
       bank: Map[String, Karma],
       pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
       combineFlowsFunction: Iterable[Flow] => Flow,
-      marginalCostFunction: EdgeBPR => Flow => Cost
+      ignoreMeToo: EdgeBPR => Flow => Cost
     ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
-      val linkCostFn: EdgeBPR => Cost = (edge: EdgeBPR) => marginalCostFunction(edge)(Flow.Zero)
+      val costFunction = (e: EdgeBPR) => marginalCostFunction(e)(Flow.Zero)
       val collabCostFn =
         (paths: List[Path]) =>
           SelectionAlgorithm.evaluateCostOfSelection(
@@ -108,7 +109,7 @@ case class KarmaSelectionAlgorithm(
       // a path for each driver agent
       // get the costs associated with the trips
       val result = for {
-        bids   <- driverPolicy.applyDriverPolicy(alts.keys.toList, bank, activeAgentHistory, roadNetwork, linkCostFn)
+        bids   <- driverPolicy.applyDriverPolicy(alts.keys.toList, bank, activeAgentHistory, roadNetwork, costFunction)
         signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
         selections = signal.assign(bids, alts)
         paths      = selections.map { case (_, _, path) => path }

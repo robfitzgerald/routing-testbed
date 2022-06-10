@@ -5,6 +5,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork.EdgeTriplet
 
 trait RoadNetwork[F[_], V, E] {
   // topology
+  def vertexIds: List[VertexId]
+  def edgeIds: List[EdgeId]
   def vertex(vertexId: VertexId): F[Option[RoadNetwork.VertexIdAndAttribute[V]]]
   def vertices: F[List[RoadNetwork.VertexIdAndAttribute[V]]]
   def vertices(vertexIds: List[VertexId]): F[List[RoadNetwork.VertexIdAndAttribute[V]]]
@@ -28,10 +30,12 @@ trait RoadNetwork[F[_], V, E] {
 }
 
 object RoadNetwork {
+
   final case class VertexIdAndAttribute[V](
     vertexId: VertexId,
     attribute: V
   )
+
   final case class EdgeIdAndAttribute[E](
     edgeId: EdgeId,
     attribute: E

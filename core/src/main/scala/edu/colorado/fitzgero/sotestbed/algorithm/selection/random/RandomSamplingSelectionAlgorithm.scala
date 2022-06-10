@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.random
 import scala.util.Random
 
 import cats.Monad
+import cats.effect.IO
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
@@ -11,14 +12,16 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{S
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
-class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
+class RandomSamplingSelectionAlgorithm(
   seed: Long,
   exhaustiveSearchSampleLimit: Int,
   terminationFunction: SelectionState => Boolean,
   selectionAcceptanceFunction: SelectionAlgorithm.SelectionAlgorithmResult => Boolean
-) extends SelectionAlgorithm[F, V, E]
+) extends SelectionAlgorithm
     with LazyLogging {
 
   import SelectionAlgorithm._
@@ -28,19 +31,19 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
   def selectRoutes(
     batchId: String,
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[F, V, E],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma],
-    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
-  ): F[SelectionAlgorithm.SelectionAlgorithmResult] = {
+    marginalCostFunction: EdgeBPR => Flow => Cost
+  ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
     logger.debug(s"selectRoutes called with ${alts.size} requests")
 
     val startTime: Long = System.currentTimeMillis
 
     if (alts.isEmpty) {
-      Monad[F].pure {
+      IO.pure {
         SelectionAlgorithm.SelectionAlgorithmResult()
       }
     } else if (alts.toList.lengthCompare(1) == 0 && alts.values.head.nonEmpty) {
@@ -82,12 +85,12 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
             logger.info(
               f"COST_EST: BEST ${result.estimatedCost}, SELFISH ${result.selfishCost}, DIFF ${result.estimatedCost - result.selfishCost} AVG_DIFF ${(result.estimatedCost - result.selfishCost).value / alts.size}%.2f"
             )
-            Monad[F].pure {
+            IO.pure {
               result
             }
           } else {
             logger.info(s"dismissing result due to selection acceptance policy")
-            Monad[F].pure {
+            IO.pure {
               SelectionAlgorithm.SelectionAlgorithmResult()
             }
           }
@@ -101,7 +104,7 @@ class RandomSamplingSelectionAlgorithm[F[_]: Monad, V, E](
       val selfishAssignmentSelection: List[Int] = alts.toList.map { _ => 0 }
 
       // evaluate selfish assignment cost
-      val selfishAssignmentCostF: F[SelectionCost] =
+      val selfishAssignmentCostF: IO[SelectionCost] =
         SelectionAlgorithm.evaluateCostOfSelection(
           alts.values.flatMap { _.headOption }.toList,
           roadNetwork,

@@ -10,11 +10,12 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 
-final case class SelectionRunner[V](
-  selectionAlgorithm: SelectionAlgorithm[IO, V, EdgeBPR],
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, V, EdgeBPR],
+final case class SelectionRunner(
+  selectionAlgorithm: SelectionAlgorithm,
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   minimumAverageImprovement: Cost
@@ -30,7 +31,7 @@ final case class SelectionRunner[V](
     */
   def run(
     req: SelectionRunner.SelectionRunnerRequest,
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma]
   ): IO[Option[(SelectionRunnerResult, Map[String, Karma])]] = {
 

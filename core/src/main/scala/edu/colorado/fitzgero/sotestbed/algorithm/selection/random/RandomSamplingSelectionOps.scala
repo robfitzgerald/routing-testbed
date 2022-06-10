@@ -4,10 +4,13 @@ import scala.util.Random
 
 import cats.implicits._
 import cats.Monad
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 object RandomSamplingSelectionOps {
@@ -27,19 +30,19 @@ object RandomSamplingSelectionOps {
     * @tparam E edge attribute type
     * @return
     */
-  def performRandomSampling[F[_]: Monad, V, E](
+  def performRandomSampling(
     state: SelectionAlgorithm.SelectionState,
     indexedAlts: Iterable[Vector[Path]],
-    roadNetwork: RoadNetwork[F, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost,
+    marginalCostFunction: EdgeBPR => Flow => Cost,
     terminationFunction: SelectionState => Boolean,
     random: Random
-  ): F[SelectionAlgorithm.SelectionState] = {
+  ): IO[SelectionAlgorithm.SelectionState] = {
 
     if (indexedAlts.size <= 1) {
-      Monad[F].pure {
+      IO.pure {
         state
       }
     } else {
@@ -56,7 +59,7 @@ object RandomSamplingSelectionOps {
             .unzip
 
         // get cost of this selection
-        val costF: F[SelectionCost] = SelectionAlgorithm.evaluateCostOfSelection(
+        val costF: IO[SelectionCost] = SelectionAlgorithm.evaluateCostOfSelection(
           thisRandomSelectionPaths,
           roadNetwork,
           pathToMarginalFlowsFunction,

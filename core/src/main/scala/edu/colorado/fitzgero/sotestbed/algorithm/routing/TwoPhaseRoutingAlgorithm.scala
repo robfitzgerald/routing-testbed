@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
 import cats.Monad
+import cats.effect.IO
 import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPAlgorithm
@@ -8,6 +9,8 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
 /**
@@ -20,33 +23,30 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
   * @param timeLimit
   * @param limitAltsRuntime
   * @param limitSelectionRuntime
-  * @tparam F
-  * @tparam V
-  * @tparam E
   * @deprecated replaced with ksp filter version
   */
-class TwoPhaseRoutingAlgorithm[F[_]: Monad, V, E](
-  altPathsAlgorithm: KSPAlgorithm[F, V, E],
-  selectionAlgorithm: SelectionAlgorithm[F, V, E],
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[F, V, E],
+class TwoPhaseRoutingAlgorithm(
+  altPathsAlgorithm: KSPAlgorithm,
+  selectionAlgorithm: SelectionAlgorithm,
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
-  marginalCostFunction: E => Flow => Cost,
+  marginalCostFunction: EdgeBPR => Flow => Cost,
   timeLimit: RunTime = RunTime(31536000), // one year.
   limitAltsRuntime: Boolean = true,
   limitSelectionRuntime: Boolean = true
-) extends RoutingAlgorithm[F, V, E] {
+) extends RoutingAlgorithm[IO, Coordinate, EdgeBPR] {
 
   final override def route(
     reqs: List[Request],
     activeAgentHistory: ActiveAgentHistory,
-    roadNetwork: RoadNetwork[F, V, E]
-  ): F[RoutingAlgorithm.Result] = {
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[RoutingAlgorithm.Result] = {
 
-    val startTime: RunTime      = RunTime(System.currentTimeMillis)
-    val costFunction: E => Cost = e => marginalCostFunction(e)(Flow.Zero)
+    val startTime: RunTime            = RunTime(System.currentTimeMillis)
+    val costFunction: EdgeBPR => Cost = e => marginalCostFunction(e)(Flow.Zero)
 
     if (reqs.isEmpty) {
-      Monad[F].pure(RoutingAlgorithm.Result())
+      IO.pure(RoutingAlgorithm.Result())
     } else {
       for {
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)

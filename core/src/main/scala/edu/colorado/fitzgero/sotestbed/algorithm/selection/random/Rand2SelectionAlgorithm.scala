@@ -24,7 +24,7 @@ class Rand2SelectionAlgorithm(
   exhaustiveSearchSampleLimit: Int,
   computeBudgetFunctionConfig: SelectionComputeBudgetFunctionConfig,
   computeBudgetTestRate: Int
-) extends SelectionAlgorithm[IO, Coordinate, EdgeBPR]
+) extends SelectionAlgorithm
     with LazyLogging {
 
   import SelectionAlgorithm._
@@ -69,7 +69,7 @@ class Rand2SelectionAlgorithm(
     } else if (SelectionAlgorithm.numCombinationsLessThanThreshold(alts, exhaustiveSearchSampleLimit)) {
       // problem small enough for an exhaustive search
       SelectionAlgorithm
-        .performExhaustiveSearch[IO, Coordinate, EdgeBPR](
+        .performExhaustiveSearch(
           alts,
           roadNetwork,
           pathToMarginalFlowsFunction,

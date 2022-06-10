@@ -123,7 +123,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
             val soAlgorithmOrError = for {
               grid <- so.grid.build()
             } yield {
-              val ksp: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR] = {
+              val ksp: AltPathsAlgorithmRunner = {
                 AltPathsAlgorithmRunner(
                   altPathsAlgorithm = so.kspAlgorithm.build(),
                   kspFilterFunction = so.kspFilterFunction.build(),
@@ -133,10 +133,10 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
                   seed = seed
                 )
               }
-              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] =
+              val selectionAlgorithm: SelectionAlgorithm =
                 so.selectionAlgorithm.build(config.experimentLoggingDirectory)
 
-              val sel: SelectionRunner[Coordinate] =
+              val sel: SelectionRunner =
                 SelectionRunner(
                   selectionAlgorithm = selectionAlgorithm,
                   pathToMarginalFlowsFunction = so.pathToMarginalFlowsFunction.build(),

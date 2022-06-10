@@ -34,7 +34,7 @@ class MCTS2SelectionAlgorithm(
   exhaustiveSearchSampleLimit: Int,
   computeBudgetFunctionConfig: SelectionComputeBudgetFunctionConfig,
   computeBudgetTestRate: Int
-) extends SelectionAlgorithm[IO, Coordinate, EdgeBPR]
+) extends SelectionAlgorithm
     with LazyLogging {
 
   val localRandom: Random = new Random(seed)

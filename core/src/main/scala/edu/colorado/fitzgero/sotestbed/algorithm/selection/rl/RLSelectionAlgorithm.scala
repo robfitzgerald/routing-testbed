@@ -26,7 +26,7 @@ final class RLSelectionAlgorithm(
   val port: Int,
   val env: Env,
   val episodeId: EpisodeId
-) extends SelectionAlgorithm[IO, Coordinate, EdgeBPR]
+) extends SelectionAlgorithm
     with LazyLogging {
 
   /**

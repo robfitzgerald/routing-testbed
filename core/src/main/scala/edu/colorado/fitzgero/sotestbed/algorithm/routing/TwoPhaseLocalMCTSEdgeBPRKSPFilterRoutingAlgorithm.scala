@@ -14,6 +14,7 @@ import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 
 /**
   * as the underlying MCTS library enforces/misuses IO, this class accomodates for that
@@ -30,12 +31,11 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
   * @param timeLimit
   * @param limitAltsRuntime
   * @param limitSelectionRuntime
-  * @tparam V vertex type
   */
-class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
-  altPathsAlgorithm: KSPAlgorithm[IO, V, EdgeBPR],
-  selectionAlgorithm: SelectionAlgorithm[IO, V, EdgeBPR],
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, V, EdgeBPR],
+class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm(
+  altPathsAlgorithm: KSPAlgorithm,
+  selectionAlgorithm: SelectionAlgorithm,
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   kspFilterFunction: KSPFilterFunction,
@@ -46,7 +46,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
   timeLimit: RunTime = RunTime(31536000), // one year.
   limitAltsRuntime: Boolean = true,
   limitSelectionRuntime: Boolean = true
-) extends RoutingAlgorithm[IO, V, EdgeBPR]
+) extends RoutingAlgorithm[IO, Coordinate, EdgeBPR]
     with LazyLogging {
 
   val rng: Random = new Random(seed)
@@ -54,7 +54,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm[V](
   final override def route(
     reqs: List[Request],
     activeAgentHistory: ActiveAgentHistory,
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR]
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
   ): IO[RoutingAlgorithm.Result] = {
 
     if (reqs.size < minBatchSize) {

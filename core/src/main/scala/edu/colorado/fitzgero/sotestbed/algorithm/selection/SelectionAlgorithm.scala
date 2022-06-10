@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection
 import scala.annotation.tailrec
 
 import cats.Monad
+import cats.effect.IO
 import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
@@ -10,9 +11,11 @@ import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost._
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.util.MultiSetIterator
 
-abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
+abstract class SelectionAlgorithm {
 
   // invariant: first path for each agent should be the shortest path
   // invariant: at least one path exists for each request
@@ -20,12 +23,12 @@ abstract class SelectionAlgorithm[F[_]: Monad, V, E] {
   def selectRoutes(
     batchId: String,
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[F, V, E],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma],
-    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
-  ): F[SelectionAlgorithm.SelectionAlgorithmResult]
+    marginalCostFunction: EdgeBPR => Flow => Cost
+  ): IO[SelectionAlgorithm.SelectionAlgorithmResult]
 }
 
 // hey, here's a few ideas for a SelectionAlgorithm:
@@ -83,30 +86,27 @@ object SelectionAlgorithm {
     * @param pathToMarginalFlowsFunction
     * @param combineFlowsFunction
     * @param marginalCostFunction
-    * @tparam F
-    * @tparam V
-    * @tparam E
     * @return
     */
-  def evaluateCostOfSelection[F[_]: Monad, V, E](
+  def evaluateCostOfSelection(
     paths: List[Path],
-    roadNetwork: RoadNetwork[F, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
-  ): F[SelectionCost] = {
+    marginalCostFunction: EdgeBPR => Flow => Cost
+  ): IO[SelectionCost] = {
     // set up the list of edges to account for, and a lookup table of edge attributes
     val allSelectedEdgeIds
       : List[EdgeId] = paths.flatten.map { _.edgeId } // at this point, not yet distinct! we need to count each occurrence still
-    val edgeIdsWithEdgeValues: F[Map[EdgeId, E]] = roadNetwork.edges(allSelectedEdgeIds).map {
+    val edgeIdsWithEdgeValues: IO[Map[EdgeId, EdgeBPR]] = roadNetwork.edges(allSelectedEdgeIds).map {
       _.map { tup => (tup.edgeId, tup.attribute) }.toMap
     }
 
     // use the provided function to convert the provided paths to their flow contributions
-    val flowsByEdgeId: F[List[(EdgeId, Flow)]] =
+    val flowsByEdgeId: IO[List[(EdgeId, Flow)]] =
       paths.traverse(path => pathToMarginalFlowsFunction(roadNetwork, path)).map { _.flatten }
 
-    val result: F[SelectionCost] = for {
+    val result: IO[SelectionCost] = for {
       edgesMap <- edgeIdsWithEdgeValues
       costs <- flowsByEdgeId.map { fs =>
         marginalCostForEdgesWithFlows(fs, edgesMap, combineFlowsFunction, marginalCostFunction)
@@ -143,14 +143,13 @@ object SelectionAlgorithm {
     * @param edgeLookup
     * @param combineFlowsFunction
     * @param marginalCostFunction
-    * @tparam E
     * @return
     */
-  def marginalCostForEdgesWithFlows[E](
+  def marginalCostForEdgesWithFlows(
     edgeIdsWithFlows: List[(EdgeId, Flow)],
-    edgeLookup: Map[EdgeId, E],
+    edgeLookup: Map[EdgeId, EdgeBPR],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
+    marginalCostFunction: EdgeBPR => Flow => Cost
   ): Map[EdgeId, Cost] = {
 
     val result = for {
@@ -211,19 +210,16 @@ object SelectionAlgorithm {
     * @param pathToMarginalFlowsFunction
     * @param combineFlowsFunction
     * @param marginalCostFunction
-    * @tparam F
-    * @tparam V
-    * @tparam E
     * @return the best selection and the cost of the true shortest paths combination
     */
-  def performExhaustiveSearch[F[_]: Monad, V, E](
+  def performExhaustiveSearch(
     paths: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[F, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
-  ): F[SelectionAlgorithmResult] = {
-    if (paths.isEmpty) Monad[F].pure { SelectionAlgorithmResult() }
+    marginalCostFunction: EdgeBPR => Flow => Cost
+  ): IO[SelectionAlgorithmResult] = {
+    if (paths.isEmpty) IO.pure { SelectionAlgorithmResult() }
     else {
       val startTime: Long = System.currentTimeMillis
 
@@ -253,7 +249,7 @@ object SelectionAlgorithm {
         )
 
         // iterate through all combinations
-        val finalStateF: F[SelectionState] = initialSelfishSelection.iterateUntilM { state: SelectionState =>
+        val finalStateF: IO[SelectionState] = initialSelfishSelection.iterateUntilM { state: SelectionState =>
           val thisPaths: List[Path]   = iterator.next().toList
           val thisIndices: Array[Int] = iterator.pos
           evaluateCostOfSelection(

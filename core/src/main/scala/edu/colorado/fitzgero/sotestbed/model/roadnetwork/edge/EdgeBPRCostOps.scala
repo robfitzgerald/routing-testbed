@@ -3,6 +3,13 @@ package edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 
 object EdgeBPRCostOps {
+
+  def capacityObservation: EdgeBPR => Flow => Cost = {
+    edge: EdgeBPR =>
+      marginalFlow: Flow =>
+    Cost((edge.flow.value + marginalFlow.value)  / edge.capacity.value)
+  }
+
   // based on default values from literature
   val BPRCostFunctionWithBookCoefficients: EdgeBPR => Cost = costFunction(0.15, 4.0)
 

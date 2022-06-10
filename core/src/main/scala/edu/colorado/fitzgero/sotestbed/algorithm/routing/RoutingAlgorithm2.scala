@@ -1,38 +1,27 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
-import scala.util.Random
-
-import cats.Monad
-import cats.implicits._
 import cats.effect.IO
-
-import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
-import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime, SimTime}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.{
   AltPathsAlgorithmResult,
   AltsResultData
 }
+import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.{
   SelectionRunnerRequest,
   SelectionRunnerResult
 }
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{
-  CongestionObservationType,
-  Karma,
-  KarmaSelectionAlgorithm,
-  NetworkPolicySignal
-}
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{Karma, KarmaSelectionAlgorithm}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime, SimTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 
 /**
   *
@@ -44,10 +33,10 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
   *                     the alt paths algorithm "k" and the batch filter function "minSearchSpaceSize" parameters
   */
 case class RoutingAlgorithm2(
-  altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR],
+  altPathsAlgorithmRunner: AltPathsAlgorithmRunner,
   batchingFunction: BatchingFunction,
   batchFilterFunction: BatchFilterFunction,
-  selectionRunner: SelectionRunner[Coordinate],
+  selectionRunner: SelectionRunner,
   minBatchSize: Int
 ) extends LazyLogging {
 
@@ -168,10 +157,10 @@ object RoutingAlgorithm2 {
     * @return the Routing Algorithm, v2
     */
   def apply(
-    altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR],
+    altPathsAlgorithmRunner: AltPathsAlgorithmRunner,
     batchingFunction: BatchingFunction,
     batchFilterFunction: BatchFilterFunction,
-    selectionRunner: SelectionRunner[Coordinate],
+    selectionRunner: SelectionRunner,
     k: Int,
     minSearchSpaceSize: Int
   ): RoutingAlgorithm2 = {
@@ -197,12 +186,12 @@ object RoutingAlgorithm2 {
     * @return
     */
   def instantiateSelectionAlgorithm(
-    selectionRunner: SelectionRunner[Coordinate],
+    selectionRunner: SelectionRunner,
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     selectionRunnerRequest: List[SelectionRunnerRequest],
     batchingManager: BatchingManager,
     bank: Map[String, Karma]
-  ): IO[SelectionRunner[Coordinate]] = {
+  ): IO[SelectionRunner] = {
     selectionRunner.selectionAlgorithm match {
       case k: KarmaSelectionAlgorithm =>
         // special handling for Karma-based selection
@@ -264,7 +253,7 @@ object RoutingAlgorithm2 {
   def runSelectionWithBank(
     requests: List[SelectionRunnerRequest],
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-    runner: SelectionRunner[Coordinate],
+    runner: SelectionRunner,
     bank: Map[String, Karma]
   ): IO[(List[Option[SelectionRunnerResult]], Map[String, Karma])] = {
     val initial =

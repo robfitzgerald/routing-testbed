@@ -27,6 +27,10 @@ case class LocalAdjacencyListFlowNetwork(
   revAdjList: Map[VertexId, Map[EdgeId, VertexId]]
 ) extends RoadNetwork[IO, Coordinate, EdgeBPR] {
 
+  def vertexIds: List[VertexId] = verticesMap.keys.toList
+
+  def edgeIds: List[EdgeId] = edgesMap.keys.toList
+
   def vertex(vertexId: VertexId): IO[Option[RoadNetwork.VertexIdAndAttribute[Coordinate]]] = IO {
     verticesMap.get(vertexId).map { attr => RoadNetwork.VertexIdAndAttribute(vertexId, attr) }
   }
