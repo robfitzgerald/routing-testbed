@@ -22,13 +22,13 @@ object KSPAlgorithmConfig {
     theta: Cost,
     minBatchSize: Int,
     kspTerminationFunction: KSPTerminationFunctionConfig,
-    marginalCostFunctionConfig: MarginalCostFunctionConfig
+    marginalCostFunction: MarginalCostFunctionConfig
   ) extends KSPAlgorithmConfig {
 
     require(Cost.Zero <= theta || theta <= Cost(1), "KSPAlgorithm.theta must be between zero and one")
 
     override def build(): altpaths.KSPAlgorithm = {
-      val mcf = marginalCostFunctionConfig.build()
+      val mcf = marginalCostFunction.build()
       val cf  = (e: EdgeBPR) => mcf(e)(Flow.Zero)
 
       new kSPwLO_SVP_Sync(

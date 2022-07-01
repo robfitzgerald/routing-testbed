@@ -36,8 +36,9 @@ object DriverPolicy {
     *  t_c: current (delayed) trip time estimate
     *  k_t: agent's current karma balance (at time t)
     *
+    * @param maxBid maximum allowed bid
     */
-  case object DelayProportional extends DriverPolicy
+  case class DelayProportional(maxBid: Option[Karma]) extends DriverPolicy
 
   /**
     * bids karma proportional to delay using some unit karma value
@@ -49,8 +50,9 @@ object DriverPolicy {
     *  k: the unitBidValue which is the amount of karma bid for every
     *     100% increase to travel time
     * @param unit unit bid value for every 100% increase in travel time
+    * @param maxBid maximum allowed bid
     */
-  case class DelayWithKarmaMapping(unit: Karma) extends DriverPolicy
+  case class DelayWithKarmaMapping(unit: Karma, maxBid: Option[Karma]) extends DriverPolicy
 
   case class InterpLookupTable(table: (Karma, Urgency) => Karma) extends DriverPolicy
 
@@ -100,7 +102,7 @@ object DriverPolicy {
     def header: String = policy match {
       case _: Fixed                 => "bid"
       case _: DelayWithKarmaMapping => "bid"
-      case DelayProportional        => "bid"
+      case _: DelayProportional     => "bid"
       case _: InterpLookupTable     => "bid"
     }
 
@@ -124,7 +126,7 @@ object DriverPolicy {
             IO.fromEither(inner)
           }
 
-        case DelayProportional =>
+        case DelayProportional(maxBid) =>
           requests.traverse { req =>
             val bidIO = for {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
@@ -140,14 +142,20 @@ object DriverPolicy {
               val delayProportion =
                 if (oldestTimeD == 0.0) 0.0
                 else math.min(1.0, math.max(0.0, (latestTimeD - oldestTimeD) / oldestTimeD))
-              val karmaToBid = delayProportion * karmaBalance.value
-              Bid(req, Karma(karmaToBid.toLong))
+
+              val upperBidValue = maxBid match {
+                case Some(mb) => math.min(mb.value, karmaBalance.value)
+                case None     => karmaBalance.value
+              }
+              val karmaBidTarget = delayProportion * upperBidValue
+
+              Bid(req, Karma(karmaBidTarget.toLong))
             }
 
             bidIO
           }
 
-        case delayRelative: DelayWithKarmaMapping =>
+        case DelayWithKarmaMapping(unit, maxBid) =>
           requests.traverse { req =>
             val bidIO = for {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
@@ -163,8 +171,14 @@ object DriverPolicy {
               val delayProportion =
                 if (oldestTimeD == 0.0) 0.0
                 else math.min(1.0, math.max(0.0, (latestTimeD - oldestTimeD) / oldestTimeD))
-              val karmaToBid = math.min(delayProportion * delayRelative.unit.value, karmaBalance.value)
-              Bid(req, Karma(karmaToBid.toLong))
+
+              val upperBidValue = maxBid match {
+                case Some(mb) => math.min(mb.value, karmaBalance.value)
+                case None     => karmaBalance.value
+              }
+              val karmaBid = math.min(delayProportion * unit.value, upperBidValue)
+
+              Bid(req, Karma(karmaBid.toLong))
             }
 
             bidIO

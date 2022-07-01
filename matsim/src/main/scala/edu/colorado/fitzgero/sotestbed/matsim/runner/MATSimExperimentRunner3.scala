@@ -11,7 +11,11 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, Rout
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.RLSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
-import edu.colorado.fitzgero.sotestbed.config.{RoutingReportConfig, SelectionAlgorithmConfig}
+import edu.colorado.fitzgero.sotestbed.config.{
+  FreeFlowCostFunctionConfig,
+  RoutingReportConfig,
+  SelectionAlgorithmConfig
+}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment2
@@ -66,7 +70,8 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       Files.createDirectories(config.experimentDirectory)
 
       // build some cost functions
-      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) => edgeBPR.freeFlowCost
+      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) =>
+        FreeFlowCostFunctionConfig.TravelTimeBased.getFreeFlow(edgeBPR)
       val costFunction: EdgeBPR => Cost = {
         val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
         edgeBPR: EdgeBPR => marginalCostFn(edgeBPR)(Flow.Zero)
@@ -77,6 +82,10 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         config.io.routingReportConfig match {
           case RoutingReportConfig.Inactive =>
             RoutingReportConfig.Inactive.build()
+          case RoutingReportConfig.ReplanningCoordinate =>
+            RoutingReportConfig.ReplanningCoordinate.build(config.experimentLoggingDirectory)
+          case RoutingReportConfig.CoreReporting =>
+            RoutingReportConfig.CoreReporting.build(config.experimentLoggingDirectory, costFunction)
           case RoutingReportConfig.AggregateData =>
             RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, costFunction)
           case RoutingReportConfig.Batch =>

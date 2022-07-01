@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.config
 
 import java.io.File
 
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{DriverPolicy, Karma}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 
 sealed trait DriverPolicyConfig
 
@@ -24,8 +24,9 @@ object DriverPolicyConfig {
     *  k: the unitBidValue which is the amount of karma bid for every
     *     100% increase to travel time
     * @param unit unit bid value for every 100% increase in travel time
+    * @param maxBid maximum allowed bid
     */
-  case class DelayWithKarmaMapping(unit: Karma) extends DriverPolicyConfig
+  case class DelayWithKarmaMapping(unit: Karma, maxBid: Option[Karma]) extends DriverPolicyConfig
 
   /**
     * bids karma proportional to delay, for experiments where one Karma
@@ -37,8 +38,10 @@ object DriverPolicyConfig {
     *  t_o: original trip time estimate
     *  t_c: current (delayed) trip time estimate
     *  k_t: agent's current karma balance (at time t)
+    *
+    * @param maxBid maximum allowed bid
     */
-  case object DelayProportional extends DriverPolicyConfig
+  case class DelayProportional(maxBid: Option[Karma]) extends DriverPolicyConfig
 
   /**
     * reads a lookup table from file
@@ -55,10 +58,10 @@ object DriverPolicyConfig {
 
     def buildDriverPolicy: Either[Error, DriverPolicy] = {
       driverPolicyConfig match {
-        case Fixed(bid)                  => Right(DriverPolicy.Fixed(bid))
-        case DelayWithKarmaMapping(unit) => Right(DriverPolicy.DelayWithKarmaMapping(unit))
-        case DelayProportional           => Right(DriverPolicy.DelayProportional)
-        case _: DiscreteLookupTable      => Left(new NotImplementedError("see DriverPolicy.scala file"))
+        case Fixed(bid)               => Right(DriverPolicy.Fixed(bid))
+        case p: DelayWithKarmaMapping => Right(DriverPolicy.DelayWithKarmaMapping(p.unit, p.maxBid))
+        case p: DelayProportional     => Right(DriverPolicy.DelayProportional(p.maxBid))
+        case _: DiscreteLookupTable   => Left(new NotImplementedError("see DriverPolicy.scala file"))
       }
     }
   }

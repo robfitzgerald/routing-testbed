@@ -144,17 +144,27 @@ object SelectionAlgorithmConfig {
     driverPolicy: DriverPolicyConfig,
     networkPolicy: NetworkPolicyConfig,
     congestionObservation: CongestionObservationType,
-    marginalCostFunctionConfig: MarginalCostFunctionConfig,
+    freeFlowCostFunction: FreeFlowCostFunctionConfig,
+    marginalCostFunction: MarginalCostFunctionConfig,
     bankConfig: BankConfig,
     seed: Option[Long]
   ) extends SelectionAlgorithmConfig {
 
     def build(outDir: Path): SelectionAlgorithm = {
-      val mcf = marginalCostFunctionConfig.build()
+      val mcf = marginalCostFunction.build()
       driverPolicy.buildDriverPolicy match {
         case Left(value) => throw value
         case Right(dp) =>
-          KarmaSelectionAlgorithm(dp, networkPolicy, congestionObservation, bankConfig, mcf, seed, outDir)
+          KarmaSelectionAlgorithm(
+            dp,
+            networkPolicy,
+            congestionObservation,
+            bankConfig,
+            freeFlowCostFunction,
+            mcf,
+            seed,
+            outDir
+          )
       }
     }
   }

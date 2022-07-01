@@ -49,7 +49,8 @@ class TrueShortestSelectionAlgorithm extends SelectionAlgorithm {
       val result = SelectionAlgorithm.SelectionAlgorithmResult(
         selectedRoutes = responses,
         estimatedCost = totalCost,
-        selfishCost = totalCost
+        selfishCost = totalCost,
+        updatedBank = bank
       )
 
       IO { result }

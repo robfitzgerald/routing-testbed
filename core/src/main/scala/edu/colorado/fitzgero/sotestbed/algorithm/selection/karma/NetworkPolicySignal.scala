@@ -18,7 +18,9 @@ object NetworkPolicySignal {
     * applied to some percentage of the drivers
     * @param thresholdPercent the percentage of drivers to assign a random so route
     */
-  case class ThresholdSampling(thresholdPercent: Double, random: Random) extends NetworkPolicySignal
+  case class ThresholdSampling(thresholdPercent: Double, random: Random) extends NetworkPolicySignal {
+    override def toString: String = f"ThresholdSampling(percent=${thresholdPercent * 100}%.2f%%)"
+  }
 
   object ThresholdSampling {
 
@@ -110,6 +112,11 @@ object NetworkPolicySignal {
 
           case UserOptimal =>
             pickPaths(bids, alts, uoPathSelection)
+
+//            def weighted_sample_without_replacement(population, weights, k, rng=random):
+          //    v = [rng.random() ** (1 / w) for w in weights]
+          //    order = sorted(range(len(population)), key=lambda i: v[i])
+          //    return [population[i] for i in order[-k:]]
 
           case sop: ThresholdSampling =>
             val bidsLowestToHighest = bids.sortBy { _.value }

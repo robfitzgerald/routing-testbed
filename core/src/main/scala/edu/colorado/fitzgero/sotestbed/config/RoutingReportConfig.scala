@@ -59,6 +59,12 @@ object RoutingReportConfig {
     }
   }
 
+  case object ReplanningCoordinate extends RoutingReportConfig {
+
+    def build(outputDirectory: Path): ReplanningCoordinateReporter = ReplanningCoordinateReporter(outputDirectory)
+
+  }
+
   final case object AllAggregate extends RoutingReportConfig with LazyLogging {
 
     def build(
@@ -94,6 +100,38 @@ object RoutingReportConfig {
     }
   }
 
+  case object CoreReporting extends RoutingReportConfig with LazyLogging {
+
+    def build(
+      outputDirectory: Path,
+      costFunction: EdgeBPR => Cost
+    ): RoutingReports[IO, Coordinate, EdgeBPR] = new RoutingReports[IO, Coordinate, EdgeBPR] {
+
+      val reporters: List[RoutingReports[IO, Coordinate, EdgeBPR]] = List(
+        ReplanningCoordinate.build(outputDirectory),
+        AggregateData.build(outputDirectory, costFunction),
+        Batch.build(outputDirectory)
+      )
+
+      def updateReports(
+        routingResult: List[(String, RoutingAlgorithm.Result)],
+        roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+        currentTime: SimTime
+      ): IO[Unit] = IO {
+        logger.debug(s"begin updating reports at time $currentTime")
+        for {
+          reporter <- reporters
+        } {
+          reporter.updateReports(routingResult, roadNetwork, currentTime).unsafeRunSync()
+          logger.debug(s"update reporter ${reporter.getClass.getName}")
+        }
+        logger.debug(s"finished updating reports at time $currentTime")
+      }
+
+      def close(): Unit = for { reporter <- reporters } { reporter.close() }
+    }
+  }
+
   final case object AllReporting extends RoutingReportConfig with LazyLogging {
 
     def build(
@@ -106,6 +144,7 @@ object RoutingReportConfig {
 
       val reporters: List[RoutingReports[IO, Coordinate, EdgeBPR]] = List(
         CompletePath.build(outputDirectory, costFunction),
+        ReplanningCoordinate.build(outputDirectory),
         AggregateData.build(outputDirectory, costFunction),
         Batch.build(outputDirectory),
         Heatmap.build(outputDirectory, logCycle, h3Resolution, network, costFunction)

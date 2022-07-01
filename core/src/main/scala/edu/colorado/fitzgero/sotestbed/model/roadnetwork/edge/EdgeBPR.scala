@@ -24,6 +24,5 @@ case class EdgeBPR(
   vehicleCount: Flow = Flow.Zero
 ) {
   lazy val freeFlowTravelTime: TravelTimeSeconds = Meters.toTravelTime(distance, freeFlowSpeed)
-  def freeFlowCost: Cost                         = Cost(freeFlowTravelTime.value)
   override def toString: String                  = s"EdgeBPR(flow=$flow)"
 }

@@ -202,7 +202,8 @@ object RoutingAlgorithm2 {
               val batchEdgeIds = batch.keys.toList.map { _.location }.distinct
               val observationIO = k.congestionObservation.observeCongestion(
                 roadNetwork,
-                selectionRunner.marginalCostFunction,
+                k.freeFlowCostFunction,
+                k.marginalCostFunction,
                 batchEdgeIds
               )
               observationIO.map {

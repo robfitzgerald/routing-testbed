@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 import cats.effect.IO
 import cats.implicits._
 
+import edu.colorado.fitzgero.sotestbed.config.FreeFlowCostFunctionConfig
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -46,21 +47,24 @@ object CongestionObservationType {
 
   final case class LinkObservation(
     flowCounts: Double = 0.0,
-    freeFlowTravelTime: Double = 0.0,
-    observedTravelTime: Double = 0.0
+    freeFlowCongestion: Double = 0.0,
+    observedCongestion: Double = 0.0
   ) {
-    val increase: Double = (this.observedTravelTime - this.freeFlowTravelTime) / this.freeFlowTravelTime
+
+    val increase: Double =
+      if (this.freeFlowCongestion == 0.0) this.observedCongestion
+      else (this.observedCongestion - this.freeFlowCongestion) / this.freeFlowCongestion
 
     def +(that: LinkObservation): LinkObservation = this.copy(
       flowCounts = this.flowCounts + that.flowCounts,
-      freeFlowTravelTime = this.freeFlowTravelTime + that.freeFlowTravelTime,
-      observedTravelTime = this.observedTravelTime + that.observedTravelTime
+      freeFlowCongestion = this.freeFlowCongestion + that.freeFlowCongestion,
+      observedCongestion = this.observedCongestion + that.observedCongestion
     )
 
     def /(n: Int): LinkObservation = this.copy(
       flowCounts = this.flowCounts / n,
-      freeFlowTravelTime = this.freeFlowTravelTime / n,
-      observedTravelTime = this.observedTravelTime / n
+      freeFlowCongestion = this.freeFlowCongestion / n,
+      observedCongestion = this.observedCongestion / n
     )
   }
 
@@ -92,7 +96,8 @@ object CongestionObservationType {
     def sampleNetwork(
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
       marginalCostFunction: EdgeBPR => Flow => Cost,
-      edgesToSample: List[EdgeId]
+      edgesToSample: List[EdgeId],
+      freeFlowCostFunctionConfig: FreeFlowCostFunctionConfig
     ): IO[List[LinkObservation]] = {
 
       val edgeDataF =
@@ -108,7 +113,7 @@ object CongestionObservationType {
         } yield {
           val observed   = marginalCostFunction(edgeIdAndAttr.attribute)(Flow.Zero)
           val agentCount = edgeIdAndAttr.attribute.flow.value
-          val ff         = edgeIdAndAttr.attribute.freeFlowCost
+          val ff         = freeFlowCostFunctionConfig.getFreeFlow(edgeIdAndAttr.attribute)
           LinkObservation(agentCount, ff.value, observed.value)
         }
         observations
@@ -146,19 +151,20 @@ object CongestionObservationType {
       */
     def observeCongestion(
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+      freeFlowCostFunctionConfig: FreeFlowCostFunctionConfig,
       marginalCostFunction: EdgeBPR => Flow => Cost,
       agentEdges: List[EdgeId]
     ): IO[Option[CongestionObservationResult]] = {
       val edges = c.selectEdges(roadNetwork, agentEdges)
       val result = for {
-        sample <- c.sampleNetwork(roadNetwork, marginalCostFunction, edges)
+        sample <- c.sampleNetwork(roadNetwork, marginalCostFunction, edges, freeFlowCostFunctionConfig)
         accumulated = c.accumulate(sample)
       } yield {
         accumulated.map { acc =>
           CongestionObservationResult(
             observationType = c,
-            freeFlowAccumulated = acc.freeFlowTravelTime,
-            observedAccumulated = acc.observedTravelTime,
+            freeFlowAccumulated = acc.freeFlowCongestion,
+            observedAccumulated = acc.observedCongestion,
             linkCountsAccumulated = acc.flowCounts,
             increaseAccumulated = acc.increase
           )
