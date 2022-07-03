@@ -152,7 +152,9 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
                   so.batchFilterFunction.build(Some(config.routing.minBatchSearchSpace), grid, costFunction),
                 selectionRunner = sel,
                 k = so.kspAlgorithm.k,
-                minSearchSpaceSize = config.routing.minBatchSearchSpace
+                minBatchSize = config.routing.minBatchSize,
+                replanAtSameLink = config.routing.replanAtSameLink
+//                minSearchSpaceSize = config.routing.minBatchSearchSpace
               )
               Some(alg)
             }

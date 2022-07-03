@@ -8,6 +8,7 @@ import cats.effect.unsafe.implicits.global
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{
+  AuctionPolicy,
   CongestionObservationType,
   DriverPolicy,
   KarmaSelectionAlgorithm,
@@ -143,6 +144,7 @@ object SelectionAlgorithmConfig {
   final case class KarmaSelection(
     driverPolicy: DriverPolicyConfig,
     networkPolicy: NetworkPolicyConfig,
+    auctionPolicy: AuctionPolicy,
     congestionObservation: CongestionObservationType,
     freeFlowCostFunction: FreeFlowCostFunctionConfig,
     marginalCostFunction: MarginalCostFunctionConfig,
@@ -158,6 +160,7 @@ object SelectionAlgorithmConfig {
           KarmaSelectionAlgorithm(
             dp,
             networkPolicy,
+            auctionPolicy,
             congestionObservation,
             bankConfig,
             freeFlowCostFunction,

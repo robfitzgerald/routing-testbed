@@ -47,7 +47,15 @@ final case class ActiveAgentHistory(
     * @return the latest RouteRequestData if we have any stored
     */
   def getNewestData(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map { _.last }
+    this.observedRouteRequestData.get(agentId).map { _.current }
+
+  /**
+    * gets the trip before the current one
+    * @param agentId the agent requested
+    * @return the previous RouteRequestData before the current/newest one, if it exists
+    */
+  def getPreviousData(agentId: String): Option[RouteRequestData] =
+    this.observedRouteRequestData.get(agentId).flatMap { _.previous }
 
   /**
     * gets the complete history we have stored for an agent (as long as they are active in the system)
@@ -74,19 +82,22 @@ object ActiveAgentHistory {
     * @param first the first request we received
     * @param history all subsequent requests we have received, in reverse order for list prepend O(1) performance
     */
-  final case class AgentHistory(first: RouteRequestData, history: List[RouteRequestData] = List.empty) {
+  final case class AgentHistory(first: RouteRequestData, history: List[RouteRequestData]) {
 
     def appendToTail(routeRequestData: RouteRequestData): AgentHistory =
       this.copy(
         history = routeRequestData +: history
       )
 
-    def last: RouteRequestData =
-      history match {
-        case Nil => first
-        case _   => history.head
-      }
+    def current: RouteRequestData = history.head
+
+    def previous: Option[RouteRequestData] = history.tail.headOption
+
     def orderedHistory: List[RouteRequestData] = first +: history.reverse
+  }
+
+  object AgentHistory {
+    def apply(first: RouteRequestData): AgentHistory = AgentHistory(first, List(first))
   }
 
   def NoHistory: ActiveAgentHistory = ActiveAgentHistory()

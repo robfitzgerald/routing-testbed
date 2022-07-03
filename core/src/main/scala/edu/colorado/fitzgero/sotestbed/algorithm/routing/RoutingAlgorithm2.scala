@@ -37,7 +37,8 @@ case class RoutingAlgorithm2(
   batchingFunction: BatchingFunction,
   batchFilterFunction: BatchFilterFunction,
   selectionRunner: SelectionRunner,
-  minBatchSize: Int
+  minBatchSize: Int,
+  replanAtSameLink: Boolean
 ) extends LazyLogging {
 
   val altsAlgName: String     = altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName
@@ -80,14 +81,32 @@ case class RoutingAlgorithm2(
             logger.info("no viable requests after applying batching function")
             IO.pure((List.empty, bank))
           case Some(routeRequests) =>
-            // remove route requests which we know do not meet the batch size requirements of our batch filter function
-            val preFilteredRouteRequests = routeRequests.filter {
-              case (_, reqs) => reqs.lengthCompare(minBatchSize) >= 0
-            }
+            // if not replanAtSameLink, dismiss requests where the location
+            // (linkid) has not changed since their last request
+            // afterward, remove batches where the batch size is less than
+            // the configured minBatchSize threshold
+            val preFilteredBatches =
+              if (replanAtSameLink) routeRequests
+              else
+                routeRequests.flatMap {
+                  case (batchId, reqs) =>
+                    reqs.filter { req =>
+                      batchingManager.storedHistory.getPreviousData(req.agent) match {
+                        case None => true
+                        case Some(prevRouteRequestData) =>
+                          prevRouteRequestData.request.location != req.location
+                      }
+                    } match {
+                      case Nil => None
+                      case requestsAtNewLocations if reqs.lengthCompare(minBatchSize) >= 0 =>
+                        Some(batchId -> requestsAtNewLocations)
+                      case _ => None
+                    }
+                }
 
             // run alts path generator
             val altPathsResult: IO[List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]] =
-              preFilteredRouteRequests.traverse {
+              preFilteredBatches.traverse {
                 case (batchId, batch) =>
                   altPathsAlgorithmRunner.run(batchId, batch, batchingManager.storedHistory, roadNetwork)
               }
@@ -153,7 +172,8 @@ object RoutingAlgorithm2 {
     * @param batchFilterFunction removes batches based on a batch filtering heuristic
     * @param selectionRunner combinatorial search
     * @param k number of alt paths as a parameter for the alt paths runner
-    * @param minSearchSpaceSize ignore batches which cannot produce at least this many combinations
+//    * @param minSearchSpaceSize ignore batches which cannot produce at least this many combinations
+
     * @return the Routing Algorithm, v2
     */
   def apply(
@@ -162,16 +182,20 @@ object RoutingAlgorithm2 {
     batchFilterFunction: BatchFilterFunction,
     selectionRunner: SelectionRunner,
     k: Int,
-    minSearchSpaceSize: Int
+    minBatchSize: Int,
+    replanAtSameLink: Boolean
+//    minSearchSpaceSize: Int
   ): RoutingAlgorithm2 = {
+    // 2022-07-01: why was this done? moving back to configuration
     // find log of minSearchSpaceSize in the base of k
-    val minBatchSize: Int = math.ceil(math.log(minSearchSpaceSize.toDouble) / math.log(k)).toInt
+//    val minBatchSize: Int = math.ceil(math.log(minSearchSpaceSize.toDouble) / math.log(k)).toInt
     RoutingAlgorithm2(
       altPathsAlgorithmRunner,
       batchingFunction,
       batchFilterFunction,
       selectionRunner,
-      minBatchSize
+      minBatchSize,
+      replanAtSameLink
     )
   }
 

@@ -63,7 +63,7 @@ object KSPFilterFunctionConfig {
 
         // a mapping from edges to the number of times those edges exist in the experienced route
         val experiencedRouteSet: Map[EdgeId, Int] =
-          history.last.experiencedRoute
+          history.current.experiencedRoute
             .map { _.edgeId }
             .foldLeft(Map.empty[EdgeId, Int]) { (acc, edgeId) =>
               val edgeVisitCount: Int = acc.getOrElse(edgeId, 0)
@@ -101,7 +101,7 @@ object KSPFilterFunctionConfig {
     def build(): KSPFilterFunction =
       (history: AgentHistory, request: Request, alts: List[Path], random: Random) => {
         val originalDistance: Meters   = history.first.remainingRouteDistance
-        val currentDistance: Meters    = history.last.remainingRouteDistance
+        val currentDistance: Meters    = history.current.remainingRouteDistance
         val proportion: Double         = math.min(1.0, math.max(0.0, currentDistance.value / originalDistance.value))
         val allowSOReplanning: Boolean = random.nextDouble() < proportion
         if (allowSOReplanning) Some { (request, alts) }

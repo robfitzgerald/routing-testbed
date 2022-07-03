@@ -185,7 +185,7 @@ object NetworkPolicySignal {
     * @return the pct value as a discrete value
     */
   def percentToDiscreteRange(pct: Double, max: Int): Int = {
-    val result = math.min(max - 1, max * pct).toInt
+    val result = math.max(0.0, math.min(max, max * pct)).toInt
     result
   }
 

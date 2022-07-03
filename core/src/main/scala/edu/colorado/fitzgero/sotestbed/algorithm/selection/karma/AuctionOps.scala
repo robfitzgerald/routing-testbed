@@ -10,8 +10,9 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 
-object KarmaOps extends LazyLogging {
+object AuctionOps extends LazyLogging {
 
   /**
     * compute the urgency of a trip based on experienced delay
@@ -34,6 +35,25 @@ object KarmaOps extends LazyLogging {
       }
     val urgency = aprioriUrgency + math.max(0, (latestTripDuration - oldestTripDuration).value)
     math.max(0, urgency)
+  }
+
+  /**
+    * agents receiving system optimal route plans shouldn't have to pay into the auction
+    * @param selectedRoutes all bids, the selected path index, and the path. a path
+    *                       index of 0 is a "user-optimal" path.
+    * @param bank the current bank ledger
+    * @param maxKarma maximum amount of karma an agent can possess at any time
+    * @return the updated bank, or, an error
+    */
+  def resolveBidsWinnersPayAll(
+    selectedRoutes: List[(Bid, Int, Path)],
+    bank: Map[String, Karma],
+    maxKarma: Karma
+  ): Either[Error, Map[String, Karma]] = {
+    val winners = selectedRoutes
+      .filter { case (_, routeIdx, _) => routeIdx == 0 }
+      .map { case (bid, _, _) => bid }
+    resolveBidsUniformly(winners, bank, maxKarma)
   }
 
   /**

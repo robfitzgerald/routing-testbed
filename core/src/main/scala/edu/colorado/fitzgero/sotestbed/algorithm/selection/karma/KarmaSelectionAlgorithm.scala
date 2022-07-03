@@ -21,6 +21,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
   networkPolicy: NetworkPolicyConfig,
+  auctionPolicy: AuctionPolicy,
   congestionObservation: CongestionObservationType,
   bankConfig: BankConfig,
   freeFlowCostFunction: FreeFlowCostFunctionConfig,
@@ -132,7 +133,7 @@ case class KarmaSelectionAlgorithm(
           routesUo   = alts.values.flatMap(_.headOption).toList
           costsUo     <- collabCostFn(routesUo)
           costsSo     <- collabCostFn(paths)
-          updatedBank <- IO.fromEither(KarmaOps.resolveBidsUniformly(bids, bank, bankConfig.max))
+          updatedBank <- IO.fromEither(auctionPolicy.resolveAuction(selections, bank, bankConfig.max))
         } yield {
           // construct the responses
           val responses = selections.zip(costsSo.agentPathCosts).map {
