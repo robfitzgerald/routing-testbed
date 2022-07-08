@@ -47,9 +47,12 @@ object Configuration {
     val scenario = Scenario.Lafayette
 
     // high-level algorithm parameters
-    val batchWindow   = random.uniformInRange(5, 30)
+    val batchWindow = 30
+    // val batchWindow   = random.uniformInRange(5, 30)
     val batchWindowMs = batchWindow * 1000
-    val adoptionRate  = random.uniformInRange(0.1, 1.0)
+    val adoptionRate = 0.20
+    // val adoptionRate  = random.uniformInRange(0.1, 1.0)
+
 //    val popSize = {
 //      val (low, high) = scenario match {
 ////        case Scenario.Golden    => (8000, 16000)
@@ -74,14 +77,20 @@ object Configuration {
     val assignmentRuntimeMs = batchWindowMs - batchingRuntimeMs
 
     // sub-batching parameters
-    val bfOmegaDelta              = random.uniformInRange(0.0, 1.0)
-    val bfOmegaBeta               = 1.0 - bfOmegaDelta
-    val bfOmegaA                  = random.uniformInRange(0.0, 1.0)
-    val bfOmegaS                  = 1.0 - bfOmegaA
-    val bfTrajHistoryLimitSeconds = random.uniformInRange(30, 200)
+    // val bfOmegaDelta              = random.uniformInRange(0.0, 1.0)
+    // val bfOmegaBeta               = 1.0 - bfOmegaDelta
+    // val bfOmegaA                  = random.uniformInRange(0.0, 1.0)
+    // val bfOmegaS                  = 1.0 - bfOmegaA
+    // val bfTrajHistoryLimitSeconds = random.uniformInRange(30, 200)
+    val bfOmegaDelta              = 0.5
+    val bfOmegaBeta               = 0.5
+    val bfOmegaA                  = 0.5
+    val bfOmegaS                  = 0.5
+    val bfTrajHistoryLimitSeconds = 180
 
     // batch filter parameter
-    val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100, Some(20))
+    // val bffSubBatchK = random.gaussianInIntegerRange(10, 40, 100, Some(20))
+    val bffSubBatchK = 50
 
     // assignment parameter
     val assignmentExloredPct = 0.1 //random.gaussianInRange(0.00000001, 0.1, 1.0, 0.005)
@@ -109,11 +118,12 @@ object Configuration {
       bprBeta
     )
 
-    val mctsCoefficientInput = random.gaussianInRange(2.0, 4.0, 16.0, 4)
-    val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
+    // val mctsCoefficientInput = random.gaussianInRange(2.0, 4.0, 16.0, 4)
+    // val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
+    val mctsCoefficient      = 2.0 / math.sqrt(2.0)
     val soAlgorithms = List(
       AssignmentAlgorithm.Base,
-      AssignmentAlgorithm.Karma(1, 1, 10),
+      AssignmentAlgorithm.Karma(1, 1, 100),
       AssignmentAlgorithm.Rand(assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct),
       AssignmentAlgorithm.Mcts(mctsCoefficient, assignmentRuntimeMs, bffSubBatchK, assignmentExloredPct)
 //      AssignmentAlgorithm.Rl("http://localhost", 9900, Space.V1, new File("grouping.json"))
@@ -177,11 +187,7 @@ object Configuration {
                |  type = selfish
                |  name = "selfish"
                |  edge-update-function.type = flow-count
-               |  marginal-cost-function = {
-               |    type = edge-bpr-function
-               |    alpha = $bprAlpha
-               |    beta = $bprBeta
-               |  }
+               |  marginal-cost-function.type = capacity-cost-function
                |}""".stripMargin
 
           val hocon = List(

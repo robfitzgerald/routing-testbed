@@ -3,7 +3,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.config.generator
 object Default {
 
   def apply(bprAlpha: Double = 0.15, bprBeta: Double = 4.0): String =
-    s"""io.routing-report-config.type = all-aggregate
+    s"""io.routing-report-config.type = core-reporting
        |io.matsim-log-level = "WARN"
        |io.output-base-directory = ""
        |

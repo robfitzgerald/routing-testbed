@@ -63,9 +63,17 @@ object MATSimExperiment2021App
             MATSimRunConfig(config, scenarioData)
           }
 
+          val directoryUnusedOrError = for {
+            matsimRunConfig <- matsimRunConfigOrError
+            _ <- if (Files.isDirectory(matsimRunConfig.experimentLoggingDirectory)) {
+              Left(new Error(s"output directory already exists: ${matsimRunConfig.experimentLoggingDirectory}"))
+            } else Right(())
+          } yield ()
+
           // set up our random generator, a function of the current time and 3 algorithm parameters
           val randomOrError = for {
             matsimRunConfig <- matsimRunConfigOrError
+            _ <- directoryUnusedOrError
           } yield {
             val seed: Long = matsimRunConfig.population.size +
               matsimRunConfig.routing.batchWindow.value +

@@ -13,16 +13,16 @@ sealed trait EdgeUpdateFunctionConfig {
 
 object EdgeUpdateFunctionConfig {
 
-  final case object FlowCount extends EdgeUpdateFunctionConfig {
+  case object FlowCount extends EdgeUpdateFunctionConfig {
     def build(): (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithFlowCount
   }
 
-  final case class FlowRate(bufferTime: SimTime) extends EdgeUpdateFunctionConfig {
+  case class FlowRate(bufferTime: SimTime) extends EdgeUpdateFunctionConfig {
     require(bufferTime > SimTime.Zero, "bufferTime must be positive-valued")
     def build(): (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithFlowRate(bufferTime)
   }
 
-  final case class MarginalFlowAndDecay(decay: Flow, epsilon: Flow) extends EdgeUpdateFunctionConfig {
+  case class MarginalFlowAndDecay(decay: Flow, epsilon: Flow) extends EdgeUpdateFunctionConfig {
     def build(): (EdgeBPR, Flow) => EdgeBPR = EdgeBPRUpdateOps.edgeUpdateWithMarginalFlowAndDecay(decay, epsilon)
   }
 }

@@ -20,7 +20,8 @@ object Routing {
        |  max-path-assignments = $maxPathAssignments                             
        |  minimum-replanning-lead-time = $batchWindow                            
        |  min-batch-size = 2                                                     
-       |  min-batch-search-space = 0                                             
+       |  min-batch-search-space = 0                               
+       |  replan-at-same-link = false              
        |  minimum-replanning-wait-time = $batchWindow                            
        |  minimum-average-improvement = 0                                        
        |  min-request-update-threshold = $minReqUpdateThreshold                  
@@ -30,10 +31,10 @@ object Routing {
        |    path-to-marginal-flows-function.type = default
        |    combine-flows-function.type = sum
        |    marginal-cost-function = {
-       |      type = edge-bpr-function
-       |      alpha = $bprAlpha
-       |      beta = $bprBeta
-       |    }
+       |    type = edge-bpr-function
+       |    alpha = $bprAlpha
+       |    beta = $bprBeta
+       |  }
        |  }
        |}""".stripMargin
   }

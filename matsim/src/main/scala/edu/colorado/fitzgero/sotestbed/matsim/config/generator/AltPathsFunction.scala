@@ -14,6 +14,11 @@ object AltPathsFunction {
            |  k = $k
            |  theta = $theta
            |  min-batch-size = 2
+           |  marginal-cost-function = {
+           |    type = edge-bpr-function
+           |    alpha = 0.15
+           |    beta = 4
+           |  }
            |  ksp-termination-function = {
            |    type = paths-seen
            |    seen = $searchIterations

@@ -1,12 +1,16 @@
 import sbtassembly.MergeStrategy
 
-name := "so-testbed"
 val packageVersion = "2.7.0"
-version := packageVersion
 val sVersion     = "2.13.6"
 val circeVersion = "0.14.1"
+
+name := "so-testbed"
+version := packageVersion
 scalacOptions ++= scalac
+scalaVersion := sVersion
 //javacOptions ++= javac
+
+lazy val routingTestbed = project.in(file(".")).aggregate(core, matsim)
 
 lazy val core = project
   .in(file("core"))

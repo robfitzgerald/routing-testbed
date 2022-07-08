@@ -51,11 +51,6 @@ case class LBTCAlgorithm(
 
   }
 
-  final case class LabelClusteringIteration(
-    labels: Map[VertexId, ClusterId],
-    labelsModifiedThisIteration: Boolean
-  )
-
   /**
     * finds a clustering via the LBTC algorithm
     * @param maxIterations hard cap on iterations, hopefully never reached
@@ -187,6 +182,11 @@ object LBTCAlgorithm {
     trajectory: List[VertexId] = List.empty[VertexId],
     time: SimTime = SimTime.Zero,
     isDone: Boolean = false
+  )
+
+  final case class LabelClusteringIteration(
+    labels: Map[VertexId, ClusterId],
+    labelsModifiedThisIteration: Boolean
   )
 
   /**
