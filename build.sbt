@@ -48,7 +48,7 @@ lazy val matsim = project
 //)
 
 lazy val matsimResolvers = Seq(
-  "MATSim release repository".at("https://dl.bintray.com/matsim/matsim"),
+  "MATSim release repository".at("https://repo.matsim.org/repository/matsim/"),
   "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/")
 //  "Open Source Geospatial Foundation Repository".at("http://download.osgeo.org/webdav/geotools/"),
 //  "OpenGeo Maven Repository".at("http://repo.opengeo.org")

@@ -1,6 +1,11 @@
 .DS_Store
 target/
 .idea
+.bloop
+.metals
+.vscode
+metals.sbt
+
 result
 /*.sh
 *.sc
