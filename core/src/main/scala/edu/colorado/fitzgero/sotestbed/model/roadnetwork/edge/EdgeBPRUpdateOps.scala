@@ -17,23 +17,7 @@ object EdgeBPRUpdateOps {
     val flowUpdate: Flow = Flow(math.max(0, e.flow.value + flow.value)) // protect against negatives
     e.copy(
       flow = flowUpdate,
-      flowHistory = Queue(flowUpdate),
-      flowHistoryLength = 1,
-    )
-  }
-
-  /**
-    * update a link by incrementing/decrementing the flow with this flow delta
-    *
-    * @param e a link
-    * @param flow the incremental flow delta (pos/neg)
-    * @return the updated link
-    */
-  def edgeUpdateWithFlowCountDelta(e: EdgeBPR, flow: Flow): EdgeBPR = {
-    val flowUpdate: Flow = Flow(math.max(0, e.flow.value + flow.value)) // protect against negatives
-    e.copy(
-      flow = flowUpdate,
-      flowHistory = Queue(flowUpdate),
+      flowHistory = Queue.empty,
       flowHistoryLength = 0
     )
   }
@@ -43,12 +27,15 @@ object EdgeBPRUpdateOps {
     *
     * @param flowRateBufferTime number of successive flow values kept in memory and averaged from to get a flow rate
     * @param e a link
-    * @param flow the new flow value to add to the buffer. cost flow value will be sampled from the average of buffer values.
+    * @param marginalFlow the new flow value to add to the buffer. cost flow value will be sampled from the average of buffer values.
     * @return the updated link
     */
-  def edgeUpdateWithFlowRate(flowRateBufferTime: SimTime)(e: EdgeBPR, flow: Flow): EdgeBPR = {
+  def edgeUpdateWithFlowRate(flowRateBufferTime: SimTime)(e: EdgeBPR, marginalFlow: Flow): EdgeBPR = {
 
-    // todo: does not correct downward when average should create a negative slope
+    // todo:
+    //  - does not correct downward when average should create a negative slope
+    //  - break up this big "if" into values
+    //  - confirm we are correctly using "marginal" flow in all cases here!
 
     if (e.flowHistoryLength == flowRateBufferTime.value) {
       // flow history buffer is full, will stay at previous length after operation (drop one off the queue)
@@ -61,9 +48,10 @@ object EdgeBPRUpdateOps {
       // update the vehicle count, which is what is actually enqueued
       // new_average = average + ((value - average) / nbValues)
       // guard against negative values
-      val updatedVehicleCount: Flow    = Flow(math.max(e.vehicleCount.value + flow.value, 0))
+      val updatedVehicleCount: Flow    = Flow(math.max(e.vehicleCount.value + marginalFlow.value, 0))
       val nextFlowHistory: Queue[Flow] = e.flowHistory.tail.enqueue(updatedVehicleCount)
-      val avgWithLatest: Flow          = avgWithoutOldest + ((updatedVehicleCount - avgWithoutOldest) / Flow(e.flowHistoryLength))
+      val avgWithLatest: Flow =
+        avgWithoutOldest + ((updatedVehicleCount - avgWithoutOldest) / Flow(e.flowHistoryLength))
 
       e.copy(
         flow = avgWithLatest,
@@ -76,7 +64,7 @@ object EdgeBPRUpdateOps {
       val nextFlowHistoryLength: Int = e.flowHistoryLength + 1
 
       // update flow-as-count value
-      val updatedVehicleCount: Flow    = Flow(math.max(e.vehicleCount.value + flow.value, 0))
+      val updatedVehicleCount: Flow    = Flow(math.max(e.vehicleCount.value + marginalFlow.value, 0))
       val nextFlowHistory: Queue[Flow] = e.flowHistory.enqueue(updatedVehicleCount)
       val avgWithLatest: Flow          = e.flow + ((updatedVehicleCount - e.flow) / Flow(nextFlowHistoryLength))
 
@@ -89,8 +77,9 @@ object EdgeBPRUpdateOps {
     } else {
       // flowRateBufferTime must have changed to be smaller since last edge update. should be rare or never happen
       // but! if it does, we need to downsize our history and traverse the history to compute the average
-      val updatedVehicleCount: Flow    = e.vehicleCount + flow
-      val nextFlowHistory: Queue[Flow] = e.flowHistory.drop(flowRateBufferTime.value.toInt - 1).enqueue(updatedVehicleCount)
+      val updatedVehicleCount: Flow = e.vehicleCount + marginalFlow
+      val nextFlowHistory: Queue[Flow] =
+        e.flowHistory.drop(flowRateBufferTime.value.toInt - 1).enqueue(updatedVehicleCount)
       val revisedAverage: Flow =
         if (nextFlowHistory.nonEmpty) Flow(nextFlowHistory.reduce(_ + _).value / flowRateBufferTime.value)
         else Flow.Zero

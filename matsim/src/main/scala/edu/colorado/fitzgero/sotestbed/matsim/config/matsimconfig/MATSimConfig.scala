@@ -70,6 +70,7 @@ object MATSimConfig {
     minNetworkUpdateThreshold: SimTime, // road network state updates
     minBatchSearchSpace: Int,           // batch filter function parameter, also pre-filter based on this value times k as an upper-bound
     minBatchSize: Int,
+    replanAtSameLink: Boolean,
     selfish: Routing.Selfish
   ) {
     require(

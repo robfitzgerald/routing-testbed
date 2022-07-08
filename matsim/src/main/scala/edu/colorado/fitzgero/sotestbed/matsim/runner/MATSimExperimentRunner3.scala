@@ -8,22 +8,29 @@ import cats.effect.IO
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.RLSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
-import edu.colorado.fitzgero.sotestbed.config.{RoutingReportConfig, SelectionAlgorithmConfig}
+import edu.colorado.fitzgero.sotestbed.config.{
+  FreeFlowCostFunctionConfig,
+  RoutingReportConfig,
+  SelectionAlgorithmConfig
+}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.experiment.LocalMATSimRoutingExperiment2
+import edu.colorado.fitzgero.sotestbed.matsim.io.population.Bank
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.PopulationOps
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
-import edu.colorado.fitzgero.sotestbed.rllib.{Observation, PolicyClientOps}
-import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.{EndEpisodeRequest, GetActionRequest}
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
+
+//import kantan.csv._
+//import kantan.csv.ops._
 
 case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
 
@@ -63,7 +70,8 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       Files.createDirectories(config.experimentDirectory)
 
       // build some cost functions
-      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) => edgeBPR.freeFlowCost
+      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) =>
+        FreeFlowCostFunctionConfig.TravelTimeBased.getFreeFlow(edgeBPR)
       val costFunction: EdgeBPR => Cost = {
         val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
         edgeBPR: EdgeBPR => marginalCostFn(edgeBPR)(Flow.Zero)
@@ -74,6 +82,10 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         config.io.routingReportConfig match {
           case RoutingReportConfig.Inactive =>
             RoutingReportConfig.Inactive.build()
+          case RoutingReportConfig.ReplanningCoordinate =>
+            RoutingReportConfig.ReplanningCoordinate.build(config.experimentLoggingDirectory)
+          case RoutingReportConfig.CoreReporting =>
+            RoutingReportConfig.CoreReporting.build(config.experimentLoggingDirectory, costFunction)
           case RoutingReportConfig.AggregateData =>
             RoutingReportConfig.AggregateData.build(config.experimentLoggingDirectory, costFunction)
           case RoutingReportConfig.Batch =>
@@ -127,13 +139,13 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             }
         }
 
-      val soRoutingAlgorithmOrError: Either[Error, Option[RoutingAlgorithm2]] =
+      val soAssetsOrError: Either[Error, Option[(RoutingAlgorithm2, Map[String, Karma])]] =
         config.algorithm match {
           case so: Algorithm.SystemOptimal =>
             val soAlgorithmOrError = for {
               grid <- so.grid.build()
             } yield {
-              val ksp: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR] = {
+              val ksp: AltPathsAlgorithmRunner = {
                 AltPathsAlgorithmRunner(
                   altPathsAlgorithm = so.kspAlgorithm.build(),
                   kspFilterFunction = so.kspFilterFunction.build(),
@@ -143,9 +155,10 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   seed = seed
                 )
               }
-              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] = so.selectionAlgorithm.build()
+              val selectionAlgorithm: SelectionAlgorithm =
+                so.selectionAlgorithm.build(config.experimentLoggingDirectory)
 
-              val sel: SelectionRunner[Coordinate] =
+              val sel: SelectionRunner =
                 SelectionRunner(
                   selectionAlgorithm = selectionAlgorithm,
                   pathToMarginalFlowsFunction = so.pathToMarginalFlowsFunction.build(),
@@ -153,6 +166,20 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   marginalCostFunction = so.marginalCostFunction.build(),
                   minimumAverageImprovement = config.routing.minimumAverageImprovement
                 )
+
+              val bank: Map[String, Karma] = so.selectionAlgorithm match {
+                case k: SelectionAlgorithmConfig.KarmaSelection =>
+                  val agentStrings = agentsUnderControl.map { _.toString }
+                  k.bankConfig.build(agentStrings)
+                case _ =>
+                  Map.empty
+              }
+
+//              // write initial bank to file system
+//              val initBankFile = config.experimentLoggingDirectory.resolve("karma_bank_initial.csv").toFile
+//              val writer       = initBankFile.asCsvWriter[(String, Long)](rfc.withHeader("agentId", "balance"))
+//              writer.write(bank.toList.map { case (a, k) => (a, k.value) })
+
               val alg = RoutingAlgorithm2(
                 altPathsAlgorithmRunner = ksp,
                 batchingFunction = so.batchingFunction.build(grid),
@@ -160,9 +187,11 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   so.batchFilterFunction.build(Some(config.routing.minBatchSearchSpace), grid, costFunction),
                 selectionRunner = sel,
                 k = so.kspAlgorithm.k,
-                minSearchSpaceSize = config.routing.minBatchSearchSpace
+//                minSearchSpaceSize = config.routing.minBatchSearchSpace
+                minBatchSize = config.routing.minBatchSize,
+                replanAtSameLink = config.routing.replanAtSameLink
               )
-              Some(alg)
+              Some(alg, bank)
             }
 
             soAlgorithmOrError
@@ -172,12 +201,15 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         }
 
       val experimentIO: IO[experiment.ExperimentState] = for {
-        soAlgorithm <- IO.fromEither(soRoutingAlgorithmOrError)
+        soAssets <- IO.fromEither(soAssetsOrError)
+        soRoutingAlgorithm = soAssets.map { case (alg, _) => alg }
+        bank               = soAssets.map { case (_, bank) => bank }.getOrElse(Map.empty)
         experimentFinishState <- experiment.run(
           config = config,
           roadNetwork = network,
           ueRoutingAlgorithm = ueRoutingAlgorithm,
-          soRoutingAlgorithm = soAlgorithm,
+          soRoutingAlgorithm = soRoutingAlgorithm,
+          bank = bank,
           updateFunction = config.algorithm.edgeUpdateFunction.build(),
           batchWindow = config.routing.batchWindow,
           minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
@@ -185,20 +217,29 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       } yield experimentFinishState
 
       for {
-        _ <- experimentIO
+        finalState <- experimentIO
       } yield {
         experiment.close()
-        // if there's an RL trainer with an episode started, let's end that episode
-        soRoutingAlgorithmOrError match {
-          case Right(Some(ra)) =>
+
+        soAssetsOrError match {
+          case Right(Some((ra, initialBank))) =>
+            // report final bank balance
+
+            val bankResult =
+              Bank
+                .writeFinalLedger(initialBank, finalState.bank, config.experimentLoggingDirectory)
+                .map { bankFilePath => logger.info(f"bank file written to $bankFilePath") }
+
+            // if there's an RL trainer with an episode started, let's end that episode
             ra.selectionRunner.selectionAlgorithm match {
               case rlsa: RLSelectionAlgorithm =>
                 for {
+                  _ <- bankResult
                   _ <- rlsa.reportAgentsAreDone()
                   _ <- rlsa.close()
                 } yield ()
               case _ =>
-                IO.pure()
+                bankResult
             }
           case _ =>
             IO.pure()

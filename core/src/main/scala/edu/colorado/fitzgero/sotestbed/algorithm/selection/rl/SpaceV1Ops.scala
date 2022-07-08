@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionCost
+import edu.colorado.fitzgero.sotestbed.config.FreeFlowCostFunctionConfig
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, MetersPerSecond}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
@@ -49,7 +50,7 @@ object SpaceV1Ops {
     val result = for {
       (request, _) <- agents
       agentId = AgentId(request.agent)
-      currentEdge          <- roadNetwork.edge(request.origin).unsafeRunSync
+      currentEdge          <- roadNetwork.edge(request.location).unsafeRunSync
       currentDstNodeId     <- roadNetwork.destination(currentEdge.edgeId).unsafeRunSync
       currentDstNode       <- roadNetwork.vertex(currentDstNodeId).unsafeRunSync
       destinationEdge      <- roadNetwork.edge(request.destination).unsafeRunSync
@@ -58,7 +59,7 @@ object SpaceV1Ops {
     } yield {
       // holy crap, that's a lot of work, who made that graph data structure? :-P
 
-      val ffCost = currentEdge.attribute.freeFlowCost
+      val ffCost = FreeFlowCostFunctionConfig.TravelTimeBased.getFreeFlow(currentEdge.attribute)
       val congestion = if (ffCost == Cost.Zero) {
         0.0
       } else {

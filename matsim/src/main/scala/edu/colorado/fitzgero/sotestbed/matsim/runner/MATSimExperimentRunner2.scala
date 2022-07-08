@@ -12,7 +12,7 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
-import edu.colorado.fitzgero.sotestbed.config.RoutingReportConfig
+import edu.colorado.fitzgero.sotestbed.config.{FreeFlowCostFunctionConfig, RoutingReportConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.analysis.{AgentBaseMetrics, AgentPerformanceMetrics}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
@@ -53,7 +53,8 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
       Files.createDirectories(config.experimentDirectory)
 
       // build some cost functions
-      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) => edgeBPR.freeFlowCost
+      val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) =>
+        FreeFlowCostFunctionConfig.TravelTimeBased.getFreeFlow(edgeBPR)
       val costFunction: EdgeBPR => Cost = {
         val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
         edgeBPR: EdgeBPR => marginalCostFn(edgeBPR)(Flow.Zero)
@@ -123,7 +124,7 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
             val soAlgorithmOrError = for {
               grid <- so.grid.build()
             } yield {
-              val ksp: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR] = {
+              val ksp: AltPathsAlgorithmRunner = {
                 AltPathsAlgorithmRunner(
                   altPathsAlgorithm = so.kspAlgorithm.build(),
                   kspFilterFunction = so.kspFilterFunction.build(),
@@ -133,8 +134,10 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
                   seed = seed
                 )
               }
-              val selectionAlgorithm: SelectionAlgorithm[IO, Coordinate, EdgeBPR] = so.selectionAlgorithm.build()
-              val sel: SelectionRunner[Coordinate] =
+              val selectionAlgorithm: SelectionAlgorithm =
+                so.selectionAlgorithm.build(config.experimentLoggingDirectory)
+
+              val sel: SelectionRunner =
                 SelectionRunner(
                   selectionAlgorithm = selectionAlgorithm,
                   pathToMarginalFlowsFunction = so.pathToMarginalFlowsFunction.build(),
@@ -149,7 +152,9 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
                   so.batchFilterFunction.build(Some(config.routing.minBatchSearchSpace), grid, costFunction),
                 selectionRunner = sel,
                 k = so.kspAlgorithm.k,
-                minSearchSpaceSize = config.routing.minBatchSearchSpace
+                minBatchSize = config.routing.minBatchSize,
+                replanAtSameLink = config.routing.replanAtSameLink
+//                minSearchSpaceSize = config.routing.minBatchSearchSpace
               )
               Some(alg)
             }
@@ -169,7 +174,8 @@ case class MATSimExperimentRunner2(matsimRunConfig: MATSimRunConfig, seed: Long)
           soRoutingAlgorithm = soAlgorithm,
           updateFunction = config.algorithm.edgeUpdateFunction.build(),
           batchWindow = config.routing.batchWindow,
-          minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
+          minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
+          bank = Map.empty
         )
       } yield experimentFinishState
 

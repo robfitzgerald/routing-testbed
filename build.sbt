@@ -48,7 +48,7 @@ lazy val matsim = project
 //)
 
 lazy val matsimResolvers = Seq(
-  "MATSim release repository".at("https://dl.bintray.com/matsim/matsim"),
+  "MATSim release repository".at("https://repo.matsim.org/repository/matsim/"),
   "OSGeo Release Repository".at("https://repo.osgeo.org/repository/release/")
 //  "Open Source Geospatial Foundation Repository".at("http://download.osgeo.org/webdav/geotools/"),
 //  "OpenGeo Maven Repository".at("http://repo.opengeo.org")
@@ -96,11 +96,13 @@ lazy val coreDependencies = List(
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
   // CSV
   "com.nrinaudo" %% "kantan.csv" % "0.6.0",
-  //  "com.nrinaudo" %% "kantan.csv-generic" % "0.6.0",
+//  "com.nrinaudo" %% "kantan.csv-generic" % "0.6.0",
   // JSON
   "io.circe" %% "circe-core"    % circeVersion,
   "io.circe" %% "circe-generic" % circeVersion,
   "io.circe" %% "circe-parser"  % circeVersion,
+  // MATH
+  "org.apache.commons" % "commons-math" % "2.2",
   // TEST
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test",

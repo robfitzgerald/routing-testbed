@@ -1,6 +1,11 @@
 .DS_Store
 target/
 .idea
+.bloop
+.metals
+.vscode
+metals.sbt
+
 result
 /*.sh
 *.sc
@@ -9,3 +14,5 @@ result
 lib/classes
 lib/resolution-cache
 metastore_db
+
+__pycache__

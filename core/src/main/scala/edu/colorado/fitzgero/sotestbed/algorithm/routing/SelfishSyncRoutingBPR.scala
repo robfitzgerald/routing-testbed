@@ -12,13 +12,14 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.Se
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork, TraverseDirection}
 
-case class SelfishSyncRoutingBPR[V](
+case class SelfishSyncRoutingBPR(
   marginalCostFunction: EdgeBPR => Flow => Cost, // Likely EdgeBPRCostOps.marginalCostFunction
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, V, EdgeBPR],
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow
-) extends RoutingAlgorithm[IO, V, EdgeBPR]
+) extends RoutingAlgorithm[IO, Coordinate, EdgeBPR]
     with LazyLogging {
 
   /**
@@ -31,18 +32,18 @@ case class SelfishSyncRoutingBPR[V](
   def route(
     requests: List[Request],
     activeAgentHistory: ActiveAgentHistory,
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR]
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
   ): IO[RoutingAlgorithm.Result] = {
 
     val costFlowsFunction: EdgeBPR => Cost = (edge: EdgeBPR) => marginalCostFunction(edge)(edge.flow)
     val search =
-      DijkstraSearch.edgeOrientedShortestPath[IO, V, EdgeBPR](roadNetwork, costFlowsFunction) _
+      DijkstraSearch.edgeOrientedShortestPath[IO, Coordinate, EdgeBPR](roadNetwork, costFlowsFunction) _
 
     // run Dijkstra's Search for each Request
     // IO[List[Option[(Request, Path, SelectionCost)]]]
     val searchResultsF = requests.traverse { req =>
       val thisSearchResult = for {
-        pathOpt <- search(req.origin, req.destination, TraverseDirection.Forward)
+        pathOpt <- search(req.location, req.destination, TraverseDirection.Forward)
       } yield {
         val cost = pathOpt match {
           case Some(path) =>

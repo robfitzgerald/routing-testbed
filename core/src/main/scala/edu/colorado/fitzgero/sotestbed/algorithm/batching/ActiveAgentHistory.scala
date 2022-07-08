@@ -18,7 +18,9 @@ final case class ActiveAgentHistory(
       case None =>
         this.copy(observedRouteRequestData = observedRouteRequestData.updated(agentId, AgentHistory(data)))
       case Some(existingHistory) =>
-        this.copy(observedRouteRequestData = observedRouteRequestData.updated(agentId, existingHistory.appendToTail(data)))
+        this.copy(observedRouteRequestData =
+          observedRouteRequestData.updated(agentId, existingHistory.appendToTail(data))
+        )
     }
   }
 
@@ -36,46 +38,66 @@ final case class ActiveAgentHistory(
     * @param agentId the agent requested
     * @return the RouteRequestData if it exists
     */
-  def getOldestDataFor(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map { _.head }
+  def getOldestData(agentId: String): Option[RouteRequestData] =
+    this.observedRouteRequestData.get(agentId).map { _.first }
 
   /**
     * gets the most recent request we have received (as recent as the current time step)
     * @param agentId the agent requested
     * @return the latest RouteRequestData if we have any stored
     */
-  def getMostRecentDataFor(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map { _.last }
+  def getNewestData(agentId: String): Option[RouteRequestData] =
+    this.observedRouteRequestData.get(agentId).map { _.current }
+
+  /**
+    * gets the trip before the current one
+    * @param agentId the agent requested
+    * @return the previous RouteRequestData before the current/newest one, if it exists
+    */
+  def getPreviousData(agentId: String): Option[RouteRequestData] =
+    this.observedRouteRequestData.get(agentId).flatMap { _.previous }
 
   /**
     * gets the complete history we have stored for an agent (as long as they are active in the system)
     * @param agentId the agent requested
     * @return the complete set of requests we have seen for this agent
     */
-  def getOrderedRouteRequestHistoryFor(agentId: String): Option[List[RouteRequestData]] =
+  def getOrderedRouteRequestHistory(agentId: String): Option[List[RouteRequestData]] =
     this.observedRouteRequestData.get(agentId).map { _.orderedHistory }
+
+  def getOldestDataOrError(agentId: String): Either[Error, RouteRequestData] =
+    getOldestData(agentId).toRight(new Error(s"agent $agentId history not stored"))
+
+  def getNewestDataOrError(agentId: String): Either[Error, RouteRequestData] =
+    getNewestData(agentId).toRight(new Error(s"agent $agentId history not stored"))
+
+  def getOrderedRouteRequestHistoryOrError(agentId: String): Either[Error, List[RouteRequestData]] =
+    getOrderedRouteRequestHistory(agentId).toRight(new Error(s"agent $agentId history not stored"))
 }
 
 object ActiveAgentHistory {
 
   /**
     * tracks the data associated with an agent
-    * @param head the first request we received
-    * @param tail all subsequent requests we have received, in reverse order for list prepend O(1) performance
+    * @param first the first request we received
+    * @param history all subsequent requests we have received, in reverse order for list prepend O(1) performance
     */
-  final case class AgentHistory(head: RouteRequestData, tail: List[RouteRequestData] = List.empty) {
+  final case class AgentHistory(first: RouteRequestData, history: List[RouteRequestData]) {
 
     def appendToTail(routeRequestData: RouteRequestData): AgentHistory =
       this.copy(
-        tail = routeRequestData +: tail
+        history = routeRequestData +: history
       )
 
-    def last: RouteRequestData =
-      tail match {
-        case Nil => head
-        case _   => tail.head
-      }
-    def orderedHistory: List[RouteRequestData] = head +: tail.reverse
+    def current: RouteRequestData = history.head
+
+    def previous: Option[RouteRequestData] = history.tail.headOption
+
+    def orderedHistory: List[RouteRequestData] = first +: history.reverse
+  }
+
+  object AgentHistory {
+    def apply(first: RouteRequestData): AgentHistory = AgentHistory(first, List(first))
   }
 
   def NoHistory: ActiveAgentHistory = ActiveAgentHistory()

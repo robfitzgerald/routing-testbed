@@ -15,6 +15,10 @@ final case class LocalAdjacencyGraphDualNetwork(
 
   import LocalAdjacencyGraphDualNetwork._
 
+  def vertexIds: List[VertexId] = ???
+
+  def edgeIds: List[EdgeId] = ???
+
   def vertex(
     vertexId: VertexId
   ): IO[Option[RoadNetwork.VertexIdAndAttribute[DualEdge]]] =

@@ -6,14 +6,16 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionAlgorithmResult
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.SelectionRunnerResult
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 
-final case class SelectionRunner[V](
-  selectionAlgorithm: SelectionAlgorithm[IO, V, EdgeBPR],
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, V, EdgeBPR],
+final case class SelectionRunner(
+  selectionAlgorithm: SelectionAlgorithm,
+  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   minimumAverageImprovement: Cost
@@ -29,16 +31,19 @@ final case class SelectionRunner[V](
     */
   def run(
     req: SelectionRunner.SelectionRunnerRequest,
-    roadNetwork: RoadNetwork[IO, V, EdgeBPR]
-  ): IO[Option[SelectionRunnerResult]] = {
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    bank: Map[String, Karma]
+  ): IO[Option[(SelectionRunnerResult, Map[String, Karma])]] = {
 
     val startTime = RunTime(System.currentTimeMillis)
 
     val selectionResultIO: IO[SelectionAlgorithm.SelectionAlgorithmResult] =
       selectionAlgorithm
         .selectRoutes(
+          req.batchId,
           req.finalAlternatePaths,
           roadNetwork,
+          bank,
           pathToMarginalFlowsFunction,
           combineFlowsFunction,
           marginalCostFunction
@@ -67,7 +72,12 @@ final case class SelectionRunner[V](
 
         val selectionRuntime = RunTime(System.currentTimeMillis) - startTime
 
-        Some(SelectionRunnerResult(req.batchId, selectionAlgorithmResult, selectionRuntime))
+        Some(
+          (
+            SelectionRunnerResult(req.batchId, selectionAlgorithmResult, selectionRuntime),
+            selectionResult.updatedBank
+          )
+        )
       }
     }
 

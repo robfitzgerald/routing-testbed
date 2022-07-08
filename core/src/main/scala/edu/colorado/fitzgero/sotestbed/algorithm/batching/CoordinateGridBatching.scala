@@ -85,7 +85,7 @@ class CoordinateGridBatching(
               case (k, l) =>
                 k -> l.map {
                   case (_, agentBatchData) =>
-                    (agentBatchData.request.origin.value, agentBatchData)
+                    (agentBatchData.request.location.value, agentBatchData)
                 }
             }
           logger.info(

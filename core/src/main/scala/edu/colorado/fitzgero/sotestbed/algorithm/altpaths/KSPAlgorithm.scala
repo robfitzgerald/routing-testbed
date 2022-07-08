@@ -1,20 +1,21 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 
-import cats.{Monad, Parallel}
-
+import cats.effect.IO
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, NonNegativeNumber, RunTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork, VertexId}
 
-abstract class KSPAlgorithm[F[_]: Monad, V, E] {
+abstract class KSPAlgorithm {
 
   def terminationFunction: KSPAlgorithm.AltPathsState => Boolean
 
   def generateAlts(
     requests: List[Request],
-    roadNetwork: RoadNetwork[F, V, E],
-    costFunction: E => Cost
-  ): F[KSPAlgorithm.AltPathsResult]
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    costFunction: EdgeBPR => Cost
+  ): IO[KSPAlgorithm.AltPathsResult]
 }
 
 object KSPAlgorithm {

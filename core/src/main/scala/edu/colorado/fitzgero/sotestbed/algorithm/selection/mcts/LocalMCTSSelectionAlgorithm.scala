@@ -16,26 +16,31 @@ import cse.bdlab.fitzgero.mcts.tree.MCTreePedrosoReiReward
 import cse.bdlab.fitzgero.mcts.variant.PedrosoReiMCTS
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, TrueShortestSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.{SelectionCost, SelectionState}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNumber}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 
-class LocalMCTSSelectionAlgorithm[V, E](
+class LocalMCTSSelectionAlgorithm(
   seed: Long,
   exhaustiveSearchSampleLimit: Int,
   minimumAverageBatchTravelImprovement: Cost, // todo: wire this value in to batch selection (positive time value here)
   terminationFunction: SelectionState => Boolean
-) extends SelectionAlgorithm[IO, V, E]
+) extends SelectionAlgorithm
     with LazyLogging {
 
   var localSeed: Long = seed
 
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[IO, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    bank: Map[String, Karma],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
+    marginalCostFunction: EdgeBPR => Flow => Cost
   ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
     if (alts.isEmpty) IO {
@@ -44,8 +49,10 @@ class LocalMCTSSelectionAlgorithm[V, E](
     else if (alts.size == 1) {
 
       TrueShortestSelectionAlgorithm().selectRoutes(
+        "user-optimal",
         alts,
         roadNetwork,
+        bank,
         pathToMarginalFlowsFunction,
         combineFlowsFunction,
         marginalCostFunction
@@ -175,7 +182,7 @@ class LocalMCTSSelectionAlgorithm[V, E](
           selfishCost = trueShortestPathsCost,
           travelTimeDiff = travelTimeDiff,
           averageTravelTimeDiff = meanTravelTimeDiff,
-          samples
+          samples = samples
         )
 
         result
@@ -184,10 +191,10 @@ class LocalMCTSSelectionAlgorithm[V, E](
 
   class PedrosoReiMCTSRouting(
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[IO, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost,
+    marginalCostFunction: EdgeBPR => Flow => Cost,
     terminationFunction: SelectionAlgorithm.SelectionState => Boolean,
     seed: Long,
     startTime: Long

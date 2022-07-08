@@ -36,7 +36,7 @@ case class GreedyBatching(
 
     val requestsWithCoordsIO = activeRouteRequests.traverse { d =>
       for {
-        srcVertexId <- roadNetwork.source(d.request.origin)
+        srcVertexId <- roadNetwork.source(d.request.location)
         srcVertex   <- srcVertexId.traverse { roadNetwork.vertex }
         coord       <- IO.fromEither(Either.fromOption(srcVertex.flatten.map { _.attribute }, new Error("no vertex found")))
       } yield {

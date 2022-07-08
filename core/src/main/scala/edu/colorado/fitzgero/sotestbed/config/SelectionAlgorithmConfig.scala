@@ -1,11 +1,19 @@
 package edu.colorado.fitzgero.sotestbed.config
 
 import java.io.File
+import java.nio.file.Path
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{
+  AuctionPolicy,
+  CongestionObservationType,
+  DriverPolicy,
+  KarmaSelectionAlgorithm,
+  NetworkPolicyConfig
+}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts.{
   DefaultPolicy,
   ExpandPolicy,
@@ -29,7 +37,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.rllib.{Grouping, PolicyClientOps}
 
 sealed trait SelectionAlgorithmConfig {
-  def build(): selection.SelectionAlgorithm[IO, Coordinate, EdgeBPR]
+  def build(outDir: Path): selection.SelectionAlgorithm
 }
 
 object SelectionAlgorithmConfig {
@@ -41,8 +49,8 @@ object SelectionAlgorithmConfig {
     selectionAcceptanceFunction: SelectionAcceptanceFunctionConfig
   ) extends SelectionAlgorithmConfig {
 
-    def build(): selection.SelectionAlgorithm[IO, Coordinate, EdgeBPR] = {
-      new RandomSamplingSelectionAlgorithm[IO, Coordinate, EdgeBPR](
+    def build(outDir: Path): selection.SelectionAlgorithm = {
+      new RandomSamplingSelectionAlgorithm(
         seed,
         exhaustiveSearchSampleLimit,
         selectionTerminationFunction.build(),
@@ -58,7 +66,7 @@ object SelectionAlgorithmConfig {
     computeBudgetTestRate: Int
   ) extends SelectionAlgorithmConfig {
 
-    def build(): SelectionAlgorithm[IO, Coordinate, EdgeBPR] = {
+    def build(outDir: Path): SelectionAlgorithm = {
       new Rand2SelectionAlgorithm(seed, exhaustiveSearchSampleLimit, computeBudgetFunctionConfig, computeBudgetTestRate)
     }
   }
@@ -74,8 +82,8 @@ object SelectionAlgorithmConfig {
       f"local-mcts-selection.minimum-average-batch-travel-improvement must be non-negative but found ${minimumAverageBatchTravelImprovement.value}%.2f"
     )
 
-    def build(): selection.SelectionAlgorithm[IO, Coordinate, EdgeBPR] = {
-      new selection.mcts.LocalMCTSSelectionAlgorithm[Coordinate, EdgeBPR](
+    def build(outDir: Path): selection.SelectionAlgorithm = {
+      new selection.mcts.LocalMCTSSelectionAlgorithm(
         seed,
         exhaustiveSearchSampleLimit,
         minimumAverageBatchTravelImprovement,
@@ -95,7 +103,7 @@ object SelectionAlgorithmConfig {
     computeBudgetTestRate: Int
   ) extends SelectionAlgorithmConfig {
 
-    def build(): SelectionAlgorithm[IO, Coordinate, EdgeBPR] = {
+    def build(outDir: Path): SelectionAlgorithm = {
       new MCTS2SelectionAlgorithm(
         DefaultPolicy.UniformRandomPolicy(seed),
         expandPolicy,
@@ -118,7 +126,7 @@ object SelectionAlgorithmConfig {
     groupingFile: File
   ) extends SelectionAlgorithmConfig {
 
-    def build(): SelectionAlgorithm[IO, Coordinate, EdgeBPR] = {
+    def build(outDir: Path): SelectionAlgorithm = {
       val algEffect = for {
         grouping <- Grouping(groupingFile)
         alg <- RLSelectionAlgorithm(
@@ -133,9 +141,40 @@ object SelectionAlgorithmConfig {
     }
   }
 
+  final case class KarmaSelection(
+    driverPolicy: DriverPolicyConfig,
+    networkPolicy: NetworkPolicyConfig,
+    auctionPolicy: AuctionPolicy,
+    congestionObservation: CongestionObservationType,
+    freeFlowCostFunction: FreeFlowCostFunctionConfig,
+    marginalCostFunction: MarginalCostFunctionConfig,
+    bankConfig: BankConfig,
+    seed: Option[Long]
+  ) extends SelectionAlgorithmConfig {
+
+    def build(outDir: Path): SelectionAlgorithm = {
+      val mcf = marginalCostFunction.build()
+      driverPolicy.buildDriverPolicy match {
+        case Left(value) => throw value
+        case Right(dp) =>
+          KarmaSelectionAlgorithm(
+            dp,
+            networkPolicy,
+            auctionPolicy,
+            congestionObservation,
+            bankConfig,
+            freeFlowCostFunction,
+            mcf,
+            seed,
+            outDir
+          )
+      }
+    }
+  }
+
   final case object TspSelection extends SelectionAlgorithmConfig {
 
-    def build(): selection.SelectionAlgorithm[IO, Coordinate, EdgeBPR] =
+    def build(outDir: Path): selection.SelectionAlgorithm =
       TrueShortestSelectionAlgorithm.apply[Coordinate, EdgeBPR]()
   }
 }

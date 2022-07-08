@@ -61,7 +61,7 @@ object MATSimBatchConfig {
       case _: MATSimConfig.Algorithm.Selfish => "0"
       case so: MATSimConfig.Algorithm.SystemOptimal =>
         so.kspAlgorithm match {
-          case KSPAlgorithmConfig.SvpLoSync(_, theta, _, _) => theta.value.toString
+          case ksp: KSPAlgorithmConfig.SvpLoSync => ksp.theta.value.toString
         }
     }
     val batchingFunction: String = config.algorithm match {

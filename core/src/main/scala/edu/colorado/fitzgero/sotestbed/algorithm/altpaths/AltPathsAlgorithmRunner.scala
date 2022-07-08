@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 import scala.util.Random
 
 import cats.Monad
+import cats.effect.IO
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
@@ -11,13 +12,15 @@ import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.KSPFilter.KSPFilterFun
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 
-final case class AltPathsAlgorithmRunner[F[_]: Monad, V, E](
-  altPathsAlgorithm: KSPAlgorithm[F, V, E],
+final case class AltPathsAlgorithmRunner(
+  altPathsAlgorithm: KSPAlgorithm,
   kspFilterFunction: KSPFilterFunction,
-  costFunction: E => Cost,
-  freeFlowCostFunction: E => Cost,
+  costFunction: EdgeBPR => Cost,
+  freeFlowCostFunction: EdgeBPR => Cost,
   useFreeFlowNetworkCostsInPathSearch: Boolean,
   seed: Long
 ) extends LazyLogging {
@@ -26,18 +29,18 @@ final case class AltPathsAlgorithmRunner[F[_]: Monad, V, E](
     batchId: String,
     reqs: List[Request],
     activeAgentHistory: ActiveAgentHistory,
-    roadNetwork: RoadNetwork[F, V, E]
-  ): F[AltPathsAlgorithmResult] = {
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[AltPathsAlgorithmResult] = {
 
     val rng: Random = new Random(seed)
 
-    val overrideCostFunction: E => Cost =
+    val overrideCostFunction: EdgeBPR => Cost =
       if (useFreeFlowNetworkCostsInPathSearch) freeFlowCostFunction else this.costFunction
 
     // run the KSP algorithm. if required, re-populate the KSP result's link costs.
     val result = for {
       altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, overrideCostFunction)
-      startTime  <- Monad[F].pure(RunTime(System.currentTimeMillis))
+      startTime  <- IO { RunTime(System.currentTimeMillis) }
       altsWithCurrentCosts <- AltPathsAlgorithmRunner.handleAltsResultNetworkCosts(
         useFreeFlowNetworkCostsInPathSearch,
         altsResult,

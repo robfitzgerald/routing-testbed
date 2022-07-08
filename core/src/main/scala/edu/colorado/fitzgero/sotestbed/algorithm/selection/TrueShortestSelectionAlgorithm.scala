@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionCost
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
@@ -13,14 +14,16 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 /**
   * simply returns the true shortest paths for each agent
   */
-class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[IO, V, E] {
+class TrueShortestSelectionAlgorithm extends SelectionAlgorithm {
 
   def selectRoutes(
+    batchId: String,
     alts: Map[Request, List[Path]],
-    roadNetwork: RoadNetwork[IO, V, E],
-    pathToMarginalFlowsFunction: (RoadNetwork[IO, V, E], Path) => IO[List[(EdgeId, Flow)]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    bank: Map[String, Karma],
+    pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
     combineFlowsFunction: Iterable[Flow] => Flow,
-    marginalCostFunction: E => Flow => Cost
+    marginalCostFunction: EdgeBPR => Flow => Cost
   ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
     if (alts.isEmpty) {
       IO { SelectionAlgorithm.SelectionAlgorithmResult() }
@@ -46,7 +49,8 @@ class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[IO, V, E] 
       val result = SelectionAlgorithm.SelectionAlgorithmResult(
         selectedRoutes = responses,
         estimatedCost = totalCost,
-        selfishCost = totalCost
+        selfishCost = totalCost,
+        updatedBank = bank
       )
 
       IO { result }
@@ -55,5 +59,5 @@ class TrueShortestSelectionAlgorithm[V, E] extends SelectionAlgorithm[IO, V, E] 
 }
 
 object TrueShortestSelectionAlgorithm {
-  def apply[V, E](): TrueShortestSelectionAlgorithm[V, E] = new TrueShortestSelectionAlgorithm
+  def apply[V, E](): TrueShortestSelectionAlgorithm = new TrueShortestSelectionAlgorithm
 }

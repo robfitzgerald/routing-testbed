@@ -1,26 +1,27 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
-import cats.Monad
-import cats.implicits._
 import cats.effect.IO
-
-import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
-import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime, SimTime}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner.{
   AltPathsAlgorithmResult,
   AltsResultData
 }
-import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.algorithm.batchfilter.BatchFilterFunction
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.{BatchingFunction, BatchingManager}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.{
+  SelectionRunnerRequest,
+  SelectionRunnerResult
+}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{Karma, KarmaSelectionAlgorithm}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime, SimTime}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 
 /**
   *
@@ -32,12 +33,17 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
   *                     the alt paths algorithm "k" and the batch filter function "minSearchSpaceSize" parameters
   */
 case class RoutingAlgorithm2(
-  altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR],
+  altPathsAlgorithmRunner: AltPathsAlgorithmRunner,
   batchingFunction: BatchingFunction,
   batchFilterFunction: BatchFilterFunction,
-  selectionRunner: SelectionRunner[Coordinate],
-  minBatchSize: Int
+  selectionRunner: SelectionRunner,
+  minBatchSize: Int,
+  replanAtSameLink: Boolean
 ) extends LazyLogging {
+
+  val altsAlgName: String     = altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName
+  val batchFilterName: String = batchFilterFunction.getClass.getSimpleName
+  val selectionName: String   = selectionRunner.selectionAlgorithm.getClass.getSimpleName
 
   /**
     * performs all steps related to solving SO route plans
@@ -52,18 +58,19 @@ case class RoutingAlgorithm2(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     requests: List[RouteRequestData],
     currentSimTime: SimTime,
-    batchingManager: BatchingManager
-  ): IO[List[(String, RoutingAlgorithm.Result)]] = {
+    batchingManager: BatchingManager,
+    bank: Map[String, Karma]
+  ): IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])] = {
 
     if (requests.isEmpty) {
-      IO.pure(List.empty)
+      IO.pure((List.empty, bank))
     } else {
-      logger.info("beginning SO routing alorithm")
+      logger.info("beginning SO routing algorithm")
 
       val currentPathFn: String => IO[Path] =
         RoutingAlgorithm2.getCurrentPath(batchingManager, roadNetwork, altPathsAlgorithmRunner.costFunction)
 
-      val result: IO[IO[List[(String, RoutingAlgorithm.Result)]]] = for {
+      val result: IO[IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])]] = for {
         batchingFunctionStartTime <- IO { System.currentTimeMillis }
         routeRequestsOpt          <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
         batchingRuntime           <- IO { RunTime(System.currentTimeMillis - batchingFunctionStartTime) }
@@ -72,49 +79,72 @@ case class RoutingAlgorithm2(
         routeRequestsOpt match {
           case None =>
             logger.info("no viable requests after applying batching function")
-            IO.pure(List.empty)
+            IO.pure((List.empty, bank))
           case Some(routeRequests) =>
-            // remove route requests which we know do not meet the batch size requirements of our batch filter function
-            val preFilteredRouteRequests = routeRequests.filter {
-              case (_, reqs) => reqs.lengthCompare(minBatchSize) >= 0
-            }
+            // if not replanAtSameLink, dismiss requests where the location
+            // (linkid) has not changed since their last request
+            // afterward, remove batches where the batch size is less than
+            // the configured minBatchSize threshold
+            val preFilteredBatches =
+              if (replanAtSameLink) routeRequests
+              else
+                routeRequests.flatMap {
+                  case (batchId, reqs) =>
+                    reqs.filter { req =>
+                      batchingManager.storedHistory.getPreviousData(req.agent) match {
+                        case None => true
+                        case Some(prevRouteRequestData) =>
+                          prevRouteRequestData.request.location != req.location
+                      }
+                    } match {
+                      case Nil => None
+                      case requestsAtNewLocations if reqs.lengthCompare(minBatchSize) >= 0 =>
+                        Some(batchId -> requestsAtNewLocations)
+                      case _ => None
+                    }
+                }
 
+            // run alts path generator
             val altPathsResult: IO[List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]] =
-              preFilteredRouteRequests.traverse {
+              preFilteredBatches.traverse {
                 case (batchId, batch) =>
-                  for {
-                    res <- altPathsAlgorithmRunner.run(batchId, batch, batchingManager.storedHistory, roadNetwork)
-                  } yield res
+                  altPathsAlgorithmRunner.run(batchId, batch, batchingManager.storedHistory, roadNetwork)
               }
+
+            // handle the special case of additional context required for running the karma algorithm
+            // when working within the constraints of the SelectionAlgorithm trait
+            def instantiateSelection(requests: List[SelectionRunnerRequest]) = {
+              RoutingAlgorithm2.instantiateSelectionAlgorithm(
+                selectionRunner,
+                roadNetwork,
+                requests,
+                batchingManager,
+                bank
+              )
+            }
 
             for {
               altsStartTime <- IO { System.currentTimeMillis }
               batchAlts     <- altPathsResult
-              _ <- IO.pure(
-                logger.info(
-                  s"alt paths computed via ${altPathsAlgorithmRunner.altPathsAlgorithm.getClass.getSimpleName}"
-                )
-              )
+              _             <- IO.pure(logger.info(s"alt paths computed via $altsAlgName"))
               altResultData = AltPathsAlgorithmRunner.logAltsResultData(batchAlts)
-              altsRunTime <- IO { RunTime(System.currentTimeMillis - altsStartTime) }
-
-              batchAltsFiltered <- batchFilterFunction.filter(batchAlts, roadNetwork)
-              _ <- IO.pure {
-                val bffName = batchFilterFunction.getClass.getSimpleName
-                if (bffName.nonEmpty) {
-                  logger.info(s"batch filter function completed via ${batchFilterFunction.getClass.getSimpleName}")
-                }
-              }
+              altsRunTime             <- IO { RunTime(System.currentTimeMillis - altsStartTime) }
+              batchAltsFiltered       <- batchFilterFunction.filter(batchAlts, roadNetwork)
+              _                       <- IO.pure { logger.info(s"batch filter function completed via $batchFilterName") }
               selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
-              soResults               <- selectionRunnerRequests.traverse { r => selectionRunner.run(r, roadNetwork) }
-              _ <- IO.pure(
-                logger.info(
-                  s"selection algorithm completed via ${selectionRunner.selectionAlgorithm.getClass.getSimpleName}"
-                )
+              selectionRunnerFixed    <- instantiateSelection(selectionRunnerRequests)
+              selectionOutput <- RoutingAlgorithm2.runSelectionWithBank(
+                selectionRunnerRequests,
+                roadNetwork,
+                selectionRunnerFixed,
+                bank
               )
+              (soResults, updatedBank) = selectionOutput
+              //              soResults <- selectionRunnerRequests.traverse { r => selAlg.run(r, roadNetwork, bank) }
+              _ <- IO.pure(logger.info(s"selection algorithm completed via $selectionName"))
             } yield {
               // re-combine data by batch id and package as a RoutingAlgorithm.Result
-              RoutingAlgorithm2.matchAltBatchesWithSelectionBatches(
+              val matched = RoutingAlgorithm2.matchAltBatchesWithSelectionBatches(
                 batchAltsFiltered,
                 soResults,
                 batchingManager,
@@ -122,13 +152,13 @@ case class RoutingAlgorithm2(
                 batchingRuntime,
                 altResultData
               )
+              (matched, updatedBank)
             }
         }
       }
 
       result.flatten
     }
-
   }
 }
 
@@ -142,26 +172,126 @@ object RoutingAlgorithm2 {
     * @param batchFilterFunction removes batches based on a batch filtering heuristic
     * @param selectionRunner combinatorial search
     * @param k number of alt paths as a parameter for the alt paths runner
-    * @param minSearchSpaceSize ignore batches which cannot produce at least this many combinations
+//    * @param minSearchSpaceSize ignore batches which cannot produce at least this many combinations
+
     * @return the Routing Algorithm, v2
     */
   def apply(
-    altPathsAlgorithmRunner: AltPathsAlgorithmRunner[IO, Coordinate, EdgeBPR],
+    altPathsAlgorithmRunner: AltPathsAlgorithmRunner,
     batchingFunction: BatchingFunction,
     batchFilterFunction: BatchFilterFunction,
-    selectionRunner: SelectionRunner[Coordinate],
+    selectionRunner: SelectionRunner,
     k: Int,
-    minSearchSpaceSize: Int
+    minBatchSize: Int,
+    replanAtSameLink: Boolean
+//    minSearchSpaceSize: Int
   ): RoutingAlgorithm2 = {
+    // 2022-07-01: why was this done? moving back to configuration
     // find log of minSearchSpaceSize in the base of k
-    val minBatchSize: Int = math.ceil(math.log(minSearchSpaceSize.toDouble) / math.log(k)).toInt
+//    val minBatchSize: Int = math.ceil(math.log(minSearchSpaceSize.toDouble) / math.log(k)).toInt
     RoutingAlgorithm2(
       altPathsAlgorithmRunner,
       batchingFunction,
       batchFilterFunction,
       selectionRunner,
-      minBatchSize
+      minBatchSize,
+      replanAtSameLink
     )
+  }
+
+  /**
+    * adds context to the selection algorithm specific to this time step.
+    * this was created to deal with the Karma-based selection algorithm's requirements.
+    * @param selectionRunner
+    * @param roadNetwork
+    * @param selectionRunnerRequest
+    * @param batchingManager
+    * @param bank
+    * @return
+    */
+  def instantiateSelectionAlgorithm(
+    selectionRunner: SelectionRunner,
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    selectionRunnerRequest: List[SelectionRunnerRequest],
+    batchingManager: BatchingManager,
+    bank: Map[String, Karma]
+  ): IO[SelectionRunner] = {
+    selectionRunner.selectionAlgorithm match {
+      case k: KarmaSelectionAlgorithm =>
+        // special handling for Karma-based selection
+        // for each batch, observe the congestion effects of that batch
+        val batchesWithCongestionObservations = selectionRunnerRequest
+          .flatTraverse {
+            case SelectionRunnerRequest(batchId, batch) =>
+              val batchEdgeIds = batch.keys.toList.map { _.location }.distinct
+              val observationIO = k.congestionObservation.observeCongestion(
+                roadNetwork,
+                k.freeFlowCostFunction,
+                k.marginalCostFunction,
+                batchEdgeIds
+              )
+              observationIO.map {
+                case None      => List.empty
+                case Some(obs) => List(batchId -> obs)
+              }
+          }
+
+        // for each batch with observations, compute the network signal
+        val batchesWithSignals = batchesWithCongestionObservations
+          .map {
+            _.map {
+              case (batchId, obs) =>
+                val signal = k.gen.generateSignal(obs)
+                (batchId, obs, signal)
+            }
+          }
+
+        // pass the generated batch data to the inner Karma algorithm
+        batchesWithSignals.map { batches =>
+          val observations = batches.map { case (bId, obs, _) => bId -> obs }.toMap
+          val signals      = batches.map { case (bId, _, sig) => bId -> sig }.toMap
+          val fixedKarmaSelection = k.build(
+            batchingManager.storedHistory,
+            observations,
+            signals,
+            k.selectionPw,
+            k.networkPw
+          )
+
+          selectionRunner.copy(selectionAlgorithm = fixedKarmaSelection)
+        }
+
+      case _ => IO.pure(selectionRunner)
+    }
+  }
+
+  /**
+    * runs the selection algorithm for each selection request, holding aside the
+    * effect of interacting with the bank between each run of the selection algorithm.
+    *
+    * @param requests sub-batch of request data for a selection algorithm
+    * @param roadNetwork road network state
+    * @param runner algorithm to apply
+    * @param bank ledger containing current balances for all agents
+    * @return the effect of running this time step of selection algorithms
+    */
+  def runSelectionWithBank(
+    requests: List[SelectionRunnerRequest],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    runner: SelectionRunner,
+    bank: Map[String, Karma]
+  ): IO[(List[Option[SelectionRunnerResult]], Map[String, Karma])] = {
+    val initial =
+      IO.pure((List.empty[Option[SelectionRunnerResult]], bank))
+    requests.foldLeft(initial) { (acc, r) =>
+      acc.flatMap {
+        case (results, innerBank) =>
+          runner.run(r, roadNetwork, innerBank).map {
+            case None                             => (None +: results, innerBank)
+            case Some((result, updatedInnerBank)) => (Some(result) +: results, updatedInnerBank)
+          }
+      }
+    }
   }
 
   /**
@@ -224,7 +354,7 @@ object RoutingAlgorithm2 {
     costFunction: EdgeBPR => Cost
   )(agentId: String): IO[List[PathSegment]] = {
     val result = for {
-      mostRecentOption <- IO.pure(batchingManager.storedHistory.getMostRecentDataFor(agentId))
+      mostRecentOption <- IO.pure(batchingManager.storedHistory.getNewestData(agentId))
     } yield {
       mostRecentOption match {
         case None =>
