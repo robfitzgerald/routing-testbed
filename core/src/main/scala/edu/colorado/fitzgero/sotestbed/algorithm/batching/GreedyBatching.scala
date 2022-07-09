@@ -54,10 +54,12 @@ case class GreedyBatching(
           case (aCoord, _) :: (bCoord, _) :: Nil =>
             val dist = GreedyBatching.euclideanDistance(aCoord, bCoord)
             dist
+          case _ => throw new IllegalStateException("List.combinations failure")
         }
         .takeWhile {
           case (aCoord, _) :: (bCoord, _) :: Nil =>
             GreedyBatching.euclideanDistance(aCoord, bCoord) < this.maxBatchRadius
+          case _ => throw new IllegalStateException("List.combinations failure")
         }
     }
 
@@ -91,7 +93,7 @@ case class GreedyBatching(
                   acc.attemptMergeClusters(aClusterId, bClusterId)
               }
           }
-
+        case _ => throw new IllegalStateException("prob time to refactor here")
       }
 
       val result = clusters.clusters.map {

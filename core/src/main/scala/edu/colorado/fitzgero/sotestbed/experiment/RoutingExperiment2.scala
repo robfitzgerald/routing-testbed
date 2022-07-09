@@ -23,6 +23,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.{Edge, EdgeBPR}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.reports.Reports
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
 abstract class RoutingExperiment2
     extends Reports[IO, Coordinate, EdgeBPR]
@@ -44,6 +45,7 @@ abstract class RoutingExperiment2
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, Coordinate, EdgeBPR]],
     updateFunction: Edge.UpdateFunction[EdgeBPR],
+    costFunction: EdgeBPR => Cost,
     soRoutingAlgorithm: Option[RoutingAlgorithm2],
     bank: Map[String, Karma],
     batchWindow: SimTime,
@@ -63,7 +65,7 @@ abstract class RoutingExperiment2
             batchDataUpdate <- getAgentsNewlyAvailableForReplanning
             (ueRequests, soUpdate) = batchDataUpdate.partition { BatchingManager.splitUEFromSO }
             ueResults <- RoutingExperiment2.runUE(ueRoutingAlgorithm, ueRequests, r1)
-            b1                  = b0.updateAgentBatchData(soUpdate)
+            b1        <- b0.updateAgentBatchData(soUpdate, r1)
             (b2, batchRequests) = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
             soOutput <- soRoutingAlgorithm
               .map { _.runSO(r1, batchRequests, currentSimTime, b2, k0) }
@@ -93,7 +95,7 @@ abstract class RoutingExperiment2
 
     val initialState = ExperimentState(
       roadNetwork,
-      BatchingManager(batchWindow, minRequestUpdateThreshold),
+      BatchingManager(batchWindow, minRequestUpdateThreshold, costFunction),
       bank
     )
     val simulationResult = for {
@@ -130,6 +132,7 @@ object RoutingExperiment2 {
       case data: AgentBatchData.RouteRequestData =>
         data.request.requestClass match {
           case RequestClass.UE => data.request
+          case _               => throw new IllegalStateException("shouldn't be running UE on SO agents")
         }
     }
     val result: IO[RoutingAlgorithm.Result] =

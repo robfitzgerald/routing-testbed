@@ -72,10 +72,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       // build some cost functions
       val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) =>
         FreeFlowCostFunctionConfig.TravelTimeBased.getFreeFlow(edgeBPR)
-      val costFunction: EdgeBPR => Cost = {
-        val marginalCostFn: EdgeBPR => Flow => Cost = config.algorithm.marginalCostFunction.build()
-        edgeBPR: EdgeBPR => marginalCostFn(edgeBPR)(Flow.Zero)
-      }
+      val costFunction: EdgeBPR => Cost = config.algorithm.costFunction
 
       // how we read reports
       val routingReporter: RoutingReports[IO, Coordinate, EdgeBPR] =
@@ -209,6 +206,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
           roadNetwork = network,
           ueRoutingAlgorithm = ueRoutingAlgorithm,
           soRoutingAlgorithm = soRoutingAlgorithm,
+          costFunction = costFunction,
           bank = bank,
           updateFunction = config.algorithm.edgeUpdateFunction.build(),
           batchWindow = config.routing.batchWindow,

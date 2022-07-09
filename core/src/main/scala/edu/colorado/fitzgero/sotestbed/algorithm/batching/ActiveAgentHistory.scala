@@ -2,6 +2,13 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import cats.effect.IO
+import cats.implicits._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 final case class ActiveAgentHistory(
   observedRouteRequestData: Map[String, AgentHistory] = Map.empty
@@ -12,16 +19,43 @@ final case class ActiveAgentHistory(
     * @param data the new request
     * @return the updated history
     */
-  def processRouteRequestData(data: RouteRequestData): ActiveAgentHistory = {
+  def processRouteRequestData(
+    data: RouteRequestData,
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    costFunction: EdgeBPR => Cost
+  ): IO[ActiveAgentHistory] = {
     val agentId: String = data.request.agent
-    observedRouteRequestData.get(agentId) match {
-      case None =>
-        this.copy(observedRouteRequestData = observedRouteRequestData.updated(agentId, AgentHistory(data)))
-      case Some(existingHistory) =>
-        this.copy(observedRouteRequestData =
-          observedRouteRequestData.updated(agentId, existingHistory.appendToTail(data))
-        )
+
+    // for remaining route (un-traversed), store travel times based on
+    // current network travel time estimates
+    // must be done NOW since these estimates will change as the sim progresses
+    val updatedDataIO = data.remainingRoute
+      .traverse { e =>
+        roadNetwork
+          .edge(e.edgeId)
+          .map {
+            _.map { ea =>
+              val estCost = SimTime(costFunction(ea.attribute).value.toLong)
+              e.copy(estimatedTimeAtEdge = Some(estCost))
+            }
+          }
+      }
+      .map { withEstimates => data.copy(remainingRoute = withEstimates.flatten) }
+
+    for {
+      updatedData <- updatedDataIO
+    } yield {
+
+      observedRouteRequestData.get(agentId) match {
+        case None =>
+          this.copy(observedRouteRequestData = observedRouteRequestData.updated(agentId, AgentHistory(updatedData)))
+        case Some(existingHistory) =>
+          this.copy(observedRouteRequestData =
+            observedRouteRequestData.updated(agentId, existingHistory.appendToTail(updatedData))
+          )
+      }
     }
+
   }
 
   /**

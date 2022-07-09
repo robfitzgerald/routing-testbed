@@ -6,10 +6,17 @@ import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.SelectionRunnerResult
 import edu.colorado.fitzgero.sotestbed.model.agent.{RequestClass, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import cats.effect.IO
+import cats.implicits._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
 final case class BatchingManager(
   batchWindow: SimTime,
   minRequestUpdateThreshold: SimTime,
+  costFunction: EdgeBPR => Cost,
   batchData: Map[String, RouteRequestData] = Map.empty,
   storedHistory: ActiveAgentHistory = ActiveAgentHistory(),
   mostRecentBatchRequested: SimTime = SimTime.Zero
@@ -25,37 +32,42 @@ final case class BatchingManager(
     * @param updates the updated AgentBatchData
     * @return the manager with all AgentBatchData updated, and stale instructions removed
     */
-  def updateAgentBatchData(updates: List[AgentBatchData]): BatchingManager = {
-    updates.foldLeft(this) { (b, data) =>
-      data match {
-        case SOAgentArrivalData(agentId) =>
-          // the agent is no longer in the system - remove
-          this.copy(
-            batchData = b.batchData - agentId,
-            storedHistory = b.storedHistory.processArrivalFor(agentId)
-          )
-        case routeRequestData: RouteRequestData =>
-          b.storedHistory.getNewestData(routeRequestData.request.agent) match {
-            case None =>
-              // first update, simply apply the update
-              this.copy(
-                batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
-                storedHistory = b.storedHistory.processRouteRequestData(routeRequestData)
-              )
-            case Some(mostRecent) =>
-              // guard against the requestUpdateCycle
-              val canUpdateRequest: Boolean =
-                routeRequestData.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
-              if (canUpdateRequest) {
-                this.copy(
-                  batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
-                  storedHistory = b.storedHistory.processRouteRequestData(routeRequestData)
-                )
-              } else {
-                b
-              }
-          }
+  def updateAgentBatchData(
+    updates: List[AgentBatchData],
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
+  ): IO[BatchingManager] = {
 
+    updates.foldLeft(IO.pure(this)) { (ioB, data) =>
+      ioB.flatMap { b =>
+        data match {
+          case SOAgentArrivalData(agentId) =>
+            // the agent is no longer in the system - remove
+            val updated = b.copy(
+              batchData = b.batchData - agentId,
+              storedHistory = b.storedHistory.processArrivalFor(agentId)
+            )
+            IO.pure(updated)
+          case routeRequestData: RouteRequestData =>
+            val canUpdateRequest =
+              b.storedHistory.getNewestData(routeRequestData.request.agent) match {
+                case None =>
+                  true
+                case Some(mostRecent) =>
+                  // guard against the requestUpdateCycle
+                  routeRequestData.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
+              }
+
+            if (canUpdateRequest) {
+
+              for {
+                processed <- b.storedHistory.processRouteRequestData(routeRequestData, roadNetwork, costFunction)
+              } yield this.copy(
+                batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
+                storedHistory = processed
+              )
+            } else IO.pure(b)
+
+        }
       }
     }
   }
@@ -93,9 +105,6 @@ final case class BatchingManager(
 }
 
 object BatchingManager {
-
-  final case class BatchPayload(
-    )
 
   def splitUEFromSO(data: AgentBatchData): Boolean = {
     data match {
