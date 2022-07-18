@@ -12,7 +12,6 @@ trait BankOps {
       bank
         .get(agent)
         .toRight {
-          println("here")
           new Error(s"agent $agent missing from lookup")
         }
   }

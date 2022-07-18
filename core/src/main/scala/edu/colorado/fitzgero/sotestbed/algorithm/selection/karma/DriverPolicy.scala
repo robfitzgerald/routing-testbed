@@ -9,11 +9,13 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import kantan.csv._
 import kantan.csv.ops._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientOps
 
 sealed trait DriverPolicy
 
@@ -53,6 +55,8 @@ object DriverPolicy {
     * @param maxBid maximum allowed bid
     */
   case class DelayWithKarmaMapping(unit: Karma, maxBid: Option[Karma]) extends DriverPolicy
+
+  case class RLBasedDriverPolicy(structure: RLDriverPolicyStructure) extends DriverPolicy
 
   case class InterpLookupTable(table: (Karma, Urgency) => Karma) extends DriverPolicy
 
@@ -104,10 +108,11 @@ object DriverPolicy {
       case _: DelayWithKarmaMapping => "bid"
       case _: DelayProportional     => "bid"
       case _: InterpLookupTable     => "bid"
+      case _: RLBasedDriverPolicy   => "bid"
     }
 
     def applyDriverPolicy(
-      requests: List[Request],
+      alts: Map[Request, List[Path]],
       bank: Map[String, Karma],
       activeAgentHistory: ActiveAgentHistory,
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
@@ -116,7 +121,7 @@ object DriverPolicy {
       policy match {
 
         case fixed: Fixed =>
-          requests.traverse { req =>
+          alts.keys.toList.traverse { req =>
             val inner = bank
               .getOrError(req.agent)
               .map { karmaBalance =>
@@ -127,7 +132,7 @@ object DriverPolicy {
           }
 
         case DelayProportional(maxBid) =>
-          requests.traverse { req =>
+          alts.keys.toList.traverse { req =>
             val bidIO = for {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
               oldest       <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
@@ -156,7 +161,7 @@ object DriverPolicy {
           }
 
         case DelayWithKarmaMapping(unit, maxBid) =>
-          requests.traverse { req =>
+          alts.keys.toList.traverse { req =>
             val bidIO = for {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
               oldest       <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
@@ -184,8 +189,14 @@ object DriverPolicy {
             bidIO
           }
 
+        // case rl: RLBasedDriverPolicy =>
+        //   val x = alts.toList.traverse {
+        //     case (req, paths) =>
+        //   }
+        //   ???
+
         case lookup: InterpLookupTable =>
-          requests.traverse { req =>
+          alts.keys.toList.traverse { req =>
             val inner = bank.get(req.agent) match {
               case None               => Left(new Error(s"agent ${req.agent} missing from bank"))
               case Some(karmaBalance) =>

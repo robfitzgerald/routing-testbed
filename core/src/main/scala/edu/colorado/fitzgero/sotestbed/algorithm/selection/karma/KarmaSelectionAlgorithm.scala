@@ -126,7 +126,7 @@ case class KarmaSelectionAlgorithm(
         // a path for each driver agent
         // get the costs associated with the trips
         val result = for {
-          bids   <- driverPolicy.applyDriverPolicy(alts.keys.toList, bank, activeAgentHistory, roadNetwork, costFunction)
+          bids   <- driverPolicy.applyDriverPolicy(alts, bank, activeAgentHistory, roadNetwork, costFunction)
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           selections = signal.assign(bids, alts)
           paths      = selections.map { case (_, _, path) => path }
