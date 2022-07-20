@@ -14,7 +14,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import kantan.csv._
 import kantan.csv.ops._
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientOps
 
 sealed trait DriverPolicy
@@ -56,7 +56,7 @@ object DriverPolicy {
     */
   case class DelayWithKarmaMapping(unit: Karma, maxBid: Option[Karma]) extends DriverPolicy
 
-  case class RLBasedDriverPolicy(structure: RLDriverPolicyStructure) extends DriverPolicy
+  case class RLBasedDriverPolicy(structure: RLDriverPolicyStructure, client: RLDriverPolicyClient) extends DriverPolicy
 
   case class InterpLookupTable(table: (Karma, Urgency) => Karma) extends DriverPolicy
 
@@ -189,11 +189,32 @@ object DriverPolicy {
             bidIO
           }
 
-        // case rl: RLBasedDriverPolicy =>
-        //   val x = alts.toList.traverse {
-        //     case (req, paths) =>
-        //   }
-        //   ???
+        case rl: RLBasedDriverPolicy =>
+          // generates an observation and ships it to the RL server, requesting an action
+          val reqsWithObs = alts.toList.traverse {
+            case (req, paths) =>
+              rl.structure
+                .encodeObservation(roadNetwork, costFunction, activeAgentHistory, bank, req, paths)
+                .map { obs => (req, obs) }
+          }
+
+          val reqsWithActions = reqsWithObs.flatMap {
+            _.traverse {
+              case (req, obs) =>
+                rl.client.getBidAction(req, obs).map { a => (req, a) }
+            }
+          }
+
+          val result = reqsWithActions.flatMap {
+            _.traverse {
+              case (req, action) =>
+                rl.structure
+                  .decodeActionAsBid(action)
+                  .map { bidValue => Bid(req, bidValue) }
+            }
+          }
+
+          result
 
         case lookup: InterpLookupTable =>
           alts.keys.toList.traverse { req =>
