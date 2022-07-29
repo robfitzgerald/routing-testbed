@@ -28,6 +28,13 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.RLSelection
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.LocalMCTSSelection
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.LocalMCTS2
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.RandomSelection2
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.RandomSamplingSelection
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.TspSelection
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.KarmaSelection
 
 //import kantan.csv._
 //import kantan.csv.ops._
@@ -141,6 +148,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
           case so: Algorithm.SystemOptimal =>
             val soAlgorithmOrError = for {
               grid <- so.grid.build()
+              _    <- checkRLKarmaUsesFreeFlow(so)
             } yield {
               val ksp: AltPathsAlgorithmRunner = {
                 AltPathsAlgorithmRunner(
@@ -250,6 +258,17 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         IO.raiseError(error)
       case Right(value) =>
         value.flatten
+    }
+  }
+
+  def checkRLKarmaUsesFreeFlow(so: Algorithm.SystemOptimal): Either[Error, Unit] = {
+    so.selectionAlgorithm match {
+      case _: RLSelection =>
+        if (!so.useFreeFlowNetworkCostsInPathSearch)
+          Left(new Error(s"when using RL selection algorithm, useFreeFlowNetworkCostsInPathSearch must be true"))
+        else Right(())
+      case _ =>
+        Right(())
     }
   }
 }

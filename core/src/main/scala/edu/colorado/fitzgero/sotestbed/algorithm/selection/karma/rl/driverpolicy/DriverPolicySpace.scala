@@ -44,9 +44,6 @@ object DriverPolicySpace {
       * @return the effect of collecting a list of observation values
       */
     def encodeObservation(
-      rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-      cf: EdgeBPR => Cost
-    )(
       request: Request,
       balance: Karma,
       history: ActiveAgentHistory.AgentHistory,
@@ -56,13 +53,13 @@ object DriverPolicySpace {
         case BalanceAndUrgency =>
           // observe the agent urgency and the agent's balance
           for {
-            urgency <- ObservationOps.travelTimeDiffFromInitialTrip(rn, cf, history)
+            urgency <- ObservationOps.travelTimeDiffFromInitialTrip(history)
           } yield List(urgency, balance.value)
 
         case BalanceUrgencyAndWorstAlternative =>
           for {
-            urgency   <- ObservationOps.travelTimeDiffFromInitialTrip(rn, cf, history)
-            altsDiffs <- ObservationOps.travelTimeDiffFromAlternatives(rn, cf, history, proposedPaths)
+            urgency   <- ObservationOps.travelTimeDiffFromInitialTrip(history)
+            altsDiffs <- ObservationOps.travelTimeDiffFromAlternatives(history, proposedPaths)
           } yield List(urgency, balance.value, altsDiffs.max)
       }
     }

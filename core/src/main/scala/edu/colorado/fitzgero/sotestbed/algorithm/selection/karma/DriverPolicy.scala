@@ -137,8 +137,8 @@ object DriverPolicy {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
               oldest       <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
               latest       <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
-              oldestTime   <- oldest.overallTravelTimeEstimate(roadNetwork, costFunction)
-              latestTime   <- latest.overallTravelTimeEstimate(roadNetwork, costFunction)
+              oldestTime   <- IO.fromEither(oldest.overallTravelTimeEstimate)
+              latestTime   <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
               // as proportional increase, lower bounded by zero
               // calculated in real numbers, then discretized back to Karma at the end
@@ -166,8 +166,8 @@ object DriverPolicy {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
               oldest       <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
               latest       <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
-              oldestTime   <- oldest.overallTravelTimeEstimate(roadNetwork, costFunction)
-              latestTime   <- latest.overallTravelTimeEstimate(roadNetwork, costFunction)
+              oldestTime   <- IO.fromEither(oldest.overallTravelTimeEstimate)
+              latestTime   <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
               // as proportional increase, lower bounded by zero
               // calculated in real numbers, then discretized back to Karma at the end
@@ -194,7 +194,7 @@ object DriverPolicy {
           val reqsWithObs = alts.toList.traverse {
             case (req, paths) =>
               rl.structure
-                .encodeObservation(roadNetwork, costFunction, activeAgentHistory, bank, req, paths)
+                .encodeObservation(activeAgentHistory, bank, req, paths)
                 .map { obs => (req, obs) }
           }
 

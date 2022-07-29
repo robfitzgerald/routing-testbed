@@ -25,27 +25,28 @@ object AgentBatchData {
   final case class RouteRequestData(
     request: Request,
     timeOfRequest: SimTime,
+    experiencedTravelTime: SimTime,
     experiencedRoute: List[RouteRequestData.EdgeData],
     remainingRoute: List[RouteRequestData.EdgeData],
     remainingRouteDistance: Meters,
     lastReplanningTime: Option[SimTime]
   ) extends AgentBatchData {
 
-    /**
-      * report only travel times observed in the simulation, at the granularity of
-      * completed links (no partial link traversals here)
-      *
-      * @return experienced travel time at time of request
-      */
-    def experiencedTravelTime: SimTime =
-      experiencedRoute.flatMap { _.estimatedTimeAtEdge } match {
-        case Nil   => SimTime.Zero
-        case times => SimTime(times.map { _.value }.sum)
-      }
+    // /**
+    //   * report only travel times observed in the simulation, at the granularity of
+    //   * completed links (no partial link traversals here)
+    //   *
+    //   * @return experienced travel time at time of request
+    //   */
+    // def experiencedTravelTime: SimTime =
+    //   experiencedRoute.flatMap { _.estimatedTimeAtEdge } match {
+    //     case Nil   => SimTime.Zero
+    //     case times => SimTime(times.map { _.value }.sum)
+    //   }
 
     /**
       * combine observed travel times with the estimated travel time of the remaining route
-      * against the current network conditions
+      * against the current network conditions via the provided cost function
       *
       * @param roadNetwork the current network conditions
       * @param costFunction cost function to use when estimating travel time
@@ -71,6 +72,32 @@ object AgentBatchData {
         val ttList = ttExperienced ++ ttRemaining
         if (ttList.nonEmpty) SimTime(ttList.sum) else SimTime.Zero
       }
+
+      result
+    }
+
+    /**
+      * combine observed travel times with the estimated travel time of the remaining route
+      * against the current network conditions as reported by the simulation. all
+      * link data must have a travel time value associated with it otherwise this function
+      * will return an error
+      *
+      * @return
+      */
+    def overallTravelTimeEstimate: Either[Error, SimTime] = {
+      val result =
+        (experiencedRoute ::: remainingRoute).zipWithIndex
+          .traverse {
+            case (edgeData, idx) =>
+              edgeData.estimatedTimeAtEdge match {
+                case None =>
+                  val link = s"${edgeData.edgeId} (route index $idx)"
+                  Left(new Error(s"travel time not reported for link $link"))
+                case Some(simTime) =>
+                  Right(simTime)
+              }
+          }
+          .map { _.foldLeft(SimTime.Zero) { _ + _ } }
 
       result
     }

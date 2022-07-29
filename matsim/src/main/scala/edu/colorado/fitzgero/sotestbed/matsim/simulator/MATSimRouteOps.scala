@@ -151,25 +151,44 @@ object MATSimRouteOps extends LazyLogging {
     result.reverse
   }
 
+  final case class EdgeDataRequestWithTravelTime(
+    person: Person,
+    vehicle: Vehicle,
+    currentLinkDuration: Long,
+    travelTime: TravelTime
+  )
+
   /**
     * takes a planned remaining path and adds Coordinates to each link
     * @param path the route
     * @param qSim the MATSim simulation
     * @return EdgeData representation of the experienced path
     */
-  def convertRouteToEdgeData(path: List[Id[Link]], qSim: QSim): List[RouteRequestData.EdgeData] = {
+  def convertRouteToEdgeData(
+    path: List[Id[Link]],
+    qSim: QSim,
+    travelTimeRequest: Option[EdgeDataRequestWithTravelTime] = None
+  ): List[RouteRequestData.EdgeData] = {
 
-    val result: List[EdgeData] = path.foldLeft(List.empty[EdgeData]) {
-      case (acc, linkId) =>
+    val result: List[EdgeData] = path.zipWithIndex.foldLeft(List.empty[EdgeData]) {
+      case (acc, (linkId, idx)) =>
         val link                      = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
         val src                       = link.getFromNode.getCoord
         val srcCoordinate: Coordinate = Coordinate(src.getX, src.getY)
         val dst                       = link.getToNode.getCoord
         val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
+        val linkTravelTime = travelTimeRequest.map {
+          case EdgeDataRequestWithTravelTime(person, vehicle, currentLinkDuration, travelTime) =>
+            val currentLinkTravelDuration = if (idx == 0) currentLinkDuration.toDouble else 0.0
+            val ltt                       = travelTime.getLinkTravelTime(link, currentLinkTravelDuration, person, vehicle)
+            SimTime(ltt)
+        }
+
         val edgeData: RouteRequestData.EdgeData = RouteRequestData.EdgeData(
           EdgeId(linkId.toString),
           srcCoordinate,
-          dstCoordinate
+          dstCoordinate,
+          linkTravelTime
         )
         edgeData +: acc
     }

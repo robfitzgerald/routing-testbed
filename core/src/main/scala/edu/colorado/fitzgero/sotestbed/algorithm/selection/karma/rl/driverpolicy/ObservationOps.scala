@@ -27,19 +27,15 @@ object ObservationOps {
     * the system), then zero is returned.
     */
   def travelTimeDiffFromInitialTrip(
-    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-    cf: EdgeBPR => Cost,
     history: ActiveAgentHistory.AgentHistory
-  ): IO[Double] = {
+  ): IO[Long] = {
     history.history match {
-      case Nil => IO.pure(0.0)
+      case Nil => IO.pure(0L)
       case latest :: tail =>
         val result = for {
-          o <- history.first.overallTravelTimeEstimate(rn, cf)
-          c = history.current.experiencedTravelTime
-          p = history.current.remainingRoute.map { _.toPathSegment }
-          remainingCost <- currentPathCost(p, rn, cf)
-          diff = o.value - (c.value + remainingCost)
+          o <- IO.fromEither(history.first.overallTravelTimeEstimate)
+          c <- IO.fromEither(history.current.overallTravelTimeEstimate)
+          diff = o.value - c.value
         } yield diff
         result
     }
@@ -48,8 +44,6 @@ object ObservationOps {
   /**
     *
     *
-    * @param rn the current road network state
-    * @param cf the cost function to use when estimating travel times
     * @param history history for the agent associated with this set
     * of proposed paths
     * @param proposedPaths paths proposed by the alt paths algorithm
@@ -57,20 +51,17 @@ object ObservationOps {
     * computed as (originalEstimate - (experiencedTime + proposedAddedTime))
     */
   def travelTimeDiffFromAlternatives(
-    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-    cf: EdgeBPR => Cost,
     history: ActiveAgentHistory.AgentHistory,
     proposedPaths: List[Path]
   ): IO[List[Double]] = {
-    val result = for {
-      o <- history.first.overallTravelTimeEstimate(rn, cf)
-      c = history.current.experiencedTravelTime
-      costs <- proposedPaths.traverse(p => currentPathCost(p, rn, cf))
-    } yield {
-      costs.map { tailCost => o.value - (c.value + tailCost) }
+    val result = history.first.overallTravelTimeEstimate.map { o =>
+      val c     = history.current.experiencedTravelTime
+      val costs = proposedPaths.map(_.map { _.cost.value }.foldLeft(0.0) { _ + _ })
+      val diffs = costs.map { tailCost => o.value - (c.value + tailCost) }
+      diffs
     }
 
-    result
+    IO.fromEither(result)
   }
 
   def currentPathCost(

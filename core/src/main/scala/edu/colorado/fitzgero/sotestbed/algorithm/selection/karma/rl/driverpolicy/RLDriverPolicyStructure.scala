@@ -6,10 +6,8 @@ import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import cats.effect.IO
 import cats.implicits._
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
@@ -44,8 +42,6 @@ object RLDriverPolicyStructure extends BankOps {
       * @return the effect of creating this observation
       */
     def encodeObservation(
-      rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-      cf: EdgeBPR => Cost,
       hist: ActiveAgentHistory,
       bank: Map[String, Karma],
       req: Request,
@@ -56,7 +52,7 @@ object RLDriverPolicyStructure extends BankOps {
         for {
           balance  <- IO.fromEither(bank.getOrError(req.agent))
           thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
-          features <- space.encodeObservation(rn, cf)(req, balance, thisHist, paths)
+          features <- space.encodeObservation(req, balance, thisHist, paths)
         } yield Observation.SingleAgentObservation(features)
     }
 

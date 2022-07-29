@@ -1,6 +1,19 @@
 package edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness
 
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness.JainFairnessMath.CovType.Biased
+import edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness.JainFairnessMath.CovType.Unbiased
+
 object JainFairnessMath {
+
+  // the COV can be estimated via stdev/mean but this is a biased estimation
+  // for normally-distributed data, use the unbiased formula. see:
+  // [[https://en.wikipedia.org/wiki/Coefficient_of_variation#Estimation]]
+  sealed trait CovType
+
+  object CovType {
+    case object Biased   extends CovType
+    case object Unbiased extends CovType
+  }
 
   /**
     * formula 1: compute the global fairness for a sequence of allocations
@@ -9,8 +22,8 @@ object JainFairnessMath {
     * @param xs allocations for each user
     * @return the fairness of the allocations
     */
-  def fairness(xs: Seq[Double]): Option[Double] = {
-    cov(xs).flatMap {
+  def fairness(xs: Seq[Double], covType: CovType = CovType.Biased): Option[Double] = {
+    cov(xs, covType).flatMap {
       case c if c == -1.0 => None
       case c =>
         val fairness = 1.0 / (1.0 + math.pow(c, 2.0))
@@ -80,12 +93,21 @@ object JainFairnessMath {
       @return the cov if it defined for this vector. if the
       mean is zero or the stdev is zero, return 1.0.
     */
-  def cov(xs: Seq[Double]): Option[Double] = {
-    val result = for {
+  def cov(xs: Seq[Double], covType: CovType): Option[Double] = {
+    val c_v_hat = for {
       µ <- mean(xs)
       o <- stdev(xs, µ)
     } yield if (µ > 0.0) o / µ else 0.0
-    result
+    covType match {
+      case Biased =>
+        c_v_hat
+      case Unbiased =>
+        val n = xs.length
+        c_v_hat.map { cvhat =>
+          val coef = (1.0 + (1.0 / (4.0 * n)))
+          coef * cvhat
+        }
+    }
   }
 
   def fairAllocationMark(xs: Seq[Double]): Option[Double] =

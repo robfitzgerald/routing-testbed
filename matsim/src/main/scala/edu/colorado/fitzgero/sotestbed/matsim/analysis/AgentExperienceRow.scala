@@ -13,7 +13,7 @@ case class AgentExperienceRow(
 
 object AgentExperienceRow {
 
-  val headerDecoder: HeaderDecoder[AgentExperienceRow] =
+  implicit val headerDecoder: HeaderDecoder[AgentExperienceRow] =
     HeaderDecoder.decoder(
       "agentId",
       "requestClass",
