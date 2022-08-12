@@ -32,7 +32,7 @@ from ray.tune.logger import pretty_print
 
 # from rl_server.so_routing.util.torch_utils import run_torch_benchmark
 from rl_server.so_routing.env.policy_server_no_pickle_v2 import PolicyServerNoPickleInput
-from rl_server.so_routing.env.driver_policy.driver_space import DriverSpaceEncoder
+from rl_server.so_routing.env.driver_policy.driver_action_space import DriverSpaceEncoder
 from rl_server.rllib_server.conf import server_conf
 from rl_server.rllib_server.driver_cli import parser
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks

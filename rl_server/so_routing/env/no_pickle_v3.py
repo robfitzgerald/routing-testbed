@@ -191,13 +191,10 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length"), 0)
             raw_body = self.rfile.read(content_len)
-            print(
-                f'inference_thread is not None: {inference_thread is not None}')
             logger.info("received input:")
             print("received input:")
-            print(raw_body)
-            time.sleep(1)
             parsed_input = json.loads(raw_body)
+            print(json.dumps(parsed_input))
             try:
                 response = self.execute_command(parsed_input)
                 self.send_response(200)
@@ -208,6 +205,8 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                 response_bytes = response_str.encode(encoding='utf_8')
                 self.wfile.write(response_bytes)
             except Exception:
+                print("server error exception when handling POST call")
+                print()
                 self.send_error(500, traceback.format_exc())
 
         def execute_command(self, args):

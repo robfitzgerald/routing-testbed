@@ -1,16 +1,16 @@
 import argparse
-from rl_server.so_routing.env.driver_policy.driver_space import DriverPolicySpace
+from rl_server.so_routing.env.driver_policy.driver_action_space import DriverActionSpace
 
-# SERVER_BASE_PORT=9900
+SERVER_BASE_PORT = 9900
 
 parser = argparse.ArgumentParser()
 
-# parser.add_argument(
-#     "--port",
-#     type=int,
-#     default=SERVER_BASE_PORT,
-#     help="The base-port to use (on localhost). " f"Default is {SERVER_BASE_PORT}.",
-# )
+parser.add_argument(
+    "--port",
+    type=int,
+    default=SERVER_BASE_PORT,
+    help="The base-port to use (on localhost). " f"Default is {SERVER_BASE_PORT}.",
+)
 parser.add_argument(
     "--callbacks-verbose",
     action="store_true",
@@ -20,7 +20,7 @@ parser.add_argument(
 parser.add_argument(
     "--num-workers",
     type=int,
-    default=1,
+    default=0,
     help="The number of workers to use. Each worker will create "
     "its own listening socket for incoming experiences.",
 )
@@ -38,7 +38,6 @@ parser.add_argument(
     choices=["APEX", "DQN", "IMPALA", "PPO", "R2D2"],
     help="The RLlib-registered algorithm to use.",
 )
-parser.add_argument("--num-cpus", type=int, default=3)
 parser.add_argument(
     "--framework",
     choices=["tf", "tf2", "tfe", "torch"],
@@ -108,14 +107,14 @@ parser.add_argument(
 # )
 
 # SO TESTBED ARGUMENTS
-parser.add_argument(
-    "--num-trips",
-    type=int,
-    help="total number of trips to expect in the simulation. a person "
-    "may have multiple trips, so this may not be the population size. "
-    "it should instead be the number of 'episodes' to expect",
-    required=True
-)
+# parser.add_argument(
+#     "--num-trips",
+#     type=int,
+#     help="total number of trips to expect in the simulation. a person "
+#     "may have multiple trips, so this may not be the population size. "
+#     "it should instead be the number of 'episodes' to expect",
+#     required=True
+# )
 parser.add_argument(
     "--max-bid",
     type=int,
@@ -130,9 +129,15 @@ parser.add_argument(
     required=True
 )
 parser.add_argument(
-    '--driver-space',
-    help="type of observation and action space to use",
-    type=DriverPolicySpace.argparse,
-    choices=list(DriverPolicySpace),
+    '--action-space',
+    help="type of action space to use",
+    type=DriverActionSpace.argparse,
+    choices=list(DriverActionSpace),
+    default=DriverActionSpace.DISCRETE
+)
+parser.add_argument(
+    '--feature-names',
+    help="comma-delimited list of feature names for the observation space",
+    type=str,
     required=True
 )
