@@ -290,21 +290,13 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       case ks: KarmaSelection =>
         ks.driverPolicy match {
           case erls: ExternalRLServer =>
-            // create episodes for every person in the SO population
-            val sendStartMsg: Id[Person] => IO[PolicyClientResponse] = (personId: Id[Person]) =>
-              PolicyClientOps.send(
-                msg = PolicyClientRequest.StartEpisodeRequest(
-                  episode_id = Some(EpisodeId(personId.toString)),
-                  training_enabled = erls.client.trainingEnabled
-                ),
-                host = erls.client.host,
-                port = erls.client.port
+            val requests = agentsUnderControl.toList.map { personId =>
+              PolicyClientRequest.StartEpisodeRequest(
+                episode_id = Some(EpisodeId(personId.toString)),
+                training_enabled = erls.client.trainingEnabled
               )
-
-            // run each batch of messages in parallel, taking care not to overload RLlib's server
-            val batches = agentsUnderControl.toList.sliding(erls.client.parallelism, erls.client.parallelism)
-            val result  = batches.toList.traverse { _.parTraverse(sendStartMsg) }
-            result.map { _ => () }
+            }
+            erls.client.send(requests).map { _ => () }
 
           case _ => IO.unit
         }

@@ -38,8 +38,10 @@ case class KarmaSelectionAlgorithm(
 ) extends SelectionAlgorithm
     with LazyLogging {
 
-  val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve("karma_log.csv")
-  val networkLogFile: java.nio.file.Path   = experimentDirectory.resolve("karma_network_log.csv")
+  import KarmaSelectionAlgorithm._
+
+  val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve(KarmaLogFilename)
+  val networkLogFile: java.nio.file.Path   = experimentDirectory.resolve(KarmaNetworkLogFilename)
   val selectionPw: PrintWriter             = new PrintWriter(selectionLogFile.toFile)
   val networkPw: PrintWriter               = new PrintWriter(networkLogFile.toFile)
 
@@ -58,10 +60,13 @@ case class KarmaSelectionAlgorithm(
     * this close method is used as it is called in RoutingExperiment2's .close() method
     */
   def close(finalBank: Map[String, Karma]): IO[Unit] = {
+    logger.info(s"closing $KarmaLogFilename")
     selectionPw.close()
+    logger.info(s"closing $KarmaNetworkLogFilename")
     networkPw.close()
     driverPolicy match {
       case RLBasedDriverPolicy(structure, client) =>
+        logger.info(s"sending final messages to RL server")
         KarmaSelectionRlOps.endEpisodes(structure, client, experimentDirectory, allocationTransform, finalBank)
       case _ => IO.unit
     }
@@ -243,9 +248,11 @@ case class KarmaSelectionAlgorithm(
 
 object KarmaSelectionAlgorithm {
 
-  final case class KarmaBatchData(batchId: String, obs: CongestionObservationResult, signal: NetworkPolicySignal)
+  val karmaLogHeader: String  = "batchId,agentId,startKarma,endKarma,bidValue,selectedRoute"
+  val KarmaLogFilename        = "karma_log.csv"
+  val KarmaNetworkLogFilename = "karma_network_log.csv"
 
-  val karmaLogHeader: String = "batchId,agentId,startKarma,endKarma,bidValue,selectedRoute"
+  final case class KarmaBatchData(batchId: String, obs: CongestionObservationResult, signal: NetworkPolicySignal)
 
   case class KarmaSelectionLogRow(
     batchId: String,

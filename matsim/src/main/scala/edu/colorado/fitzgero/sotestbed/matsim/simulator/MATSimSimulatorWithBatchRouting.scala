@@ -637,10 +637,9 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                             val fullRoute        = MATSimRouteOps.convertToCompleteRoute(leg)
                                             val remainingLinkIds = fullRoute.dropWhile(_ != currentLinkId)
 
+                                            val currentTime = self.playPauseSimulationControl.getLocalTime.toLong
                                             val currentLinkDuration = agentData.currentLinkEnterTime
-                                              .map { ct =>
-                                                self.playPauseSimulationControl.getLocalTime.toLong - ct.value
-                                              }
+                                              .map { ct => currentTime - ct.value }
                                               .getOrElse(0L)
                                             val endLinkId         = leg.getRoute.getEndLinkId
                                             val destinationEdgeId = EdgeId(endLinkId.toString)
@@ -652,6 +651,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                               currentLinkDuration,
                                               self.controler.getLinkTravelTimes()
                                             )
+
                                             val experiencedEdgeData: List[RouteRequestData.EdgeData] =
                                               MATSimRouteOps
                                                 .convertExperiencedRouteToEdgeData(experiencedRoute, qSim)
@@ -706,7 +706,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                                         .getMostRecentTimePlannedForAgent(personId)
                                                     val experiencedTravelTime = currentSimTime - departureTime
 
-                                                    val thisAgentBatchingData: AgentBatchData =
+                                                    val thisAgentBatchingData =
                                                       RouteRequestData(
                                                         request = thisRequest,
                                                         timeOfRequest = currentSimTime,
@@ -720,6 +720,19 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                                     logger.debug(
                                                       s"requesting route for agent $personId, o=$sourceEdgeId, d=$destinationEdgeId"
                                                     )
+                                                    logger.info(
+                                                      f"at simtime $currentTime, duration on link $currentLinkDuration"
+                                                    )
+                                                    for {
+                                                      est <- thisAgentBatchingData.overallTravelTimeEstimate
+                                                      rem <- thisAgentBatchingData.remainingTravelTimeEstimate
+                                                    } {
+                                                      logger
+                                                        .info(
+                                                          f"experienced: $experiencedTravelTime, remaining: $rem overall est: $est"
+                                                        )
+                                                    }
+
                                                     thisAgentBatchingData
                                                   }
                                                 } match {
@@ -821,7 +834,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           val advanceToSimTime: Double = currentTime.value.toDouble + 0.01 //+ SimTime(2) //+ matsimStepSize
 
           logger.debug(
-            s"called on sim in Running state: advancing one time step from $currentTime to $advanceToSimTime"
+            s"called on sim in Running state: advancing one time step from $currentTime to ${SimTime(advanceToSimTime)}"
           )
 
           self.playPauseSimulationControl.doStep(advanceToSimTime)

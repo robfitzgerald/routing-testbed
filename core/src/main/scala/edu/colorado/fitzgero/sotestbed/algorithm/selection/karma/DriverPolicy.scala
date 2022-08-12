@@ -198,21 +198,25 @@ object DriverPolicy {
           val getObservation: (Request, List[List[PathSegment]]) => IO[(Request, Observation)] =
             (req, paths) => {
               rl.structure
-                .encodeObservation(activeAgentHistory, bank, req, paths)
+                .encodeObservation(activeAgentHistory, bank, req, paths, alts)
                 .map { obs => (req, obs) }
             }
 
-          // function to call the RL server and get a RLlib Action for this request
-          val getAction: (Request, Observation) => IO[(Request, Action)] =
-            (req, obs) => {
-              val rlReq = GetActionRequest(EpisodeId(req.agent), obs)
-              rl.client.send(rlReq).flatMap {
-                case GetActionResponse(action) =>
-                  IO.pure((req, action))
-                case other =>
-                  val msg = s"sent GetActionRequest but received $other"
-                  IO.raiseError(new Error(msg))
-              }
+          // function to call the RL server and get an RLlib Action for this request
+          val getActions: List[(Request, Observation)] => IO[List[Action]] =
+            (reqsWithObs) => {
+              val getActionRequests = reqsWithObs.map { case (r, o) => GetActionRequest(EpisodeId(r.agent), o) }
+              rl.client
+                .send(getActionRequests)
+                .flatMap(
+                  _.traverse {
+                    case GetActionResponse(action) =>
+                      IO.pure(action)
+                    case other =>
+                      val msg = s"sent GetActionRequest but received $other"
+                      IO.raiseError(new Error(msg))
+                  }
+                )
             }
 
           // function to map an action to a bid for some request to use within the simulation
@@ -225,9 +229,11 @@ object DriverPolicy {
 
           // for each request, generate a bid
           val result = for {
-            reqsWithObs  <- alts.toList.traverse(getObservation.tupled)
-            reqsWithActs <- reqsWithObs.traverse(getAction.tupled)
-            bids         <- reqsWithActs.traverse(getBid.tupled)
+            reqsWithObs <- alts.toList.traverse(getObservation.tupled)
+            (reqs, obs) = reqsWithObs.unzip
+            actions <- getActions(reqsWithObs)
+            reqsWithActions = reqs.zip(actions)
+            bids <- reqsWithActions.traverse(getBid.tupled)
           } yield bids
 
           result

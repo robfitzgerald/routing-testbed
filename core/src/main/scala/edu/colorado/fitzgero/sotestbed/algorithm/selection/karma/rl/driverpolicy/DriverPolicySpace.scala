@@ -10,24 +10,42 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
+import cats.implicits._
 
 sealed trait DriverPolicySpace
 
 object DriverPolicySpace {
 
   /**
-    * observes the agent's current karma balance, along with the difference
-    * in estimated travel time between the agent's first route plan and their
-    * current route plan
+    * encode the agent's karma balance as a feature
     */
-  case object BalanceAndUrgency extends DriverPolicySpace
+  case object Balance extends DriverPolicySpace
 
   /**
-    * observes the agent's current karma balance, the urgency as defined
-    * above, along with the maximum possible travel time difference due
-    * to taking one of the proposed routes.
+    * encode the agent's difference between their original travel time estimate
+    * and their current estimate as a feature
     */
-  case object BalanceUrgencyAndWorstAlternative extends DriverPolicySpace
+  case object Urgency extends DriverPolicySpace
+
+  /**
+    * encode the travel time difference between an agent's original travel time
+    * estimate and the estimate for the worst alternative path the agent is
+    * offered by the routing system
+    */
+  case object WorstAlternative extends DriverPolicySpace
+
+  /**
+    * encode the number of agents in this batch as a feature
+    */
+  case object BatchSize extends DriverPolicySpace
+
+  /**
+    * use some combination of features
+    *
+    * @param features the features to encode
+    */
+  case class Combined(features: List[DriverPolicySpace]) extends DriverPolicySpace
 
   implicit class DPSExtensions(dps: DriverPolicySpace) {
 
@@ -48,20 +66,22 @@ object DriverPolicySpace {
       request: Request,
       balance: Karma,
       history: ActiveAgentHistory.AgentHistory,
-      proposedPaths: List[Path]
+      proposedPaths: List[Path],
+      batch: Map[Request, List[Path]]
     ): IO[List[Double]] = {
       dps match {
-        case BalanceAndUrgency =>
-          // observe the agent urgency and the agent's balance
-          for {
-            urgency <- ObservationOps.travelTimeDiffFromInitialTrip(history)
-          } yield List(balance.value, urgency)
-
-        case BalanceUrgencyAndWorstAlternative =>
-          for {
-            urgency   <- ObservationOps.travelTimeDiffFromInitialTrip(history)
-            altsDiffs <- ObservationOps.travelTimeDiffFromAlternatives(history, proposedPaths)
-          } yield List(balance.value, urgency, altsDiffs.max)
+        case Balance =>
+          IO.pure(List(balance.value))
+        case Urgency =>
+          ObservationOps.travelTimeDiffFromInitialTrip(history).map { u => List(u) }
+        case WorstAlternative =>
+          ObservationOps
+            .travelTimeDiffFromAlternatives(history, proposedPaths)
+            .map { v => List(v.max) }
+        case BatchSize =>
+          IO.pure(List(batch.size))
+        case Combined(features) =>
+          features.flatTraverse { _.encodeObservation(request, balance, history, proposedPaths, batch) }
       }
     }
 
@@ -70,15 +90,17 @@ object DriverPolicySpace {
       finalTravelTime: SimTime,
       finalBankBalance: Karma
     ): IO[List[Double]] = dps match {
-      case BalanceAndUrgency =>
+      case Balance =>
+        IO.pure(List(finalBankBalance.value.toDouble))
+      case Urgency =>
         val urgency = (finalTravelTime - originalTravelTimeEstimate).value.toDouble
-        val obs     = List(finalBankBalance.value.toDouble, urgency)
-        IO.pure(obs)
-      case BalanceUrgencyAndWorstAlternative =>
-        val urgency          = (finalTravelTime - originalTravelTimeEstimate).value.toDouble
-        val worstAlternative = 0.0
-        val obs              = List(finalBankBalance.value.toDouble, urgency, worstAlternative)
-        IO.pure(obs)
+        IO.pure(List(urgency))
+      case WorstAlternative =>
+        IO.pure(List(0.0))
+      case BatchSize =>
+        IO.pure(List(0.0))
+      case Combined(features) =>
+        features.flatTraverse(_.encodeFinalObservation(originalTravelTimeEstimate, finalTravelTime, finalBankBalance))
     }
   }
 }

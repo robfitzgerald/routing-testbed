@@ -91,25 +91,31 @@ object AgentBatchData {
       * @return
       */
     def overallTravelTimeEstimate: Either[Error, SimTime] = {
-      val result =
-        (experiencedRoute ::: remainingRoute).zipWithIndex
-          .traverse {
-            case (edgeData, idx) =>
-              edgeData.estimatedTimeAtEdge match {
-                case None =>
-                  val link = s"${edgeData.edgeId} (route index $idx)"
-                  Left(new Error(s"travel time not reported for link $link"))
-                case Some(simTime) =>
-                  Right(simTime)
-              }
-          }
-          .map { _.foldLeft(SimTime.Zero) { _ + _ } }
+      val links = (experiencedRoute ::: remainingRoute).zipWithIndex
+      RouteRequestData.ttEstimate(links)
+    }
 
-      result
+    def remainingTravelTimeEstimate: Either[Error, SimTime] = {
+      RouteRequestData.ttEstimate(remainingRoute.zipWithIndex)
     }
   }
 
   object RouteRequestData {
+
+    def ttEstimate(links: List[(RouteRequestData.EdgeData, Int)]): Either[Error, SimTime] = {
+      links
+        .traverse {
+          case (edgeData, idx) =>
+            edgeData.estimatedTimeAtEdge match {
+              case None =>
+                val link = s"${edgeData.edgeId} (route index $idx)"
+                Left(new Error(s"travel time not reported for link $link"))
+              case Some(simTime) =>
+                Right(simTime)
+            }
+        }
+        .map { _.foldLeft(SimTime.Zero) { _ + _ } }
+    }
 
     /**
       * attributes associated with an Edge traversal

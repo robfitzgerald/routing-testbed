@@ -31,12 +31,7 @@ abstract class RoutingExperiment2
     with HandCrankedSimulator[IO]
     with LazyLogging {
 
-  final case class ExperimentState(
-    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-    batchingManager: BatchingManager,
-    bank: Map[String, Karma],
-    simulatorState: HandCrankedSimulator.SimulatorState = HandCrankedSimulator.SimulatorState.Uninitialized
-  )
+  type ExperimentState = RoutingExperiment2.ExperimentState
 
   /**
     * run an experiment using a hand-cranked simulator and a set of algorithms
@@ -57,7 +52,7 @@ abstract class RoutingExperiment2
     def _run(startState: ExperimentState): IO[ExperimentState] = {
 
       val experiment: IO[ExperimentState] = startState.iterateUntilM {
-        case ExperimentState(r0, b0, k0, _) =>
+        case RoutingExperiment2.ExperimentState(r0, b0, k0, _) =>
           for {
             _              <- advance() // should return updated simulator
             currentSimTime <- getCurrentSimTime
@@ -82,10 +77,10 @@ abstract class RoutingExperiment2
             _  <- updateReports(dataForReports, r1, currentSimTime)
             s1 <- getState
           } yield {
-            ExperimentState(r1, b3, k1, s1)
+            RoutingExperiment2.ExperimentState(r1, b3, k1, s1)
           }
       } {
-        case ExperimentState(_, _, _, s) =>
+        case RoutingExperiment2.ExperimentState(_, _, _, s) =>
           // termination condition
           s == HandCrankedSimulator.SimulatorState.Finished
       }
@@ -100,13 +95,13 @@ abstract class RoutingExperiment2
 
     val simulationResult = for {
       bm <- BatchingManager(batchWindow, minRequestUpdateThreshold, costFunction, loggingDirectory)
-      initialState = ExperimentState(roadNetwork, bm, bank)
+      initialState = RoutingExperiment2.ExperimentState(roadNetwork, bm, bank)
       _      <- initializeSimulator(config)
       result <- _run(initialState)
+      _      <- result.batchingManager.close()
+      _      <- RoutingExperiment2.closeOutAlgorthm(soRoutingAlgorithm, result)
     } yield {
-      // handle closing the PrintWriter in the Karma selection algorithm (sigh)
-      soRoutingAlgorithm.foreach { alg => RoutingExperiment2.close(alg, result.bank) }
-      result.batchingManager.close()
+      logger.info("finished running RoutingExperiment2")
       result
     }
 
@@ -114,7 +109,14 @@ abstract class RoutingExperiment2
   }
 }
 
-object RoutingExperiment2 {
+object RoutingExperiment2 extends LazyLogging {
+
+  final case class ExperimentState(
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+    batchingManager: BatchingManager,
+    bank: Map[String, Karma],
+    simulatorState: HandCrankedSimulator.SimulatorState = HandCrankedSimulator.SimulatorState.Uninitialized
+  )
 
   /**
     * if provided, run a UE routing algorithm against the set of UE requests
@@ -148,10 +150,14 @@ object RoutingExperiment2 {
     result
   }
 
-  def close(alg: RoutingAlgorithm2, bank: Map[String, Karma]): IO[Unit] = {
-    alg.selectionRunner.selectionAlgorithm match {
-      case k: KarmaSelectionAlgorithm => k.close(bank)
-      case _                          => IO.unit
+  def closeOutAlgorthm(alg: Option[RoutingAlgorithm2], finalState: ExperimentState): IO[Unit] = {
+    alg match {
+      case None => IO.unit
+      case Some(routingAlg) =>
+        routingAlg.selectionRunner.selectionAlgorithm match {
+          case k: KarmaSelectionAlgorithm => k.close(finalState.bank)
+          case _                          => IO.unit
+        }
     }
   }
 }

@@ -12,25 +12,25 @@ import com.typesafe.scalalogging.LazyLogging
 
 object KarmaSelectionRlOps extends LazyLogging {
 
-  def startEpisode(
-    structure: RLDriverPolicyStructure,
-    client: RLDriverPolicyClient,
-    req: Request
-  ): IO[PolicyClientResponse] = {
-    structure match {
-      case RLDriverPolicyStructure.MultiAgentPolicy(space) =>
-        throw new NotImplementedError
-      case RLDriverPolicyStructure.SingleAgentPolicy(space) =>
-        // start episodes for any new agents
-        val agentId = req.agent
-        logger.info(s"starting RL episode for agent ${req.agent}")
-        val startReq = PolicyClientRequest.StartEpisodeRequest(
-          Some(EpisodeId(agentId)),
-          client.trainingEnabled
-        )
-        client.send(startReq)
-    }
-  }
+  // def startEpisode(
+  //   structure: RLDriverPolicyStructure,
+  //   client: RLDriverPolicyClient,
+  //   req: Request
+  // ): IO[PolicyClientResponse] = {
+  //   structure match {
+  //     case RLDriverPolicyStructure.MultiAgentPolicy(space) =>
+  //       throw new NotImplementedError
+  //     case RLDriverPolicyStructure.SingleAgentPolicy(space) =>
+  //       // start episodes for any new agents
+  //       val agentId = req.agent
+  //       logger.info(s"starting RL episode for agent ${req.agent}")
+  //       val startReq = PolicyClientRequest.StartEpisodeRequest(
+  //         Some(EpisodeId(agentId)),
+  //         client.trainingEnabled
+  //       )
+  //       client.send(startReq)
+  //   }
+  // }
 
   def endEpisodes(
     structure: RLDriverPolicyStructure,
@@ -66,12 +66,12 @@ object KarmaSelectionRlOps extends LazyLogging {
 
         // for all requests, send a final reward signal and close the agent's training episode
         val result: IO[Unit] = for {
-          tripLogs     <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+          tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+          _ = logger.info(f"grabbed trip log")
           rewards      <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(tripLogs, allocationTransform)
           observations <- RLDriverPolicyEpisodeOps.finalObservations(tripLogs, policy.space, finalBank)
           requests = rewards.zip(observations).flatMap(toClientMessageFn.tupled)
-          batches  = requests.sliding(client.parallelism, client.parallelism).toList
-          _ <- batches.traverse { _.parTraverse { req => client.send(req) } }
+          _ <- client.send(requests)
         } yield ()
 
         result

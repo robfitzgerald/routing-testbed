@@ -147,8 +147,11 @@ final case class BatchingManager(
     }
   }
 
-  def close(): Unit = {
-    this.tripLog.close()
+  def close(): IO[Unit] = {
+    IO.fromTry(Try {
+      logger.info(s"closing ${BatchingManager.FinalTripLogFilename}")
+      this.tripLog.close()
+    })
   }
 }
 

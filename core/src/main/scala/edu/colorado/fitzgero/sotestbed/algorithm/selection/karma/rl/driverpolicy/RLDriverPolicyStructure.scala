@@ -45,14 +45,15 @@ object RLDriverPolicyStructure extends BankOps {
       hist: ActiveAgentHistory,
       bank: Map[String, Karma],
       req: Request,
-      paths: List[Path]
+      paths: List[Path],
+      batch: Map[Request, List[Path]]
     ): IO[Observation] = dp match {
       case MultiAgentPolicy(space) => IO.raiseError(new NotImplementedError)
       case SingleAgentPolicy(space) =>
         for {
           balance  <- IO.fromEither(bank.getOrError(req.agent))
           thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
-          features <- space.encodeObservation(req, balance, thisHist, paths)
+          features <- space.encodeObservation(req, balance, thisHist, paths, batch)
         } yield Observation.SingleAgentObservation(features)
     }
 
