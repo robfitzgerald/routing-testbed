@@ -1,7 +1,7 @@
-package edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness
+package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness
 
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness.JainFairnessMath.CovType.Biased
-import edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness.JainFairnessMath.CovType.Unbiased
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness.JainFairnessMath.CovType.Biased
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness.JainFairnessMath.CovType.Unbiased
 
 object JainFairnessMath {
 

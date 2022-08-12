@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.matsim.analysis.fairness
+package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness
 
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
 // import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
