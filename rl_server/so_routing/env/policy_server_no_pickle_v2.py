@@ -4,17 +4,14 @@ import queue
 from socketserver import ThreadingMixIn
 import threading
 import time
-import json
 import traceback
+import json
 
-from ray.rllib.agents.pg import PGTrainer
-from ray.rllib.env.policy_client import PolicyClient, \
-    _create_embedded_rollout_worker
+from ray.rllib.env.policy_client import PolicyClient, _create_embedded_rollout_worker
 from ray.rllib.offline.input_reader import InputReader
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.utils.annotations import override, PublicAPI
-
-from rllib.env.np_encoder import NpEncoder
+from rl_server.so_routing.env.np_encoder import NpEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -22,36 +19,42 @@ logger = logging.getLogger(__name__)
 class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
     """REST policy server that acts as an offline data source.
 
-    modified to run without cloudpickling of payloads
-
     This launches a multi-threaded server that listens on the specified host
     and port to serve policy requests and forward experiences to RLlib. For
     high performance experience collection, it implements InputReader.
 
-    For an example, run `examples/cartpole_server.py` along
-    with `examples/cartpole_client.py --inference-mode=local|remote`.
+    For an example, run `examples/serving/cartpole_server.py` along
+    with `examples/serving/cartpole_client.py --inference-mode=local|remote`.
 
     Examples:
-        >>> pg = PGTrainer(
-        ...     env="CartPole-v0", config={
-        ...         "input": lambda ioctx:
-        ...             PolicyServerNoPickleInput(ioctx, addr, port),
-        ...         "num_workers": 0,  # Run just 1 server, in the trainer.
-        ...     }
-        >>> while True:
-        >>>     pg.train()
+        >>> import gym
+        >>> from ray.rllib.agents.pg import PGTrainer
+        >>> from ray.rllib.env.policy_client import PolicyClient
+        >>> from ray.rllib.env.policy_server_input import PolicyServerInput
+        >>> addr, port = ... # doctest: +SKIP
+        >>> pg = PGTrainer( # doctest: +SKIP
+        ...     env="CartPole-v0", config={ # doctest: +SKIP
+        ...         "input": lambda io_ctx: # doctest: +SKIP
+        ...             PolicyServerInput(io_ctx, addr, port), # doctest: +SKIP
+        ...         # Run just 1 server, in the trainer.
+        ...         "num_workers": 0,   # doctest: +SKIP
+        ...     } # doctest: +SKIP
+        >>> while True: # doctest: +SKIP
+        >>>     pg.train() # doctest: +SKIP
 
-        >>> client = PolicyClient("localhost:9900", inference_mode="local")
-        >>> eps_id = client.start_episode()
-        >>> action = client.get_action(eps_id, obs)
-        >>> ...
-        >>> client.log_returns(eps_id, reward)
-        >>> ...
-        >>> client.log_returns(eps_id, reward)
+        >>> client = PolicyClient( # doctest: +SKIP
+        ...     "localhost:9900", inference_mode="local")
+        >>> eps_id = client.start_episode()  # doctest: +SKIP
+        >>> env = gym.make("CartPole-v0")
+        >>> obs = env.reset()
+        >>> action = client.get_action(eps_id, obs) # doctest: +SKIP
+        >>> reward = env.step(action)[0] # doctest: +SKIP
+        >>> client.log_returns(eps_id, reward) # doctest: +SKIP
+        >>> client.log_returns(eps_id, reward) # doctest: +SKIP
     """
 
     @PublicAPI
-    def __init__(self, ioctx, address, port, obs_space, act_space, idle_timeout=3.0):
+    def __init__(self, ioctx, address, port, idle_timeout=3.0):
         """Create a PolicyServerInput.
 
         This class implements rllib.offline.InputReader, and can be used with
@@ -92,11 +95,24 @@ class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
 
         # Create a request handler that receives commands from the clients
         # and sends data and metrics into the queues.
-        handler = _make_handler(self.rollout_worker, self.samples_queue,
-                                self.metrics_queue, obs_space, act_space)
-        HTTPServer.__init__(self, (address, port), handler)
+        handler = _make_handler(
+            self.rollout_worker, self.samples_queue, self.metrics_queue
+        )
+        try:
+            import time
 
-        logger.info("Starting connector server at {}:{}".format(address, port))
+            time.sleep(1)
+            HTTPServer.__init__(self, (address, port), handler)
+        except OSError:
+            print(f"Creating a PolicyServer on {address}:{port} failed!")
+            import time
+
+            time.sleep(1)
+            raise
+
+        logger.info(
+            "Starting connector server at " f"{self.server_name}:{self.server_port}"
+        )
 
         # Start the serving thread, listening on socket and handling commands.
         serving_thread = threading.Thread(
@@ -110,7 +126,8 @@ class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
         # even if other workers' PolicyServerInput receive incoming data from
         # actual clients.
         heart_beat_thread = threading.Thread(
-            name="heart-beat", target=self._put_empty_sample_batch_every_n_sec)
+            name="heart-beat", target=self._put_empty_sample_batch_every_n_sec
+        )
         heart_beat_thread.daemon = True
         heart_beat_thread.start()
 
@@ -128,7 +145,7 @@ class PolicyServerNoPickleInput(ThreadingMixIn, HTTPServer, InputReader):
             self.samples_queue.put(SampleBatch())
 
 
-def _make_handler(rollout_worker, samples_queue, metrics_queue, obs_space, act_space):
+def _make_handler(rollout_worker, samples_queue, metrics_queue):
     # Only used in remote inference mode. We must create a new rollout worker
     # then since the original worker doesn't have the env properly wrapped in
     # an ExternalEnv interface.
@@ -143,9 +160,12 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue, obs_space, act_s
 
         with lock:
             if child_rollout_worker is None:
-                (child_rollout_worker,
-                 inference_thread) = _create_embedded_rollout_worker(
-                    rollout_worker.creation_args(), report_data)
+                (
+                    child_rollout_worker,
+                    inference_thread,
+                ) = _create_embedded_rollout_worker(
+                    rollout_worker.creation_args(), report_data
+                )
                 child_rollout_worker.set_weights(rollout_worker.get_weights())
 
     def report_data(data):
@@ -158,26 +178,30 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue, obs_space, act_s
             metrics_queue.put(rollout_metric)
 
         if child_rollout_worker is not None:
-            child_rollout_worker.set_weights(rollout_worker.get_weights(),
-                                             rollout_worker.get_global_vars())
+            child_rollout_worker.set_weights(
+                rollout_worker.get_weights(), rollout_worker.get_global_vars()
+            )
 
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
-            self.obs_space = obs_space
-            self.act_space = act_space
             super().__init__(*a, **kw)
 
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length"), 0)
             raw_body = self.rfile.read(content_len)
             parsed_input = json.loads(raw_body)
+            print("received payload:")
+            print(parsed_input)
+            print(
+                f'inference_thread is not None: {inference_thread is not None}')
             try:
-                print("received payload:")
-                print(parsed_input)
                 response = self.execute_command(parsed_input)
                 self.send_response(200)
                 self.end_headers()
-                response_bytes = json.dumps(response, cls=NpEncoder).encode(encoding='utf_8')
+                response_str = json.dumps(response, cls=NpEncoder)
+                print("sending response:")
+                print(response_str)
+                response_bytes = response_str.encode(encoding='utf_8')
                 self.wfile.write(response_bytes)
             except Exception:
                 self.send_error(500, traceback.format_exc())
@@ -195,48 +219,45 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue, obs_space, act_s
                 response["weights"] = rollout_worker.get_weights()
                 response["global_vars"] = rollout_worker.get_global_vars()
             elif command == PolicyClient.REPORT_SAMPLES:
-                logger.info("Got sample batch of size {} from client.".format(
-                    args["samples"].count))
+                logger.info(
+                    "Got sample batch of size {} from client.".format(
+                        args["samples"].count
+                    )
+                )
                 report_data(args)
 
             # Remote inference commands:
             elif command == PolicyClient.START_EPISODE:
                 setup_child_rollout_worker()
                 assert inference_thread.is_alive()
-                response["episode_id"] = (
-                    child_rollout_worker.env.start_episode(
-                        args["episode_id"], args["training_enabled"]))
+                response["episode_id"] = child_rollout_worker.env.start_episode(
+                    args["episode_id"], args["training_enabled"]
+                )
             elif command == PolicyClient.GET_ACTION:
                 assert inference_thread.is_alive()
-                # for obs in args['observation'].values():
-                #     if self.obs_space.contains(obs):
-                #         print(f'observation matches space: {obs}')
-                #     else:
-                #         raise ValueError(f'observation does not match space: {obs} != {self.obs_space}')
                 response["action"] = child_rollout_worker.env.get_action(
-                    args["episode_id"], args["observation"])
+                    args["episode_id"], args["observation"]
+                )
             elif command == PolicyClient.LOG_ACTION:
                 assert inference_thread.is_alive()
-                # for obs in args['observation'].values():
-                #     if self.obs_space.contains(obs):
-                #         print(f'observation matches space: {obs}')
-                #     else:
-                #         raise ValueError(f'observation does not match space: {obs} != {self.obs_space}')
                 child_rollout_worker.env.log_action(
-                    args["episode_id"], args["observation"], args["action"])
+                    args["episode_id"], args["observation"], args["action"]
+                )
             elif command == PolicyClient.LOG_RETURNS:
                 assert inference_thread.is_alive()
                 if args["done"]:
                     child_rollout_worker.env.log_returns(
-                        args["episode_id"], args["reward"], args["info"],
-                        args["done"])
+                        args["episode_id"], args["reward"], args["info"], args["done"]
+                    )
                 else:
                     child_rollout_worker.env.log_returns(
-                        args["episode_id"], args["reward"], args["info"])
+                        args["episode_id"], args["reward"], args["info"]
+                    )
             elif command == PolicyClient.END_EPISODE:
                 assert inference_thread.is_alive()
-                child_rollout_worker.env.end_episode(args["episode_id"],
-                                                     args["observation"])
+                child_rollout_worker.env.end_episode(
+                    args["episode_id"], args["observation"]
+                )
             else:
                 raise ValueError("Unknown command: {}".format(command))
             return response

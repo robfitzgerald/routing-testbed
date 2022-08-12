@@ -27,7 +27,7 @@ import gym
 import os
 import json
 
-from rllib.env import space_v1
+from so_routing.env import space_v1
 import ray
 from ray.rllib.agents.dqn import DQNTrainer
 from ray.rllib.agents.ppo import PPOTrainer
@@ -36,8 +36,8 @@ from ray.rllib.env.policy_server_input import PolicyServerInput
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
 from ray.tune.logger import pretty_print
 
-from rllib.env.policy_server_no_pickle import PolicyServerNoPickleInput
-from rllib.env.so_routing_env import create_so_routing_env, create_so_routing_multiagent_config, create_spaces, \
+from so_routing.env.policy_server_no_pickle import PolicyServerNoPickleInput
+from so_routing.env.network_policy.network_policy_env import create_so_routing_env, create_so_routing_multiagent_config, create_spaces, \
     load_grouping
 
 SERVER_ADDRESS = "localhost"
@@ -49,12 +49,13 @@ SERVER_BASE_PORT = 9900  # + worker-idx - 1
 CHECKPOINT_FILE = "last_checkpoint_{}.out"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--run", type=str, choices=["DQN", "PPO", "QMIX"], default="QMIX")
+parser.add_argument("--run", type=str,
+                    choices=["DQN", "PPO", "QMIX"], default="QMIX")
 parser.add_argument(
     "--k",
     type=int,
     choices=range(1, 1_000_000),
-    help="in this scenario, the number of alternative paths per agent in the ksp algorithm"  
+    help="in this scenario, the number of alternative paths per agent in the ksp algorithm"
          "where the index of an alternative path [0, k) is the discrete action to be chosen.")
 parser.add_argument(
     "--grouping-file",
@@ -104,7 +105,8 @@ if __name__ == "__main__":
 
     grouping = load_grouping(grouping_path)
     obs_space, act_space = create_spaces(args.k)
-    multiagent_conf = create_so_routing_multiagent_config(grouping, obs_space, act_space)
+    multiagent_conf = create_so_routing_multiagent_config(
+        grouping, obs_space, act_space)
 
     # `InputReader` generator (returns None if no input reader is needed on
     # the respective worker).
@@ -115,15 +117,14 @@ if __name__ == "__main__":
             return PolicyServerNoPickleInput(
                 ioctx,
                 SERVER_ADDRESS,
-                SERVER_BASE_PORT + ioctx.worker_index - (1 if ioctx.worker_index > 0 else 0),
+                SERVER_BASE_PORT + ioctx.worker_index -
+                (1 if ioctx.worker_index > 0 else 0),
                 obs_space,
                 act_space
             )
         # No InputReader (PolicyServerInput) needed.
         else:
             return None
-
-
 
     # Trainer config. Note that this config is sent to the client only in case
     # the client needs to create its own policy copy for local inference.
@@ -172,15 +173,17 @@ if __name__ == "__main__":
             config=dict(config, **{
                 # "num_envs_per_worker": 5,  # test with vectorization on
                 "mixer": "qmix",
-                "framework": args.framework, # only "torch" allowed here
+                "framework": args.framework,  # only "torch" allowed here
                 "buffer_size": 10,  # replay buffer size, in samples.
-                                     # see https://ai.stackexchange.com/questions/11640/how-large-should-the-replay-buffer-be
-                                     # wait, or, in batches? from docs: "Size of the replay buffer in batches (not timesteps!)."
-                "batch_mode": "truncate_episodes",  # don't wait until end of episode to build a batch
+                # see https://ai.stackexchange.com/questions/11640/how-large-should-the-replay-buffer-be
+                # wait, or, in batches? from docs: "Size of the replay buffer in batches (not timesteps!)."
+                # don't wait until end of episode to build a batch
+                "batch_mode": "truncate_episodes",
                 "rollout_fragment_length": 4,  # number of steps to be performed per rollout
                                                # https://robotics.stackexchange.com/questions/16596/what-is-the-definition-of-rollout-in-neural-network-or-openai-gym
                 "train_batch_size": 32,  # number of samples sent to Trainer.train_on_batch
-                "timesteps_per_iteration": 10,  # "Number of env steps to optimize for before returning" (?)
+                # "Number of env steps to optimize for before returning" (?)
+                "timesteps_per_iteration": 10,
                 "learning_starts": 0
             })
         )
@@ -204,10 +207,12 @@ if __name__ == "__main__":
             print("Restoring from checkpoint path", args.checkpoint_path)
             trainer.restore(args.checkpoint_path)
         else:
-            raise IOError(f'provided checkpoint {args.checkpoint_path} does not exist')
+            raise IOError(
+                f'provided checkpoint {args.checkpoint_path} does not exist')
 
     # overwrite now to set a checkpoint to use going forward
-    live_checkpoint_path = CHECKPOINT_FILE.format(args.run) if args.checkpoint_path is None else args.checkpoint_path
+    live_checkpoint_path = CHECKPOINT_FILE.format(
+        args.run) if args.checkpoint_path is None else args.checkpoint_path
 
     print("beginning training loop with policies, observation space, action space:")
     print(multiagent_conf)

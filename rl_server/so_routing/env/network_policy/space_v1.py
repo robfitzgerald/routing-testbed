@@ -21,7 +21,7 @@ observation_space = Box(
 )
 
 
-def create_space(n_alts: int) -> (Space, Space):
+def create_space(n_alts: int) -> Tuple[Space, Space]:
     """
     creates the multi-agent (Observation, Action) spaces given this set of agent ids
     which are grouped by their grouping ids
