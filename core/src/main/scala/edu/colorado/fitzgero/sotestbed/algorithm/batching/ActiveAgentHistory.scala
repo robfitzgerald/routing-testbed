@@ -14,6 +14,40 @@ final case class ActiveAgentHistory(
   observedRouteRequestData: Map[String, AgentHistory] = Map.empty
 ) {
 
+  def setRlTrainingEpisodeStarted(agentId: String): Either[Error, ActiveAgentHistory] = {
+    this.observedRouteRequestData.get(agentId) match {
+      case None =>
+        val msg = s"attempting to set rl training start event for agent $agentId who is " +
+          "not found in the current active agent history"
+        Left(new Error(msg))
+      case Some(agentHistory) =>
+        val updated = this.copy(
+          observedRouteRequestData = this.observedRouteRequestData.updated(
+            agentId,
+            agentHistory.copy(hasRlTrainingEpisodeStarted = true)
+          )
+        )
+        Right(updated)
+    }
+  }
+
+  def incrementReplannings(agentId: String): Either[Error, ActiveAgentHistory] = {
+    this.observedRouteRequestData.get(agentId) match {
+      case None =>
+        val msg = s"attempting to increment replannings for agent $agentId who is " +
+          "not found in the current active agent history"
+        Left(new Error(msg))
+      case Some(agentHistory) =>
+        val updated = this.copy(
+          observedRouteRequestData = this.observedRouteRequestData.updated(
+            agentId,
+            agentHistory.copy(replanningEvents = agentHistory.replanningEvents + 1)
+          )
+        )
+        Right(updated)
+    }
+  }
+
   /**
     * adds another route request to the active history of route requests for this agent
     * @param data the new request
@@ -57,6 +91,28 @@ final case class ActiveAgentHistory(
     }
 
   }
+
+  /**
+    * true if this is the first time we have seen this agent in the network (i.e. start
+    * of a trip)
+    *
+    * @param agentId the arriving agent
+    * @return true if 1) the agent has a history, and 2) if that history
+    *         only has one entry (aka no "tail")
+    */
+  def hasStartedRlEpisode(agentId: String): Boolean =
+    this.observedRouteRequestData.get(agentId).exists { _.hasRlTrainingEpisodeStarted }
+
+  /**
+    * true if this is the first time we have seen this agent in the network (i.e. start
+    * of a trip)
+    *
+    * @param agentId the arriving agent
+    * @return true if 1) the agent has a history, and 2) if that history
+    *         only has one entry (aka no "tail")
+    */
+  def isNewArrival(agentId: String): Boolean =
+    this.observedRouteRequestData.get(agentId).exists { _.replanningEvents == 0 }
 
   /**
     * on arrival we can remove all data associated with an agent, as it is no longer active
@@ -107,6 +163,7 @@ final case class ActiveAgentHistory(
 
   def getOrderedRouteRequestHistoryOrError(agentId: String): Either[Error, List[RouteRequestData]] =
     getOrderedRouteRequestHistory(agentId).toRight(new Error(s"agent $agentId history not stored"))
+
 }
 
 object ActiveAgentHistory {
@@ -116,7 +173,12 @@ object ActiveAgentHistory {
     * @param first the first request we received
     * @param history all subsequent requests we have received, in reverse order for list prepend O(1) performance
     */
-  final case class AgentHistory(first: RouteRequestData, history: List[RouteRequestData]) {
+  final case class AgentHistory(
+    first: RouteRequestData,
+    history: List[RouteRequestData],
+    replanningEvents: Int = 0,
+    hasRlTrainingEpisodeStarted: Boolean = false
+  ) {
 
     def appendToTail(routeRequestData: RouteRequestData): AgentHistory =
       this.copy(

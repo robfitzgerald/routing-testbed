@@ -13,7 +13,7 @@ import io.circe.syntax._
 import io.circe.parser._
 
 class PostTest extends SoTestBedBaseTest {
-  "POST" ignore {
+  "POST" when {
     "StartEpisodeRequest called" should {
       "result in response" in {
 

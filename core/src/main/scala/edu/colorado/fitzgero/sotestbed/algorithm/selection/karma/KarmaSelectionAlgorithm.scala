@@ -17,6 +17,12 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, NonNegativeNum
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.DriverPolicy._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness._
+import edu.colorado.fitzgero.sotestbed.rllib._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure.SingleAgentPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure.MultiAgentPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -27,7 +33,8 @@ case class KarmaSelectionAlgorithm(
   freeFlowCostFunction: FreeFlowCostFunctionConfig,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   seed: Option[Long],
-  experimentDirectory: java.nio.file.Path
+  experimentDirectory: java.nio.file.Path,
+  allocationTransform: AllocationTransform
 ) extends SelectionAlgorithm
     with LazyLogging {
 
@@ -50,9 +57,14 @@ case class KarmaSelectionAlgorithm(
   /**
     * this close method is used as it is called in RoutingExperiment2's .close() method
     */
-  def close(): Unit = {
+  def close(finalBank: Map[String, Karma]): IO[Unit] = {
     selectionPw.close()
     networkPw.close()
+    driverPolicy match {
+      case RLBasedDriverPolicy(structure, client) =>
+        KarmaSelectionRlOps.endEpisodes(structure, client, experimentDirectory, allocationTransform, finalBank)
+      case _ => IO.unit
+    }
   }
 
   /**
@@ -111,6 +123,15 @@ case class KarmaSelectionAlgorithm(
           marginalCostFunction
         )
       } else {
+
+        // // we may need to start some RL episodes
+        // val startEpisodeResult = driverPolicy match {
+        //   case RLBasedDriverPolicy(structure, client) =>
+        //     val newReqs = alts.keys.toList.filter { r => activeAgentHistory.isNewArrival(r.agent) }
+        //     KarmaSelectionRlOps.startEpisodes(structure, client, newReqs)
+        //   case _ => IO.unit
+        // }
+
         val costFunction = (e: EdgeBPR) => marginalCostFunction(e)(Flow.Zero)
         val collabCostFn =
           (paths: List[Path]) =>
@@ -126,6 +147,7 @@ case class KarmaSelectionAlgorithm(
         // a path for each driver agent
         // get the costs associated with the trips
         val result = for {
+          // _      <- startEpisodeResult
           bids   <- driverPolicy.applyDriverPolicy(alts, bank, activeAgentHistory, roadNetwork, costFunction)
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           selections = signal.assign(bids, alts)

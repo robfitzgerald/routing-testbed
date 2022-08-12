@@ -29,7 +29,7 @@ object Observation {
 
   implicit val dec: Decoder[Observation] =
     List[Decoder[Observation]](
-      Decoder[SingleAgentObservation].widen,
+      Decoder[List[Double]].map { SingleAgentObservation.apply }.widen,
       Decoder[Option[Map[AgentId, List[List[Double]]]]].emap {
         case None    => Right(MultiAgentObservation(Map.empty))
         case Some(m) => Right(MultiAgentObservation(m))

@@ -28,7 +28,7 @@ object Reward {
 
   implicit val dec: Decoder[Reward] =
     List[Decoder[Reward]](
-      Decoder[SingleAgentReward].widen,
+      Decoder[Double].map { SingleAgentReward.apply }.widen,
       Decoder[Option[Map[AgentId, Double]]].emap {
         case None    => Right(MultiAgentReward(Map.empty))
         case Some(m) => Right(MultiAgentReward(m))

@@ -15,7 +15,11 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import kantan.csv._
 import kantan.csv.ops._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy._
-import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientOps
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest._
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
+import edu.colorado.fitzgero.sotestbed.rllib._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.PathSegment
 
 sealed trait DriverPolicy
 
@@ -190,29 +194,41 @@ object DriverPolicy {
           }
 
         case rl: RLBasedDriverPolicy =>
-          // generates an observation and ships it to the RL server, requesting an action
-          val reqsWithObs = alts.toList.traverse {
-            case (req, paths) =>
+          // function to get the RLlib Observation for a request and its path alternatives
+          val getObservation: (Request, List[List[PathSegment]]) => IO[(Request, Observation)] =
+            (req, paths) => {
               rl.structure
                 .encodeObservation(activeAgentHistory, bank, req, paths)
                 .map { obs => (req, obs) }
+            }
+
+          // function to call the RL server and get a RLlib Action for this request
+          val getAction: (Request, Observation) => IO[(Request, Action)] =
+            (req, obs) => {
+              val rlReq = GetActionRequest(EpisodeId(req.agent), obs)
+              rl.client.send(rlReq).flatMap {
+                case GetActionResponse(action) =>
+                  IO.pure((req, action))
+                case other =>
+                  val msg = s"sent GetActionRequest but received $other"
+                  IO.raiseError(new Error(msg))
+              }
+            }
+
+          // function to map an action to a bid for some request to use within the simulation
+          val getBid: (Request, Action) => IO[Bid] = { (req, action) =>
+            for {
+              bidValue <- rl.structure.decodeActionAsBid(action)
+              bidTrunc <- IO.fromEither(bank.limitBidByBalance(bidValue, req.agent))
+            } yield Bid(req, bidTrunc)
           }
 
-          val reqsWithActions = reqsWithObs.flatMap {
-            _.traverse {
-              case (req, obs) =>
-                rl.client.getBidAction(req, obs).map { a => (req, a) }
-            }
-          }
-
-          val result = reqsWithActions.flatMap {
-            _.traverse {
-              case (req, action) =>
-                rl.structure
-                  .decodeActionAsBid(action)
-                  .map { bidValue => Bid(req, bidValue) }
-            }
-          }
+          // for each request, generate a bid
+          val result = for {
+            reqsWithObs  <- alts.toList.traverse(getObservation.tupled)
+            reqsWithActs <- reqsWithObs.traverse(getAction.tupled)
+            bids         <- reqsWithActs.traverse(getBid.tupled)
+          } yield bids
 
           result
 

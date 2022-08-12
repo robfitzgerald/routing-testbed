@@ -18,6 +18,13 @@ object NetworkPolicyConfig {
   case object UserOptimal extends NetworkPolicyConfig
 
   /**
+    * selects a random policy, useful for testing
+    *
+    * @param seed starting seed value for random generation
+    */
+  case class RandomPolicy(seed: Option[Long]) extends NetworkPolicyConfig
+
+  /**
     * generates a network signal that is a Bernoulli distribution, where
     * p is the proportional increase in travel times due to current
     * congestion effects, as measured by the chosen cost/flow function
@@ -56,6 +63,9 @@ object NetworkPolicyConfig {
 
     def buildGenerator: NetworkPolicySignalGenerator = policy match {
       case UserOptimal => NetworkPolicySignalGenerator.UserOptimalGenerator
+      case RandomPolicy(seed) =>
+        val rng = new Random(seed.getOrElse(System.currentTimeMillis))
+        NetworkPolicySignalGenerator.RandomGenerator(rng)
       case CongestionProportionalThreshold(seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.ThresholdSamplingGenerator(rng)
@@ -66,12 +76,14 @@ object NetworkPolicyConfig {
 
     def logHeader: String = policy match {
       case UserOptimal                        => ""
+      case _: RandomPolicy                    => ""
       case _: CongestionProportionalThreshold => ""
       case _: ScaledProportionalThreshold     => "scale"
     }
 
     def getLogData: String = policy match {
       case UserOptimal                           => ""
+      case _: RandomPolicy                       => ""
       case CongestionProportionalThreshold(_)    => ""
       case ScaledProportionalThreshold(scale, _) => scale.toString
     }

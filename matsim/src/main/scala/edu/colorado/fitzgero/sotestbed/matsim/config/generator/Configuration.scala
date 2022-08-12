@@ -50,7 +50,7 @@ object Configuration {
     val batchWindow = 30
     // val batchWindow   = random.uniformInRange(5, 30)
     val batchWindowMs = batchWindow * 1000
-    val adoptionRate = 0.20
+    val adoptionRate  = 0.20
     // val adoptionRate  = random.uniformInRange(0.1, 1.0)
 
 //    val popSize = {
@@ -120,7 +120,7 @@ object Configuration {
 
     // val mctsCoefficientInput = random.gaussianInRange(2.0, 4.0, 16.0, 4)
     // val mctsCoefficient      = 2.0 / math.sqrt(mctsCoefficientInput)
-    val mctsCoefficient      = 2.0 / math.sqrt(2.0)
+    val mctsCoefficient = 2.0 / math.sqrt(2.0)
     val soAlgorithms = List(
       AssignmentAlgorithm.Base,
       AssignmentAlgorithm.Karma(1, 1, 100),

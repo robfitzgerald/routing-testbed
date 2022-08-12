@@ -28,13 +28,14 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.reports.RoutingReports
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.RLSelection
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.LocalMCTSSelection
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.LocalMCTS2
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.RandomSelection2
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.RandomSamplingSelection
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.TspSelection
-import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig.KarmaSelection
+import edu.colorado.fitzgero.sotestbed.config.SelectionAlgorithmConfig._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.KarmaSelectionAlgorithm
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.KarmaSelectionAlgorithm._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.DriverPolicy._
+import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig._
+import edu.colorado.fitzgero.sotestbed.rllib._
+import cats.implicits._
+import scala.util.Try
 
 //import kantan.csv._
 //import kantan.csv.ops._
@@ -149,6 +150,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             val soAlgorithmOrError = for {
               grid <- so.grid.build()
               _    <- checkRLKarmaUsesFreeFlow(so)
+              _    <- startEpisodesForRLPolicies(so.selectionAlgorithm, agentsUnderControl)
             } yield {
               val ksp: AltPathsAlgorithmRunner = {
                 AltPathsAlgorithmRunner(
@@ -162,6 +164,16 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
               }
               val selectionAlgorithm: SelectionAlgorithm =
                 so.selectionAlgorithm.build(config.experimentLoggingDirectory)
+
+              selectionAlgorithm match {
+                case ksa: KarmaSelectionAlgorithm =>
+                  ksa.driverPolicy match {
+                    case RLBasedDriverPolicy(structure, client) =>
+                    // side effect here
+                    case _ => ()
+                  }
+                case _ => ()
+              }
 
               val sel: SelectionRunner =
                 SelectionRunner(
@@ -179,11 +191,6 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                 case _ =>
                   Map.empty
               }
-
-//              // write initial bank to file system
-//              val initBankFile = config.experimentLoggingDirectory.resolve("karma_bank_initial.csv").toFile
-//              val writer       = initBankFile.asCsvWriter[(String, Long)](rfc.withHeader("agentId", "balance"))
-//              writer.write(bank.toList.map { case (a, k) => (a, k.value) })
 
               val alg = RoutingAlgorithm2(
                 altPathsAlgorithmRunner = ksp,
@@ -218,7 +225,8 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
           bank = bank,
           updateFunction = config.algorithm.edgeUpdateFunction.build(),
           batchWindow = config.routing.batchWindow,
-          minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold
+          minRequestUpdateThreshold = config.routing.minRequestUpdateThreshold,
+          loggingDirectory = config.experimentLoggingDirectory
         )
       } yield experimentFinishState
 
@@ -241,7 +249,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
               case rlsa: RLSelectionAlgorithm =>
                 for {
                   _ <- bankResult
-                  _ <- rlsa.reportAgentsAreDone()
+                  // _ <- rlsa.reportAgentsAreDone()
                   _ <- rlsa.close()
                 } yield ()
               case _ =>
@@ -271,4 +279,43 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         Right(())
     }
   }
+
+  def startEpisodesForRLPolicies(
+    sac: SelectionAlgorithmConfig,
+    agentsUnderControl: Set[Id[Person]]
+  ): Either[Error, Unit] = {
+    val program = sac match {
+      case rls: RLSelection =>
+        IO.raiseError(new NotImplementedError)
+      case ks: KarmaSelection =>
+        ks.driverPolicy match {
+          case erls: ExternalRLServer =>
+            // create episodes for every person in the SO population
+            val sendStartMsg: Id[Person] => IO[PolicyClientResponse] = (personId: Id[Person]) =>
+              PolicyClientOps.send(
+                msg = PolicyClientRequest.StartEpisodeRequest(
+                  episode_id = Some(EpisodeId(personId.toString)),
+                  training_enabled = erls.client.trainingEnabled
+                ),
+                host = erls.client.host,
+                port = erls.client.port
+              )
+
+            // run each batch of messages in parallel, taking care not to overload RLlib's server
+            val batches = agentsUnderControl.toList.sliding(erls.client.parallelism, erls.client.parallelism)
+            val result  = batches.toList.traverse { _.parTraverse(sendStartMsg) }
+            result.map { _ => () }
+
+          case _ => IO.unit
+        }
+      case _ => IO.unit
+    }
+
+    // temp hack to down-shift to an Either context
+    import cats.effect.unsafe.implicits.global
+    Try {
+      program.unsafeRunSync
+    }.toEither.left.map { t => new Error(s"failed starting RL episodes", t) }
+  }
+
 }

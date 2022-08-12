@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.config
 import java.io.File
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy._
 
 sealed trait DriverPolicyConfig
 
@@ -44,6 +45,15 @@ object DriverPolicyConfig {
   case class DelayProportional(maxBid: Option[Karma]) extends DriverPolicyConfig
 
   /**
+    * communicates with an RL server via HTTP which provides on-policy actions
+    *
+    * @param structure the structure of the problem, be it single or multi-agent
+    * @param client HTTP client parameters
+    */
+  case class ExternalRLServer(structure: RLDriverPolicyStructure, client: RLDriverPolicyClient)
+      extends DriverPolicyConfig
+
+  /**
     * reads a lookup table from file
     * @param file the file to read from
     * @param balanceCol the column name for the agent's current balance value (discrete)
@@ -61,6 +71,7 @@ object DriverPolicyConfig {
         case Fixed(bid)               => Right(DriverPolicy.Fixed(bid))
         case p: DelayWithKarmaMapping => Right(DriverPolicy.DelayWithKarmaMapping(p.unit, p.maxBid))
         case p: DelayProportional     => Right(DriverPolicy.DelayProportional(p.maxBid))
+        case p: ExternalRLServer      => Right(DriverPolicy.RLBasedDriverPolicy(p.structure, p.client))
         case _: DiscreteLookupTable   => Left(new NotImplementedError("see DriverPolicy.scala file"))
       }
     }

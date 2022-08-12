@@ -111,17 +111,18 @@ final class RLSelectionAlgorithm(
     result
   }
 
-  def reportAgentsAreDone(): IO[Unit] = {
-    // create a dummy observation and dummy reward from the grouping
-    for {
-      observation <- IO.fromEither(env.emptyObservation)
-      reward      <- IO.fromEither(env.emptyReward)
-      info = Map.empty[String, String]
-      done = Some(Map(AgentId("__all__") -> true))
-      _ <- PolicyClientOps.send(GetActionRequest(episodeId, observation), host, port)
-      _ <- PolicyClientOps.send(LogReturnsRequest(episodeId, reward, info, done), host, port)
-    } yield ()
-  }
+  // ooh, bad idea here
+  // def reportAgentsAreDone(): IO[Unit] = {
+  //   // create a dummy observation and dummy reward from the grouping
+  //   for {
+  //     observation <- IO.fromEither(env.emptyObservation)
+  //     reward      <- IO.fromEither(env.emptyReward)
+  //     info = Map.empty[String, String]
+  //     done = Some(Map(AgentId("__all__") -> true))
+  //     _ <- PolicyClientOps.send(GetActionRequest(episodeId, observation), host, port)
+  //     _ <- PolicyClientOps.send(LogReturnsRequest(episodeId, reward, info, done), host, port)
+  //   } yield ()
+  // }
 
   def close(): IO[Unit] = {
     for {

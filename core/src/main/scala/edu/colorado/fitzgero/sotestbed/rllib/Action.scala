@@ -38,12 +38,12 @@ object Action {
 
   implicit val dec: Decoder[Action] =
     List[Decoder[Action]](
-      Decoder[SingleAgentDiscreteAction].widen,
+      Decoder[Int].map { SingleAgentDiscreteAction.apply }.widen,
       Decoder[Option[Map[AgentId, List[Int]]]].emap {
         case None    => Right(MultiAgentDiscreteAction(Map.empty))
         case Some(m) => Right(MultiAgentDiscreteAction(m))
       },
-      Decoder[SingleAgentRealAction].widen,
+      Decoder[Double].map { SingleAgentRealAction.apply }.widen,
       Decoder[Option[Map[AgentId, List[Double]]]].emap {
         case None    => Right(MultiAgentRealAction(Map.empty))
         case Some(m) => Right(MultiAgentRealAction(m))

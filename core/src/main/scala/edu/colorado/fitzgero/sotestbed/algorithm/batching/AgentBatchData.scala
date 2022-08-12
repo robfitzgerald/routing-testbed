@@ -8,10 +8,16 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import kantan.csv.HeaderDecoder
 
 sealed trait AgentBatchData
 
 object AgentBatchData {
+
+  case class EnterSimulation(
+    agent: String,
+    departureTime: SimTime
+  ) extends AgentBatchData
 
   /**
     * captures the data about an agent's request which is meaningful for batch optimization and routing
@@ -135,5 +141,26 @@ object AgentBatchData {
     *
     * @param agentId the agent's id to remove
     */
-  final case class SOAgentArrivalData(agentId: String) extends AgentBatchData
+  final case class SOAgentArrivalData(
+    agentId: String,
+    departureTime: SimTime,
+    arrivalTime: SimTime,
+    finalTravelTime: SimTime,
+    finalDistance: Meters
+  ) extends AgentBatchData {
+    override def toString = f"$agentId,$departureTime,$arrivalTime,$finalTravelTime,$finalDistance"
+  }
+
+  object SOAgentArrivalData {
+    val Columns = ("agentId", "departureTime", "arrivalTime", "finalTravelTime", "finalDistance")
+    def Header  = Columns.toList.mkString(",")
+
+    implicit val hd: HeaderDecoder[SOAgentArrivalData] = HeaderDecoder.decoder(
+      "agentId",
+      "departureTime",
+      "arrivalTime",
+      "finalTravelTime",
+      "finalDistance"
+    ) { SOAgentArrivalData.apply }
+  }
 }

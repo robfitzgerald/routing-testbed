@@ -86,6 +86,7 @@ object NetworkPolicySignal {
     */
   def getLogHeader(networkPolicy: NetworkPolicyConfig): String = networkPolicy match {
     case NetworkPolicyConfig.UserOptimal                        => ""
+    case _: NetworkPolicyConfig.RandomPolicy                    => ""
     case _: NetworkPolicyConfig.CongestionProportionalThreshold => "p"
     case _: NetworkPolicyConfig.ScaledProportionalThreshold     => "p"
   }

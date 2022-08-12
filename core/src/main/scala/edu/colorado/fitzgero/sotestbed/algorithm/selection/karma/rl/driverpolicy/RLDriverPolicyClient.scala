@@ -21,28 +21,13 @@ import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.rllib.Action
 
-final class RLDriverPolicyClient(host: String, port: Int, episodeId: EpisodeId) {
+final case class RLDriverPolicyClient(host: String, port: Int, parallelism: Int, trainingEnabled: Boolean) {
 
   /**
-    * sends a request to end an episode along with the final observation
-    *
-    * @param obs the final observation
-    * @param reward the episode rewards if any
-    * @param info the final info, if any
-    * @param done done messages per agent
-    * @return the effect of sending the LogReturnsRequest
+    * helper for sending requests to the RL server for
+    * DriverPolicy agents
     */
-  def finishEpisode(
-    obs: Observation,
-    reward: Reward,
-    info: Map[String, String],
-    done: Option[Map[AgentId, Boolean]] = None
-  ): IO[Unit] = {
-    val req = LogReturnsRequest(episodeId, reward, info, done)
-    for {
-      _ <- PolicyClientOps.send(req, host, port)
-    } yield ()
-  }
+  def send(req: PolicyClientRequest): IO[PolicyClientResponse] = PolicyClientOps.send(req, host, port)
 
   /**
     * function that handles communication to the RL server. knowledge of the
@@ -57,8 +42,9 @@ final class RLDriverPolicyClient(host: String, port: Int, episodeId: EpisodeId) 
     req: Request,
     obs: Observation
   ): IO[Action] = {
+    val epId = EpisodeId(req.agent)
     PolicyClientOps
-      .send(GetActionRequest(episodeId, obs), host, port)
+      .send(GetActionRequest(epId, obs), host, port)
       .flatMap { response =>
         response match {
           case GetActionResponse(action) =>
@@ -68,15 +54,5 @@ final class RLDriverPolicyClient(host: String, port: Int, episodeId: EpisodeId) 
             IO.raiseError(new Error(msg))
         }
       }
-  }
-}
-
-object RLDriverPolicyClient {
-
-  def createClientAndEpisode(host: String, port: Int): IO[RLDriverPolicyClient] = {
-    for {
-      res       <- PolicyClientOps.send(PolicyClientRequest.StartEpisodeRequest(), host, port)
-      episodeId <- res.getEpisodeId
-    } yield new RLDriverPolicyClient(host, port, episodeId)
   }
 }

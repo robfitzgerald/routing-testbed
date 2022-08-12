@@ -20,6 +20,7 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.{
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.AgentActivity
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import org.matsim.core.network.NetworkUtils
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.UniformEdgePopSamplingSingleTrip
 
 case class MATSimPopConfig(
   fs: MATSimPopConfig.Fs,
@@ -29,6 +30,12 @@ case class MATSimPopConfig(
   def updateSeed(newSeed: Long): MATSimPopConfig = {
     pop.popSampling match {
       case u: MATSimPopConfig.PopSampling.UniformPopLinkSampling =>
+        val updatedPopSampling: MATSimPopConfig.PopSampling = u.copy(seed = Some { newSeed })
+        val newPop: MATSimPopConfig.Pop = this.pop.copy(
+          popSampling = updatedPopSampling
+        )
+        this.copy(pop = newPop)
+      case u: MATSimPopConfig.PopSampling.UnifEdgeSingleTrip =>
         val updatedPopSampling: MATSimPopConfig.PopSampling = u.copy(seed = Some { newSeed })
         val newPop: MATSimPopConfig.Pop = this.pop.copy(
           popSampling = updatedPopSampling
@@ -66,6 +73,34 @@ object MATSimPopConfig {
 
   object PopSampling {
 
+    case class UnifEdgeSingleTrip(
+      workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
+      workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
+      workDurationHours: Int = 8,
+      seed: Option[Long] = None
+    ) extends PopSampling {
+
+      def build(matsimPopConfig: MATSimPopConfig): Either[PopSamplingFailure, PopSamplingAlgorithm] = {
+        val result: Either[io.Serializable, UniformEdgePopSamplingSingleTrip] = for {
+          roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimPopConfig.fs.matsimNetworkFile)
+          matsimNetwork <- Try { NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
+        } yield {
+          UniformEdgePopSamplingSingleTrip(
+            roadNetwork,
+            matsimNetwork,
+            matsimPopConfig.pop.size,
+//            matsimPopConfig.pop.adoptionRate,
+            workActivityMinTime,
+            workActivityMaxTime,
+            workDurationHours,
+            seed
+          )
+        }
+
+        result.left.map { s => PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString) }
+      }
+    }
+
     /**
       * build a population using uniform sampling over the graph edge set and using
       * a time range for the workplace activity
@@ -78,7 +113,7 @@ object MATSimPopConfig {
       workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
       workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
       workDurationHours: Int = 8,
-      seed: Option[Long] = None,
+      seed: Option[Long] = None
     ) extends PopSampling {
 
       def build(matsimPopConfig: MATSimPopConfig): Either[PopSamplingFailure, PopSamplingAlgorithm] = {
@@ -98,9 +133,7 @@ object MATSimPopConfig {
           )
         }
 
-        result.left.map { s =>
-          PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString)
-        }
+        result.left.map { s => PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString) }
       }
     }
 
@@ -116,11 +149,11 @@ object MATSimPopConfig {
     final case class UniformPopPolygonSampling(
       geometryPath: File,
       geometrySRID: Int = 4326, // assumed to be WGS84
-      networkSRID: Int = 3857, // assumed to be web mercator
+      networkSRID: Int = 3857,  // assumed to be web mercator
       workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
       workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
       workDurationHours: Int = 8,
-      seed: Option[Long] = None,
+      seed: Option[Long] = None
     ) extends PopSampling {
 
       def build(matsimPopConfig: MATSimPopConfig): Either[PopSamplingFailure, PopSamplingAlgorithm] = {
@@ -142,9 +175,7 @@ object MATSimPopConfig {
           )
         }
 
-        result.left.map { s =>
-          PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString)
-        }
+        result.left.map { s => PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString) }
       }
     }
 

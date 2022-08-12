@@ -4,6 +4,7 @@ import scala.Numeric.Implicits._
 import scala.collection.immutable.NumericRange
 
 import cats.data.Validated
+import kantan.csv._
 
 final class SimTime(val value: Long) extends AnyVal {
   def +(that: SimTime): SimTime                          = SimTime(this.value + that.value)
@@ -42,4 +43,9 @@ object SimTime {
 
   val EndOfDay: SimTime                   = new SimTime(172800) // two days of time as a buffer for any sim events
   def apply[T: Numeric](time: T): SimTime = new SimTime(time.toLong)
+
+  implicit val cd: CellDecoder[SimTime] = CellDecoder[Long].emap {
+    case n if n < 0L => Left(DecodeError.TypeError(s"sim time cannot be less than 0, but found $n"))
+    case n           => Right(SimTime(n))
+  }
 }

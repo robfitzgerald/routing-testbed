@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.simulator
 import org.matsim.api.core.v01.population.Leg
 
 final case class DepartureTime(value: Int) extends AnyVal {
+
   override def toString: String = {
     def padLeft(n: String): String = if (n.length == 1) s"0$n" else n
     val hour: String =

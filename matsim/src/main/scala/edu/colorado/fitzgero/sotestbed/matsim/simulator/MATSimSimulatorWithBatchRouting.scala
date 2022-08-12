@@ -87,7 +87,8 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   val markForSOPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
   val markForUEPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
   var newSORouteRequests: Option[RouteRequests]                               = None
-  var newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]       = collection.mutable.ListBuffer.empty
+  val newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]       = collection.mutable.ListBuffer.empty
+  val newSOAgentBatchData: collection.mutable.ListBuffer[AgentBatchData]      = collection.mutable.ListBuffer.empty
   val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]        = collection.mutable.Set.empty
 
   var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData] =
@@ -281,16 +282,21 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
                   Try {
 
-                    self.departureTimeStore.update(event.getPersonId, DepartureTime(event.getTime.toInt))
+                    val personId      = event.getPersonId
+                    val vehicleId     = event.getVehicleId
+                    val departureTime = DepartureTime(event.getTime.toInt)
+                    val simTime       = SimTime(event.getTime.toInt)
+
+                    self.departureTimeStore.update(personId, departureTime)
 
                     if (self.useExternalRoutingEngineForSelfishAgents &&
-                        !soAgentReplanningHandler.isUnderControl(event.getPersonId)) {
+                        !soAgentReplanningHandler.isUnderControl(personId)) {
                       // this is a UE agent who needs selfish routing. we will
                       // mark them to have dijkstra routing when they enter their
                       // first path edge
 
                       for {
-                        mobsimAgent <- self.qSim.getAgents.asScala.get(event.getPersonId)
+                        mobsimAgent <- self.qSim.getAgents.asScala.get(personId)
                         homeMorningActivity <- WithinDayAgentUtils
                           .getModifiablePlan(mobsimAgent)
                           .getPlanElements
@@ -302,16 +308,15 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                           }
                       } {
                         val planDepartureTime = SimTime(homeMorningActivity.getEndTime.seconds.toInt)
-                        val eventTime         = SimTime(event.getTime.toInt)
-                        val eventTimes        = f"$planDepartureTime $eventTime"
+                        val eventTimes        = f"$planDepartureTime $simTime"
 
-                        val timeDiff = eventTime - planDepartureTime
+                        val timeDiff = simTime - planDepartureTime
                         homeMorningActivity
                       }
 
-                      self.markForUEPathOverwrite.update(event.getVehicleId, event.getPersonId)
-                      self.ueAgentAssignedDijkstraRoute -= event.getPersonId
-                      logger.debug(s"agent ${event.getPersonId} marked for routing")
+                      self.markForUEPathOverwrite.update(vehicleId, personId)
+                      self.ueAgentAssignedDijkstraRoute -= personId
+                      logger.debug(s"agent $personId marked for routing")
 
                     } else if (soReplanningThisIteration) {
                       // during so-replanning iterations, they are implicitly forced to apply their routes
@@ -320,10 +325,14 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                       // noop
 
                       // wipe the stored routes, they will be over-written
-                      self.completePathStore.remove(event.getPersonId)
+                      self.completePathStore.remove(personId)
+
+                      // let the routing algorithm know this agent has entered the system
+                      val entersMessage = AgentBatchData.EnterSimulation(personId.toString, simTime)
+                      self.newSOAgentBatchData.prepend(entersMessage)
 
                       logger
-                        .debug(s"agent ${event.getPersonId} removing stored route in prep for so replanning iteration")
+                        .debug(s"agent $personId removing stored route in prep for so replanning iteration")
 
                     } else {
 
@@ -334,9 +343,9 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                       // because i seemed to find agents who are not yet in their Leg that are still
                       // triggering the enter traffic event. so, we simply flag here, and we delay
                       // route modification until we observe this agent's next LinkEnterEvent (below).
-                      self.markForSOPathOverwrite.update(event.getVehicleId, event.getPersonId)
+                      self.markForSOPathOverwrite.update(vehicleId, personId)
 
-                      logger.debug(s"triggered for so agent ${event.getPersonId} with stored path")
+                      logger.debug(s"triggered for so agent $personId with stored path")
                     }
 
                   } match {
@@ -480,7 +489,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                     for {
                       mobsimAgent <- self.qSim.getAgents.asScala.get(agentId)
                       leg         <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
-//                      departureTime <- DepartureTime.getLegDepartureTime(leg)
+                      // agentHistory <- self
                       agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                       distance <- MATSimRouteOps.distanceOfPath(agentExperiencedRoute, qSim)
                     } {
@@ -514,7 +523,15 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                           soAgentReplanningHandler.isUnderControl(agentId)) {
 
                         // queue up a message to remove this agent from the batching manager
-                        self.agentLeftSimulationRequests += SOAgentArrivalData(agentId.toString)
+
+                        val arrivalData = SOAgentArrivalData(
+                          agentId = agentId.toString,
+                          departureTime = SimTime(departureTime.value),
+                          arrivalTime = SimTime(event.getTime.toInt),
+                          finalTravelTime = SimTime(travelTimeSeconds),
+                          finalDistance = distance
+                        )
+                        self.agentLeftSimulationRequests += arrivalData
 
                         // FINALIZE THIS AGENT'S ROUTE FOR NON-PLANNING ITERATIONS
                         logger.debug(s"triggered for so agent $agentId")
@@ -530,8 +547,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                         // attach this path, keyed by departure time, to the complete list
                         completePathStore.get(agentId) match {
                           case None =>
-                            val thisPath: Map[DepartureTime, List[Id[Link]]] =
-                              Map(departureTime -> agentExperiencedRoute)
+                            val thisPath = Map(departureTime -> agentExperiencedRoute)
                             completePathStore.update(agentId, thisPath)
                           case Some(alreadyHasPaths) =>
                             completePathStore
@@ -1088,18 +1104,22 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       val ueRequests: List[AgentBatchData] = self.newUERouteRequests.toList
       self.newUERouteRequests.clear()
 
+      val soBatchData: List[AgentBatchData] = self.newSOAgentBatchData.toList
+      self.newSOAgentBatchData.clear()
+
       val agentsLeftSimulationRequests: List[SOAgentArrivalData] = self.agentLeftSimulationRequests.toList
       self.agentLeftSimulationRequests.clear()
 
       self.newSORouteRequests match {
         case None =>
           logger.debug(s"returning empty list (no requests)")
-          ueRequests ++ agentsLeftSimulationRequests
+          ueRequests ::: soBatchData ::: agentsLeftSimulationRequests
         case Some(rr) =>
           logger.debug(
             s"sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests"
           )
-          val outgoingRequests: List[AgentBatchData] = rr.requests ++ ueRequests ++ agentsLeftSimulationRequests
+          val outgoingRequests: List[AgentBatchData] =
+            soBatchData ::: rr.requests ::: ueRequests ::: agentsLeftSimulationRequests
           self.newSORouteRequests = None
           outgoingRequests
       }

@@ -21,7 +21,7 @@ sealed trait RLDriverPolicyStructure
 
 object RLDriverPolicyStructure extends BankOps {
 
-  case class AgentPolicy(space: DriverPolicySpace) extends RLDriverPolicyStructure
+  case class SingleAgentPolicy(space: DriverPolicySpace) extends RLDriverPolicyStructure
 
   case class MultiAgentPolicy(space: DriverPolicySpace) extends RLDriverPolicyStructure
 
@@ -48,7 +48,7 @@ object RLDriverPolicyStructure extends BankOps {
       paths: List[Path]
     ): IO[Observation] = dp match {
       case MultiAgentPolicy(space) => IO.raiseError(new NotImplementedError)
-      case AgentPolicy(space) =>
+      case SingleAgentPolicy(space) =>
         for {
           balance  <- IO.fromEither(bank.getOrError(req.agent))
           thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
@@ -68,7 +68,7 @@ object RLDriverPolicyStructure extends BankOps {
     ): IO[Karma] = {
       dp match {
         case MultiAgentPolicy(space) => IO.raiseError(new NotImplementedError)
-        case AgentPolicy(space) =>
+        case SingleAgentPolicy(space) =>
           action match {
             case MultiAgentDiscreteAction(action) =>
               IO.raiseError(new IllegalStateException)

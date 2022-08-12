@@ -24,6 +24,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.reports.Reports
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import java.nio.file.Path
 
 abstract class RoutingExperiment2
     extends Reports[IO, Coordinate, EdgeBPR]
@@ -49,7 +50,8 @@ abstract class RoutingExperiment2
     soRoutingAlgorithm: Option[RoutingAlgorithm2],
     bank: Map[String, Karma],
     batchWindow: SimTime,
-    minRequestUpdateThreshold: SimTime
+    minRequestUpdateThreshold: SimTime,
+    loggingDirectory: Path
   ): IO[ExperimentState] = {
 
     def _run(startState: ExperimentState): IO[ExperimentState] = {
@@ -71,13 +73,16 @@ abstract class RoutingExperiment2
               .map { _.runSO(r1, batchRequests, currentSimTime, b2, k0) }
               .getOrElse(IO.pure((List.empty, k0)))
             (soResults, k1) = soOutput
-            resolvedResults = BatchingManager.resolveRoutingResultBatches(List(ueResults) ::: soResults.map { _._2 })
-            _ <- assignReplanningRoutes(resolvedResults)
+            ueResolved      = BatchingManager.resolveRoutingResultBatches(List(ueResults))
+            soResolved      = BatchingManager.resolveRoutingResultBatches(soResults.map { _._2 })
+            resolvedResults = ueResolved ::: soResolved
+            _  <- assignReplanningRoutes(resolvedResults)
+            b3 <- IO.fromEither(b2.incrementReplannings(soResolved))
             dataForReports = List(("ue", ueResults)) ::: soResults
             _  <- updateReports(dataForReports, r1, currentSimTime)
             s1 <- getState
           } yield {
-            ExperimentState(r1, b2, k1, s1)
+            ExperimentState(r1, b3, k1, s1)
           }
       } {
         case ExperimentState(_, _, _, s) =>
@@ -93,17 +98,15 @@ abstract class RoutingExperiment2
       }
     }
 
-    val initialState = ExperimentState(
-      roadNetwork,
-      BatchingManager(batchWindow, minRequestUpdateThreshold, costFunction),
-      bank
-    )
     val simulationResult = for {
+      bm <- BatchingManager(batchWindow, minRequestUpdateThreshold, costFunction, loggingDirectory)
+      initialState = ExperimentState(roadNetwork, bm, bank)
       _      <- initializeSimulator(config)
       result <- _run(initialState)
     } yield {
       // handle closing the PrintWriter in the Karma selection algorithm (sigh)
-      soRoutingAlgorithm.foreach { RoutingExperiment2.close }
+      soRoutingAlgorithm.foreach { alg => RoutingExperiment2.close(alg, result.bank) }
+      result.batchingManager.close()
       result
     }
 
@@ -145,10 +148,10 @@ object RoutingExperiment2 {
     result
   }
 
-  def close(alg: RoutingAlgorithm2): Unit = {
+  def close(alg: RoutingAlgorithm2, bank: Map[String, Karma]): IO[Unit] = {
     alg.selectionRunner.selectionAlgorithm match {
-      case k: KarmaSelectionAlgorithm => k.close()
-      case _                          => ()
+      case k: KarmaSelectionAlgorithm => k.close(bank)
+      case _                          => IO.unit
     }
   }
 }

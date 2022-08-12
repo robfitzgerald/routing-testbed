@@ -6,15 +6,35 @@ import cats.implicits._
 
 trait BankOps {
 
-  implicit class AgentMapOps[V](bank: Map[String, V]) {
+  // deserves a different home
+  implicit class MapOps[V](map: Map[String, V]) {
 
     def getOrError(agent: String): Either[Error, V] =
-      bank
+      map
         .get(agent)
         .toRight {
           new Error(s"agent $agent missing from lookup")
         }
   }
+
+  implicit class AgentMapOps(bank: Map[String, Karma]) {
+
+    def getOrError(agent: String): Either[Error, Karma] =
+      bank
+        .get(agent)
+        .toRight {
+          new Error(s"agent $agent missing from lookup")
+        }
+
+    def limitBidByBalance(bid: Karma, agent: String): Either[Error, Karma] =
+      bank
+        .getOrError(agent)
+        .map { balance =>
+          val bidTrunc = math.min(bid.value, balance.value)
+          Karma(bidTrunc)
+        }
+  }
+
 }
 
 object BankOps {

@@ -12,14 +12,21 @@ import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import java.io.PrintWriter
+import scala.util.Try
+import java.nio.file.Path
+import scala.util.Failure
+import scala.util.Success
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.EnterSimulation
 
 final case class BatchingManager(
   batchWindow: SimTime,
   minRequestUpdateThreshold: SimTime,
   costFunction: EdgeBPR => Cost,
-  batchData: Map[String, RouteRequestData] = Map.empty,
-  storedHistory: ActiveAgentHistory = ActiveAgentHistory(),
-  mostRecentBatchRequested: SimTime = SimTime.Zero
+  batchData: Map[String, RouteRequestData],
+  storedHistory: ActiveAgentHistory,
+  mostRecentBatchRequested: SimTime,
+  tripLog: PrintWriter
 ) extends LazyLogging {
 
   /**
@@ -40,13 +47,41 @@ final case class BatchingManager(
     updates.foldLeft(IO.pure(this)) { (ioB, data) =>
       ioB.flatMap { b =>
         data match {
-          case SOAgentArrivalData(agentId) =>
-            // the agent is no longer in the system - remove
-            val updated = b.copy(
-              batchData = b.batchData - agentId,
-              storedHistory = b.storedHistory.processArrivalFor(agentId)
-            )
-            IO.pure(updated)
+
+          case EnterSimulation(agent, departureTime) =>
+            IO {
+              logger.info(s"recognizing agent $agent entered simulation at $departureTime")
+              b
+            }
+          case data: SOAgentArrivalData =>
+            // log this data and stop tracking this trip
+            storedHistory.getOldestData(data.agentId) match {
+              case None =>
+                // agent hasn't been in the system long enough to have been
+                // replanned at all
+                IO {
+                  val tt = data.finalTravelTime
+                  val msg = f"agent ${data.agentId} arriving before receiving any plans with " +
+                    f"overall travel time of $tt"
+                  logger.info(msg)
+                  b
+                }
+              case Some(oldestData) =>
+                for {
+                  originalTT <- IO.fromEither(oldestData.overallTravelTimeEstimate)
+                  _ <- IO.fromTry(Try {
+                    val row = TripLogRow(data, originalTT)
+                    this.tripLog.write(row.toString + "\n")
+                    this.tripLog.flush()
+                  })
+                } yield {
+                  b.copy(
+                    batchData = b.batchData - data.agentId,
+                    storedHistory = b.storedHistory.processArrivalFor(data.agentId)
+                  )
+                }
+            }
+
           case routeRequestData: RouteRequestData =>
             val canUpdateRequest =
               b.storedHistory.getNewestData(routeRequestData.request.agent) match {
@@ -70,6 +105,15 @@ final case class BatchingManager(
         }
       }
     }
+  }
+
+  def incrementReplannings(responses: List[Response]): Either[Error, BatchingManager] = {
+    val initial: Either[Error, ActiveAgentHistory] = Right(this.storedHistory)
+    val updated = responses.foldLeft(initial) {
+      case (acc, res) =>
+        acc.flatMap { _.incrementReplannings(res.request.agent) }
+    }
+    updated.map { updatedHist => this.copy(storedHistory = updatedHist) }
   }
 
   /**
@@ -102,9 +146,42 @@ final case class BatchingManager(
         }
     }
   }
+
+  def close(): Unit = {
+    this.tripLog.close()
+  }
 }
 
 object BatchingManager {
+
+  val FinalTripLogFilename = "tripLog.csv"
+
+  def apply(
+    batchWindow: SimTime,
+    minRequestUpdateThreshold: SimTime,
+    costFunction: EdgeBPR => Cost,
+    outputDirectory: Path
+  ): IO[BatchingManager] = {
+    for {
+      uri <- IO.fromTry(Try { outputDirectory.resolve(FinalTripLogFilename) })
+      pw <- IO.fromTry(Try {
+        val pw = new PrintWriter(uri.toFile)
+        pw.write(SOAgentArrivalData.Header + "\n")
+        pw
+      })
+    } yield {
+      val bm = BatchingManager(
+        batchWindow = batchWindow,
+        minRequestUpdateThreshold = minRequestUpdateThreshold,
+        costFunction = costFunction,
+        batchData = Map.empty,
+        storedHistory = ActiveAgentHistory(),
+        mostRecentBatchRequested = SimTime.Zero,
+        tripLog = pw
+      )
+      bm
+    }
+  }
 
   def splitUEFromSO(data: AgentBatchData): Boolean = {
     data match {

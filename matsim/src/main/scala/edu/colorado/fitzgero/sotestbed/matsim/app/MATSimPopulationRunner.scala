@@ -22,6 +22,7 @@ import org.matsim.core.network.NetworkUtils
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
 import MATSimPopConfig.localDateConvert
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.UniformEdgePopSamplingSingleTrip
 
 object MATSimPopulationRunner {
 
@@ -52,7 +53,8 @@ object MATSimPopulationRunner {
             roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(networkFile)
             matsimNetwork <- Try { NetworkUtils.readNetwork(networkFile.toString) }.toEither
           } yield {
-            UniformEdgePopulationSamplingAlgorithm(
+            // rjf 2022-08-06 let's break each "person" into two, each with one trip
+            UniformEdgePopSamplingSingleTrip(
               roadNetwork,
               matsimNetwork,
               popSize,
@@ -71,7 +73,7 @@ object MATSimPopulationRunner {
             UniformPolygonPopulationSamplingAlgorithm(
               geometry,
               boundingGeometrySRID = 4326, // assumed to be LAT LON
-              networkSRID = 3857, // assumed to be web mercator
+              networkSRID = 3857,          // assumed to be web mercator
               matsimNetwork,
               popSize,
 //              adoptionRate,
@@ -83,9 +85,7 @@ object MATSimPopulationRunner {
           }
       }
 
-    result.left.map { s =>
-      PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString)
-    } match {
+    result.left.map { s => PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString) } match {
       case Left(e) => Left(e)
       case Right(alg) =>
         val population: List[Agent] = alg.generate

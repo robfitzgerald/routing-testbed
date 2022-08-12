@@ -10,6 +10,8 @@ object NetworkPolicySignalGenerator {
 
   case object UserOptimalGenerator extends NetworkPolicySignalGenerator
 
+  case class RandomGenerator(rng: Random) extends NetworkPolicySignalGenerator
+
   case class ThresholdSamplingGenerator(rng: Random) extends NetworkPolicySignalGenerator
 
   case class ScaledThresholdSamplingGenerator(scale: Double, rng: Random) extends NetworkPolicySignalGenerator
@@ -20,6 +22,10 @@ object NetworkPolicySignalGenerator {
       gen match {
         case UserOptimalGenerator =>
           NetworkPolicySignal.UserOptimal
+        case RandomGenerator(rng) =>
+          val pct    = rng.nextDouble
+          val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
+          signal
         case ThresholdSamplingGenerator(rng) =>
           val pct    = math.min(1.0, math.max(0.0, obs.increaseAccumulated))
           val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
