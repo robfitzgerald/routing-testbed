@@ -17,6 +17,13 @@ final case class TripLogRow(
 
   def travelTimeDiff: SimTime = this.originalTravelTimeEstimate - this.finalTravelTime
 
+  /**
+    * writes the row to a string intended for a CSV. i make the horrible assumption here
+    * that SimTime.toString has the same result as CellEncoder[SimTime] in kantan. see
+    * SimTime.scala to confirm if things get wonky.
+    *
+    * @return stringified trip log row
+    */
   override def toString =
     f"$agentId,$departureTime,$arrivalTime,$originalTravelTimeEstimate," +
       s"$finalTravelTime,$finalDistance"

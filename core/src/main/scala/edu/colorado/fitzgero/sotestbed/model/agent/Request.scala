@@ -8,6 +8,5 @@ case class Request(
   location: EdgeId,
   destination: EdgeId,
   requestClass: RequestClass,
-  travelMode: TravelMode,
-  departureTime: SimTime
+  travelMode: TravelMode
 )

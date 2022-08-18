@@ -30,7 +30,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     * @return the effect of reading the tripLog.csv file
     */
   def getTripLog(experimentDirectory: Path): IO[List[TripLogRow]] = {
-    val tripLogFile = BatchingManager.FinalTripLogFilename
+    val tripLogFile = BatchingManager.TripLogFilename
     val uri         = experimentDirectory.resolve(tripLogFile).toFile
     val rowsResult  = ReadResult.sequence(uri.asCsvReader[TripLogRow](rfc.withHeader).toList)
     IO.fromEither(rowsResult)

@@ -149,7 +149,7 @@ final case class BatchingManager(
 
   def close(): IO[Unit] = {
     IO.fromTry(Try {
-      logger.info(s"closing ${BatchingManager.FinalTripLogFilename}")
+      logger.info(s"closing ${BatchingManager.TripLogFilename}")
       this.tripLog.close()
     })
   }
@@ -157,7 +157,7 @@ final case class BatchingManager(
 
 object BatchingManager {
 
-  val FinalTripLogFilename = "tripLog.csv"
+  val TripLogFilename = "tripLog.csv"
 
   def apply(
     batchWindow: SimTime,
@@ -166,10 +166,10 @@ object BatchingManager {
     outputDirectory: Path
   ): IO[BatchingManager] = {
     for {
-      uri <- IO.fromTry(Try { outputDirectory.resolve(FinalTripLogFilename) })
+      uri <- IO.fromTry(Try { outputDirectory.resolve(TripLogFilename) })
       pw <- IO.fromTry(Try {
         val pw = new PrintWriter(uri.toFile)
-        pw.write(SOAgentArrivalData.Header + "\n")
+        pw.write(TripLogRow.Header + "\n")
         pw
       })
     } yield {

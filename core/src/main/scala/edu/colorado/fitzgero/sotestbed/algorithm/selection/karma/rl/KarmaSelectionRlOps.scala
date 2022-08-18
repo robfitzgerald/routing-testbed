@@ -53,8 +53,9 @@ object KarmaSelectionRlOps extends LazyLogging {
             val finalRewardReq = PolicyClientRequest.LogReturnsRequest(
               episode_id = EpisodeId(agentId),
               reward = reward,
-              info = Map.empty,
-              done = Some(Map(AgentId(agentId) -> true))
+              info = None,
+              done = None
+              // done = Some(Map(AgentId(agentId) -> true))
             )
             val endEpisodeReq = PolicyClientRequest.EndEpisodeRequest(
               episode_id = EpisodeId(agentId),

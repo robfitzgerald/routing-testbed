@@ -2,6 +2,8 @@ package edu.colorado.fitzgero.sotestbed.model.numeric
 
 import scala.Numeric.Implicits._
 import scala.collection.immutable.NumericRange
+import java.time.LocalTime
+import scala.util.Try
 
 import cats.data.Validated
 import kantan.csv._
@@ -41,11 +43,56 @@ object SimTime {
   def minute(m: Int): SimTime = SimTime(m) * Minute
   def hour(h: Int): SimTime   = SimTime(h) * Hour
 
-  val EndOfDay: SimTime                   = new SimTime(172800) // two days of time as a buffer for any sim events
-  def apply[T: Numeric](time: T): SimTime = new SimTime(time.toLong)
+  val EndOfDay: SimTime                            = new SimTime(172800) // two days of time as a buffer for any sim events
+  def apply[T: Numeric](time: T): SimTime          = new SimTime(time.toLong)
+  def fromLocalTime(localTime: LocalTime): SimTime = SimTime(localTime.toSecondOfDay)
 
-  implicit val cd: CellDecoder[SimTime] = CellDecoder[Long].emap {
-    case n if n < 0L => Left(DecodeError.TypeError(s"sim time cannot be less than 0, but found $n"))
-    case n           => Right(SimTime(n))
+  /**
+    * accepts a string in any of these formats and parses them as SimTime
+    * (listed here as regex patterns)
+    *
+    * s+
+    * m+:s+
+    * h+:m+:s+
+    *
+    * note: places no restriction on time value sizes
+    *
+    * @param s string to decode as SimTime value
+    * @return either a SimTime or an error
+    */
+  def fromString(s: String): Either[Error, SimTime] = {
+    val digitBins = s.split(":")
+    val parseAndDecodeResult = digitBins.toList match {
+      case sStr :: Nil =>
+        Try { SimTime(sStr.toInt) }.toEither
+      case mStr :: sStr :: Nil =>
+        Try {
+          SimTime.minute(mStr.toInt) + SimTime(sStr.toInt)
+        }.toEither
+      case hStr :: mStr :: sStr :: Nil =>
+        Try {
+          SimTime.hour(hStr.toInt) +
+            SimTime.minute(mStr.toInt) +
+            SimTime(sStr.toInt)
+        }.toEither
+      case other =>
+        Left(new Error(f"unable to parse time with more than 2 colons from $other"))
+    }
+    parseAndDecodeResult.left.map { t => new Error(f"failure parsing SimTime from string $s", t) }
   }
+
+  val cd: CellDecoder[SimTime] = CellDecoder.from { s =>
+    SimTime.fromString(s) match {
+      case Left(value) =>
+        val err = DecodeError.TypeError(f"failure parsing SimTime: ${value.getMessage}")
+        Left(err)
+      case Right(value) =>
+        Right(value)
+    }
+  }
+
+  val ce: CellEncoder[SimTime] = CellEncoder.from { _.toString }
+
+  implicit val codec: CellCodec[SimTime] = CellCodec.from(cd, ce)
+
 }

@@ -5,7 +5,7 @@ import scala.math.Numeric.Implicits.infixNumericOps
 import scala.math.Ordering.Implicits.infixOrderingOps
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching._
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import cats.implicits._
 
@@ -39,6 +39,10 @@ object AuctionOps extends LazyLogging {
 
   /**
     * agents receiving system optimal route plans shouldn't have to pay into the auction
+    *
+    * to achieve this, any trip with a trip index not equal to zero has it's bid value
+    * reset to zero (recall trip index 0 is the true shortest path).
+    *
     * @param selectedRoutes all bids, the selected path index, and the path. a path
     *                       index of 0 is a "user-optimal" path.
     * @param bank the current bank ledger
@@ -50,10 +54,12 @@ object AuctionOps extends LazyLogging {
     bank: Map[String, Karma],
     maxKarma: Karma
   ): Either[Error, Map[String, Karma]] = {
-    val winners = selectedRoutes
-      .filter { case (_, routeIdx, _) => routeIdx == 0 }
-      .map { case (bid, _, _) => bid }
-    resolveBidsUniformly(winners, bank, maxKarma)
+    val onlyWinnersPaying = selectedRoutes
+      .map {
+        case (bid, idx, _) if idx != 0 => bid.copy(value = Karma.Zero)
+        case (bid, _, _)               => bid
+      }
+    resolveBidsUniformly(onlyWinnersPaying, bank, maxKarma)
   }
 
   /**

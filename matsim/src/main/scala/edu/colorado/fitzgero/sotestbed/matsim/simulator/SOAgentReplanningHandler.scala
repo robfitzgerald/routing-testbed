@@ -1,8 +1,6 @@
 package edu.colorado.fitzgero.sotestbed.matsim.simulator
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
-import edu.colorado.fitzgero.sotestbed.matsim.simulator.SOAgentReplanningHandler.AgentData
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, SimTime}
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.events.handler.{
@@ -97,9 +95,7 @@ class SOAgentReplanningHandler(
   def incrementAgentDataDueToReplanning(agent: Id[Person], currentSimTime: SimTime): Option[Unit] =
     agentsInSimulation
       .get(agent)
-      .map { a =>
-        agentsInSimulation.update(agent, a.incrementPathAssignmentCount(currentSimTime))
-      }
+      .map { a => agentsInSimulation.update(agent, a.incrementPathAssignmentCount(currentSimTime)) }
 
   /**
     * a route plan failed; account for it
@@ -108,9 +104,7 @@ class SOAgentReplanningHandler(
   def incrementNumberFailedRoutingAttempts(agent: Id[Person]): Unit = {
     agentsInSimulation
       .get(agent)
-      .foreach { a =>
-        agentsInSimulation.update(agent, a.incrementNumberFailedRoutingAttempts())
-      }
+      .foreach { a => agentsInSimulation.update(agent, a.incrementNumberFailedRoutingAttempts()) }
   }
 
   /**
@@ -269,7 +263,7 @@ class SOAgentReplanningHandler(
   def handleEvent(event: LinkEnterEvent): Unit = {
     this.vehiclesForPersons.get(event.getVehicleId) match {
       case None =>
-        logger.debug(s"entering link with unregistered vehicle ${event.getVehicleId} presumed UE agent")
+      // logger.debug(s"entering link with unregistered vehicle ${event.getVehicleId} presumed UE agent")
       case Some(personId) =>
         this.trackEnteringALink(personId, SimTime(event.getTime.toInt))
     }
@@ -278,7 +272,7 @@ class SOAgentReplanningHandler(
   def handleEvent(event: LinkLeaveEvent): Unit = {
     this.vehiclesForPersons.get(event.getVehicleId) match {
       case None =>
-        logger.debug(s"leaving link with unregistered vehicle ${event.getVehicleId} presumed UE agent")
+      // logger.debug(s"leaving link with unregistered vehicle ${event.getVehicleId} presumed UE agent")
       case Some(personId) =>
         this.trackLeavingALink(personId, event.getLinkId, SimTime(event.getTime.toInt))
     }
@@ -304,44 +298,6 @@ class SOAgentReplanningHandler(
 }
 
 object SOAgentReplanningHandler {
-
-  /**
-    * data class containing information about this agent's current trip
-    * @param personId the agent
-    * @param timeEnteredVehicle sim time they entered their vehicle
-    * @param numberOfPathAssignments number of times they have been assigned a route from our algorithm
-    * @param numberFailedRoutingAttempts number of times that assignment was rejected/failed
-    * @param mostRecentTimePlanned the most recent time the agent accepted a new route
-    * @param currentLinkEnterTime if we have entered a link, we store the time we entered it
-    * @param reverseExperiencedRoute a reverse-order stored list of visited link data (due to fast List prepend op)
-    */
-  final case class AgentData(
-    personId: Id[Person],
-    vehicleId: Id[Vehicle],
-    timeEnteredVehicle: DepartureTime,
-    numberOfPathAssignments: Int = 0,
-    numberFailedRoutingAttempts: Int = 0,
-    mostRecentTimePlanned: Option[SimTime] = None,
-    currentLinkEnterTime: Option[SimTime] = None,
-    reverseExperiencedRoute: List[(Id[Link], Cost)] = List.empty
-  ) {
-
-    /**
-      * @return the experienced route in the correct order
-      */
-    def getExperiencedRoute: List[(Id[Link], Cost)] = this.reverseExperiencedRoute.reverse
-
-    def incrementPathAssignmentCount(simTime: SimTime): AgentData =
-      this.copy(
-        numberOfPathAssignments = this.numberOfPathAssignments + 1,
-        mostRecentTimePlanned = Some { simTime }
-      )
-
-    def incrementNumberFailedRoutingAttempts(): AgentData =
-      this.copy(
-        numberFailedRoutingAttempts = this.numberFailedRoutingAttempts + 1
-      )
-  }
 
   /**
     * helps compute a rolling average

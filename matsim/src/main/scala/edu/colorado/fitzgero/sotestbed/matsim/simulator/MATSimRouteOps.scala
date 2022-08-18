@@ -4,9 +4,7 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData.EdgeData
+import edu.colorado.fitzgero.sotestbed.algorithm.batching._
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, TravelMode}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Meters, MetersPerSecond, SimTime, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
@@ -21,6 +19,9 @@ import org.matsim.core.population.routes.{NetworkRoute, RouteUtils}
 import org.matsim.core.router.util.TravelTime
 import org.matsim.vehicles.Vehicle
 import org.matsim.withinday.trafficmonitoring.WithinDayTravelTime
+import scala.annotation.tailrec
+import scala.collection.immutable
+import org.matsim.api.core.v01.Scenario
 
 object MATSimRouteOps extends LazyLogging {
 
@@ -57,13 +58,24 @@ object MATSimRouteOps extends LazyLogging {
     * @param qSim the network simulation
     * @return an optional distance in Meters
     */
-  def distanceOfPath(path: List[Id[Link]], qSim: QSim): Option[Meters] = {
+  def distanceOfMATSimPath(path: List[Id[Link]], qSim: QSim): Option[Meters] = {
     val distances: List[Double] = for {
       linkId     <- path
       netsimLink <- Try { qSim.getNetsimNetwork.getNetsimLink(linkId) }.toOption
     } yield netsimLink.getLink.getLength
     if (distances.isEmpty) None
     else Some { Meters(distances.sum) }
+  }
+
+  /**
+    * calculates the total distance of a path (does not validate the path in the process)
+    * @param path the path to get distance of
+    * @param qSim the network simulation
+    * @return an optional distance in Meters
+    */
+  def distanceOfEdgeData(path: List[EdgeData], qSim: QSim): Option[Meters] = {
+    val linkIds = path.map { e => Id.createLinkId(e.edgeId.value) }
+    distanceOfMATSimPath(linkIds, qSim)
   }
 
   /**
@@ -129,7 +141,7 @@ object MATSimRouteOps extends LazyLogging {
     * @param qSim the MATSim simulation
     * @return EdgeData representation of the experienced path
     */
-  def convertExperiencedRouteToEdgeData(path: List[(Id[Link], Cost)], qSim: QSim): List[RouteRequestData.EdgeData] = {
+  def convertExperiencedRouteToEdgeData(path: List[(Id[Link], Cost)], qSim: QSim): List[EdgeData] = {
 
     val result: List[EdgeData] = path.foldLeft(List.empty[EdgeData]) {
       case (acc, (linkId, cost)) =>
@@ -139,7 +151,7 @@ object MATSimRouteOps extends LazyLogging {
         val dst                       = link.getToNode.getCoord
         val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
         val travelTime: SimTime       = SimTime(cost.value)
-        val edgeData: RouteRequestData.EdgeData = RouteRequestData.EdgeData(
+        val edgeData: EdgeData = EdgeData(
           EdgeId(linkId.toString),
           srcCoordinate,
           dstCoordinate,
@@ -151,12 +163,40 @@ object MATSimRouteOps extends LazyLogging {
     result.reverse
   }
 
+  val MinSpeedMph             = 5.0
+  val MinSpeedMetersPerSecond = (MinSpeedMph / 3600.0) * 1609.0
+
   final case class EdgeDataRequestWithTravelTime(
     person: Person,
     vehicle: Vehicle,
-    currentLinkDuration: Long,
-    travelTime: TravelTime
-  )
+    startLinkSimTime: SimTime,
+    tt: TravelTime,
+    minEstimatedSpeedMetersPerSecond: Double = MinSpeedMetersPerSecond
+  ) {
+
+    /**
+      * get the travel time for a link as if we were starting to traverse it at the
+      * time we started traversing our current link
+      *
+      * doing this because it's not documented how MATSim will interpret times "in the future"
+      * passed as the time argument for getLinkTravelTime. it seems like an acceptable assumption
+      * as this is only an estimate.
+      *
+      * note: really weird travel times have been observed, so i've added a min speed to prevent
+      * extreme outliers. the default min speed is set above.
+      *
+      * @param link the link to get time for
+      * @return estimated travel time
+      */
+    def getTravelTime(link: Link): SimTime = {
+      val estTime    = tt.getLinkTravelTime(link, startLinkSimTime.value.toDouble, person, vehicle)
+      val estSpeed   = link.getLength / estTime
+      val truncSpeed = math.max(minEstimatedSpeedMetersPerSecond, estSpeed)
+      val truncTime  = link.getLength / truncSpeed
+      val simTime    = SimTime(truncTime)
+      simTime
+    }
+  }
 
   /**
     * takes a planned remaining path and adds Coordinates to each link
@@ -168,32 +208,31 @@ object MATSimRouteOps extends LazyLogging {
     path: List[Id[Link]],
     qSim: QSim,
     travelTimeRequest: Option[EdgeDataRequestWithTravelTime] = None
-  ): List[RouteRequestData.EdgeData] = {
+  ): List[EdgeData] = {
 
-    val result: List[EdgeData] = path.zipWithIndex.foldLeft(List.empty[EdgeData]) {
-      case (acc, (linkId, idx)) =>
-        val link                      = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
-        val src                       = link.getFromNode.getCoord
-        val srcCoordinate: Coordinate = Coordinate(src.getX, src.getY)
-        val dst                       = link.getToNode.getCoord
-        val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
-        val linkTravelTime = travelTimeRequest.map {
-          case EdgeDataRequestWithTravelTime(person, vehicle, currentLinkDuration, travelTime) =>
-            val currentLinkTravelDuration = if (idx == 0) currentLinkDuration.toDouble else 0.0
-            val ltt                       = travelTime.getLinkTravelTime(link, currentLinkTravelDuration, person, vehicle)
-            SimTime(ltt)
-        }
+    @tailrec
+    def _convert(remaining: List[Id[Link]], result: List[EdgeData] = List.empty): List[EdgeData] =
+      remaining match {
+        case Nil => result
+        case head :: tail =>
+          val link                      = qSim.getNetsimNetwork.getNetsimLink(head).getLink
+          val src                       = link.getFromNode.getCoord
+          val srcCoordinate: Coordinate = Coordinate(src.getX, src.getY)
+          val dst                       = link.getToNode.getCoord
+          val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
+          val linkTravelTime            = travelTimeRequest.map { _.getTravelTime(link) }
 
-        val edgeData: RouteRequestData.EdgeData = RouteRequestData.EdgeData(
-          EdgeId(linkId.toString),
-          srcCoordinate,
-          dstCoordinate,
-          linkTravelTime
-        )
-        edgeData +: acc
-    }
+          val edgeData = EdgeData(
+            EdgeId(head.toString),
+            srcCoordinate,
+            dstCoordinate,
+            linkTravelTime
+          )
 
-    result.reverse
+          _convert(tail, edgeData +: result)
+      }
+
+    _convert(path).reverse
   }
 
   /**

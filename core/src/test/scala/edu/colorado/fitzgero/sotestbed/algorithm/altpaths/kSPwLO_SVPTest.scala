@@ -24,14 +24,14 @@ class kSPwLO_SVPTest extends SoTestBedBaseTest {
 
         for {
           network <- LocalAdjacencyListFlowNetwork.fromMATSimXML(TestNetwork.threeAltPathsFile)
-          request = Request("test", EdgeId("src->0"), EdgeId("4->dst"), RequestClass.UE, TravelMode.Car, SimTime.Zero)
+          request = Request("test", EdgeId("src->0"), EdgeId("4->dst"), RequestClass.UE, TravelMode.Car)
         } yield {
 
           val altsAlgResult = kSPwLO_SVP_Algorithm.generateAltsForRequest(
             request,
             network,
             EdgeBPRCostOps.BPRCostFunctionWithBookCoefficients,
-            Cost(1.0),
+            Cost(1.0)
           )
 
           altsAlgResult.unsafeRunSync() match {

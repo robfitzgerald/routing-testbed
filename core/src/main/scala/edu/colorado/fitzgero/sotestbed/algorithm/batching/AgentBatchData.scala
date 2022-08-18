@@ -32,8 +32,8 @@ object AgentBatchData {
     request: Request,
     timeOfRequest: SimTime,
     experiencedTravelTime: SimTime,
-    experiencedRoute: List[RouteRequestData.EdgeData],
-    remainingRoute: List[RouteRequestData.EdgeData],
+    experiencedRoute: List[EdgeData],
+    remainingRoute: List[EdgeData],
     remainingRouteDistance: Meters,
     lastReplanningTime: Option[SimTime]
   ) extends AgentBatchData {
@@ -102,7 +102,7 @@ object AgentBatchData {
 
   object RouteRequestData {
 
-    def ttEstimate(links: List[(RouteRequestData.EdgeData, Int)]): Either[Error, SimTime] = {
+    def ttEstimate(links: List[(EdgeData, Int)]): Either[Error, SimTime] = {
       links
         .traverse {
           case (edgeData, idx) =>
@@ -115,30 +115,6 @@ object AgentBatchData {
             }
         }
         .map { _.foldLeft(SimTime.Zero) { _ + _ } }
-    }
-
-    /**
-      * attributes associated with an Edge traversal
-      * @param edgeId
-      * @param estimatedTimeAtEdge observation of agent time at this edge. zero if the agent
-      *                            has not yet traversed this edge
-      * @param linkSourceCoordinate
-      * @param linkDestinationCoordinate
-      */
-    final case class EdgeData(
-      edgeId: EdgeId,
-      linkSourceCoordinate: Coordinate,
-      linkDestinationCoordinate: Coordinate,
-      estimatedTimeAtEdge: Option[SimTime] = None
-    ) {
-
-      def toPathSegment: PathSegment = {
-        val cost = this.estimatedTimeAtEdge match {
-          case None      => Cost.Zero
-          case Some(est) => Cost(est.value)
-        }
-        PathSegment(edgeId, cost)
-      }
     }
   }
 
