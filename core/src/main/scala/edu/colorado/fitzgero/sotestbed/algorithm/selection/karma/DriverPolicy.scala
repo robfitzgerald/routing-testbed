@@ -116,11 +116,13 @@ object DriverPolicy {
     }
 
     def applyDriverPolicy(
+      signal: NetworkPolicySignal,
       alts: Map[Request, List[Path]],
       bank: Map[String, Karma],
       activeAgentHistory: ActiveAgentHistory,
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-      costFunction: EdgeBPR => Cost
+      costFunction: EdgeBPR => Cost,
+      episodePrefix: String
     ): IO[List[Bid]] =
       policy match {
 
@@ -139,8 +141,8 @@ object DriverPolicy {
           alts.keys.toList.traverse { req =>
             val bidIO = for {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
-              oldest       <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
-              latest       <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
+              oldest       <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
+              latest       <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
               oldestTime   <- IO.fromEither(oldest.overallTravelTimeEstimate)
               latestTime   <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
@@ -168,8 +170,8 @@ object DriverPolicy {
           alts.keys.toList.traverse { req =>
             val bidIO = for {
               karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
-              oldest       <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
-              latest       <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
+              oldest       <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
+              latest       <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
               oldestTime   <- IO.fromEither(oldest.overallTravelTimeEstimate)
               latestTime   <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
@@ -198,14 +200,18 @@ object DriverPolicy {
           val getObservation: (Request, List[List[PathSegment]]) => IO[(Request, Observation)] =
             (req, paths) => {
               rl.structure
-                .encodeObservation(activeAgentHistory, bank, req, paths, alts)
+                .encodeObservation(activeAgentHistory, bank, req, paths, alts, signal)
                 .map { obs => (req, obs) }
             }
 
           // function to call the RL server and get an RLlib Action for this request
           val getActions: List[(Request, Observation)] => IO[List[Action]] =
             (reqsWithObs) => {
-              val getActionRequests = reqsWithObs.map { case (r, o) => GetActionRequest(EpisodeId(r.agent), o) }
+              val getActionRequests = reqsWithObs.map {
+                case (r, o) =>
+                  val episodeId = EpisodeId(r.agent, episodePrefix)
+                  GetActionRequest(episodeId, o)
+              }
               rl.client
                 .send(getActionRequests)
                 .flatMap(
@@ -213,7 +219,7 @@ object DriverPolicy {
                     case GetActionResponse(action) =>
                       IO.pure(action)
                     case other =>
-                      val msg = s"sent GetActionRequest but received $other"
+                      val msg = s"expecting GetActionResponse but received $other"
                       IO.raiseError(new Error(msg))
                   }
                 )

@@ -55,7 +55,7 @@ final case class BatchingManager(
             }
           case data: SOAgentArrivalData =>
             // log this data and stop tracking this trip
-            storedHistory.getOldestData(data.agentId) match {
+            storedHistory.getOldestRequest(data.agentId) match {
               case None =>
                 // agent hasn't been in the system long enough to have been
                 // replanned at all
@@ -69,6 +69,41 @@ final case class BatchingManager(
               case Some(oldestData) =>
                 for {
                   originalTT <- IO.fromEither(oldestData.overallTravelTimeEstimate)
+                  _ = IO.pure {
+                    if (originalTT > SimTime(3600)) {
+                      storedHistory.observedRouteRequestData.get(data.agentId).foreach { stored =>
+                        val replCnt = stored.replanningEvents
+                        val rows = stored.orderedEntryHistory.map {
+                          case AgentHistory.Entry(h, replan) =>
+                            val auditExp =
+                              if (h.experiencedRoute.isEmpty) SimTime.Zero
+                              else SimTime(h.experiencedRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }.sum)
+                            val auditRem =
+                              if (h.remainingRoute.isEmpty) SimTime.Zero
+                              else SimTime(h.remainingRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }.sum)
+                            val time        = h.timeOfRequest
+                            val experienced = h.experiencedTravelTime
+                            val remaining = h.remainingTravelTimeEstimate match {
+                              case Left(value) =>
+                                "<NA>"
+                              case Right(rem) =>
+                                rem.toString
+                            }
+                            f"$time: $experienced $remaining $replan $replCnt $auditExp $auditRem"
+                        }
+                        val detail = rows.mkString("\n")
+                        logger.info {
+                          f"""
+                             |reporting outlier trip log output for agent ${data.agentId} who finished their
+                             |trip at time ${data.arrivalTime}. original travel time estimate was quoted at
+                             |$originalTT which is greater than 1 hour. 
+                             |$$timeOfRequest: $$experiencedTravelTime $$remainingTravelTime $$replanned $$replanningCount $$auditExperienced $$auditRemaining
+                             |$detail""".stripMargin
+                        }
+                      }
+
+                    }
+                  }
                   _ <- IO.fromTry(Try {
                     val row = TripLogRow(data, originalTT)
                     this.tripLog.write(row.toString + "\n")
@@ -82,22 +117,22 @@ final case class BatchingManager(
                 }
             }
 
-          case routeRequestData: RouteRequestData =>
+          case data: RouteRequestData =>
             val canUpdateRequest =
-              b.storedHistory.getNewestData(routeRequestData.request.agent) match {
+              b.storedHistory.getNewestRequest(data.request.agent) match {
                 case None =>
                   true
                 case Some(mostRecent) =>
                   // guard against the requestUpdateCycle
-                  routeRequestData.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
+                  data.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
               }
 
             if (canUpdateRequest) {
 
               for {
-                processed <- b.storedHistory.processRouteRequestData(routeRequestData, roadNetwork, costFunction)
+                processed <- b.storedHistory.processRouteRequestData(data, roadNetwork, costFunction)
               } yield this.copy(
-                batchData = b.batchData.updated(routeRequestData.request.agent, routeRequestData),
+                batchData = b.batchData.updated(data.request.agent, data),
                 storedHistory = processed
               )
             } else IO.pure(b)

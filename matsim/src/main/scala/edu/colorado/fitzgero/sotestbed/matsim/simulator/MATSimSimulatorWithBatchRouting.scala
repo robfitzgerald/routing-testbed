@@ -351,80 +351,36 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                   Try {
 
                     if (self.markForUEPathOverwrite.isDefinedAt(event.getVehicleId)) {
+
                       // request a Dijkstra's shortest path for this agent
+                      val optReqOrErr = for {
+                        personId <- self.markForUEPathOverwrite
+                          .get(event.getVehicleId)
+                          .toRight(new Error("inconsistent result between map.isDefinedAt and map.get"))
+                        request <- GenerateRouteRequest(
+                          qSim = qSim,
+                          personId = personId,
+                          vehicleId = event.getVehicleId,
+                          requestClass = RequestClass.UE,
+                          timeEnteredVehicle = SimTime(event.getTime.toInt),
+                          travelTime = self.travelTimeCalculator.getLinkTravelTimes,
+                          agentData = None,
+                          mostRecentTimeReplanned = None,
+                          minimumReplanningLeadTime = self.minimumReplanningLeadTime,
+                          minimumRemainingRouteTimeForReplanning = self.minimumRemainingRouteTimeForReplanning
+                        )
+                      } yield request
 
-                      for {
-                        personId    <- self.markForUEPathOverwrite.get(event.getVehicleId)
-                        mobsimAgent <- self.qSim.getAgents.asScala.get(personId)
-                        currentLinkId = mobsimAgent.getCurrentLinkId
-                        leg <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
-                        fullRoute        = MATSimRouteOps.convertToCompleteRoute(leg)
-                        experiencedRoute = fullRoute.takeWhile(_ != currentLinkId)
-                        remaingingRoute  = fullRoute.dropWhile(_ != currentLinkId)
-                        remainingDistance <- MATSimRouteOps.distanceOfMATSimPath(remaingingRoute, qSim)
-                        originLinkId <- fullRoute
-                          .dropWhile(_ != currentLinkId)
-                          .headOption // confirms MATSim currentLinkId is correct
-                        endLinkId            = leg.getRoute.getEndLinkId
-                        requestDepartureTime = SimTime(event.getTime.toInt)
-                      } {
-
-                        // construct an AgentBatchData payload to request selfish routing
-                        // starts at the link after the current link in the current path
-                        // if there is no link after the current link, then originLinkId fails fast
-
-                        MATSimRouteOps.selectRequestOriginLink(
-                          fullRoute,
-                          originLinkId,
-                          endLinkId,
-                          self.qSim,
-                          self.minimumReplanningLeadTime,
-                          self.minimumRemainingRouteTimeForReplanning
-                        ) match {
-                          case None =>
-                            val remainingTT: Double =
-                              MATSimRouteOps.estRemainingTravelTimeSeconds(fullRoute, currentLinkId, qSim)
-
-                            logger.debug(
-                              f"didn't find a reasonable edge to attempt replanning for agent $personId with est. remaining travel time $remainingTT%.2f seconds"
-                            )
-
-                          case Some(reasonableStartEdgeId) =>
-                            val currentSimTime: SimTime = SimTime(event.getTime.toInt)
-                            val thisRequest: Request =
-                              Request(
-                                agent = personId.toString,
-                                location = reasonableStartEdgeId,
-                                destination = EdgeId(endLinkId.toString),
-                                requestClass = RequestClass.UE,
-                                travelMode = TravelMode.Car
-                              )
-                            val experiencedTravelTime: SimTime = currentSimTime - requestDepartureTime
-                            val experiencedEdgeData: List[EdgeData] =
-                              MATSimRouteOps.convertRouteToEdgeData(experiencedRoute, qSim)
-                            val edgeDataRemainingRoute: List[EdgeData] =
-                              MATSimRouteOps.convertRouteToEdgeData(remaingingRoute, qSim)
-
-                            logger.debug(s"ue agent $personId's matsim-set route: ${fullRoute.mkString("->")}")
-
-                            val thisAgentBatchingData: AgentBatchData =
-                              RouteRequestData(
-                                request = thisRequest,
-                                timeOfRequest = currentSimTime,
-                                experiencedTravelTime = experiencedTravelTime,
-                                experiencedRoute = experiencedEdgeData,
-                                remainingRoute = edgeDataRemainingRoute,
-                                remainingRouteDistance = remainingDistance,
-                                lastReplanningTime = None
-                              )
-
-                            self.newUERouteRequests.prepend(thisAgentBatchingData)
-                            self.selfishAgentRoutesAssigned += 1
-                            logger.debug(s"added selfish routing request for UE agent $personId")
-                        }
-
-                        self.markForUEPathOverwrite.remove(event.getVehicleId)
+                      optReqOrErr match {
+                        case Left(error) => throw error
+                        case Right(Some(routeReqData)) =>
+                          self.newUERouteRequests.prepend(routeReqData)
+                          self.selfishAgentRoutesAssigned += 1
+                          logger.debug(s"added selfish routing request for UE agent ${routeReqData.request.agent}")
+                        case Right(None) => // noop
                       }
+
+                      self.markForUEPathOverwrite.remove(event.getVehicleId)
 
                     } else if (!soReplanningThisIteration && self.markForSOPathOverwrite
                                  .isDefinedAt(event.getVehicleId)) {
@@ -475,12 +431,17 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                     for {
                       mobsimAgent <- self.qSim.getAgents.asScala.get(agentId)
                       leg         <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
-                      // agentHistory <- self
                       agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                       distance <- MATSimRouteOps.distanceOfMATSimPath(agentExperiencedRoute, qSim)
                     } {
+
                       val departureTime: DepartureTime =
-                        self.departureTimeStore.getOrElse(agentId, DepartureTime(Int.MaxValue))
+                        self.departureTimeStore
+                          .getOrElse(
+                            agentId,
+                            throw new Error(s"agent missing from departure time store")
+                          )
+                      self.departureTimeStore.remove(agentId)
 
                       // record the agent experience
                       val travelTimeSeconds: Int = event.getTime.toInt - departureTime.value
@@ -504,8 +465,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                       agentPathPrintWriter.append(agentPathRow)
 
                       // considerations only for SO agents under control
-                      if (//!self.onlySelfishAgents &&
-                          soReplanningThisIteration &&
+                      if (soReplanningThisIteration &&
                           soAgentReplanningHandler.isUnderControl(agentId)) {
 
                         // queue up a message to remove this agent from the batching manager
@@ -579,8 +539,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
                         // convert eligable agents into requests
                         val agentsForReplanning: List[AgentData] =
-                          soAgentReplanningHandler
-                            .getActiveAndEligibleForReplanning(currentSimTime)
+                          soAgentReplanningHandler.getActiveAndEligibleForReplanning(currentSimTime)
 
                         if (agentsForReplanning.isEmpty) {
                           // noop
@@ -605,7 +564,8 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                       vehicleId = agentData.vehicleId,
                                       requestClass = RequestClass.SO(),
                                       timeEnteredVehicle = SimTime(agentData.timeEnteredVehicle.value),
-                                      travelTime = Some(self.travelTimeCalculator.getLinkTravelTimes),
+                                      travelTime = self.travelTimeCalculator.getLinkTravelTimes,
+                                      agentData = Some(agentData),
                                       mostRecentTimeReplanned = lastReplanningTime,
                                       minimumReplanningLeadTime = self.minimumReplanningLeadTime,
                                       minimumRemainingRouteTimeForReplanning =
@@ -815,75 +775,83 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           mobsimAgentCurrentRouteLinkIdIndex = WithinDayAgentUtils.getCurrentRouteLinkIdIndex(mobsimAgent)
           leg           <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
           departureTime <- DepartureTime.getLegDepartureTime(leg)
-          if MATSimRouteOps.confirmPathIsValid(routingResultPath, self.qSim) // todo: report invalid paths
         } {
 
-          // extract the mobsim agent data
-          val agentId: Id[Person]                   = mobsimAgent.getId
-          val currentLinkId: Id[Link]               = mobsimAgent.getCurrentLinkId
-          val agentExperiencedRoute: List[Id[Link]] = MATSimRouteOps.convertToCompleteRoute(leg)
+          MATSimRouteOps.findErrorsInPath(routingResultPath, self.qSim) match {
+            case Some(invalidLinks) =>
+              val msg = "route returned from routing algorithm is not a fully-connected path. " +
+                "invalid link pairs are shown here: " +
+                invalidLinks.map { case (s, d) => f"-[$s]> --/-> -[$d]>" }.mkString(", ")
+              logger.warn(msg)
 
-          // combine the old path with the new path
-          MATSimRouteOps.coalescePath(agentExperiencedRoute, routingResultPath, currentLinkId) match {
-            case Left(reason) =>
-              // noop
-              logger.warn(
-                s"failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentSimTime not applied due to: $reason"
-              )
+            case None =>
+              // extract the mobsim agent data
+              val agentId: Id[Person]                   = mobsimAgent.getId
+              val currentLinkId: Id[Link]               = mobsimAgent.getCurrentLinkId
+              val agentExperiencedRoute: List[Id[Link]] = MATSimRouteOps.convertToCompleteRoute(leg)
 
-            case Right(updatedRoute) =>
-              // test that the updatedRoute has the currentLinkId at the currentLinkIndex
-              // otherwise it would cause this agent to have a bad turn logic error.
-              Try { updatedRoute(mobsimAgentCurrentRouteLinkIdIndex) }.toEither match {
-                case Left(e) =>
+              // combine the old path with the new path
+              MATSimRouteOps.coalescePath(agentExperiencedRoute, routingResultPath, currentLinkId) match {
+                case Left(reason) =>
+                  // noop
                   logger.warn(
-                    s"tried to check that currentLinkIndex contains currentLink in updatedRoute but failed: $e"
+                    s"failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentSimTime not applied due to: $reason"
                   )
-                case Right(updatedRouteLinkAtCurrentLinkIndex) =>
-                  if (updatedRouteLinkAtCurrentLinkIndex != currentLinkId) {
-                    logger.warn(
-                      s"composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId"
-                    )
+                  self.soAgentReplanningHandler.incrementNumberFailedRoutingAttempts(agentId)
+                case Right(updatedRoute) =>
+                  // test that the updatedRoute has the currentLinkId at the currentLinkIndex
+                  // otherwise it would cause this agent to have a bad turn logic error.
+                  Try { updatedRoute(mobsimAgentCurrentRouteLinkIdIndex) }.toEither match {
+                    case Left(e) =>
+                      logger.warn(
+                        s"tried to check that currentLinkIndex contains currentLink in updatedRoute but failed: $e"
+                      )
+                    case Right(updatedRouteLinkAtCurrentLinkIndex) =>
+                      if (updatedRouteLinkAtCurrentLinkIndex != currentLinkId) {
+                        logger.warn(
+                          s"composed a replanning route update but found the currentLinkIndex does not correspond with the currentlinkId"
+                        )
 
-                  } else {
-                    logger.debug(s"updating route for ${response.request.requestClass} agent ${agentId.toString}")
+                      } else {
+                        logger.debug(s"updating route for ${response.request.requestClass} agent ${agentId.toString}")
 
-                    // update the mobsim (takes a complete route, not just the "inner")
-                    val route = RouteUtils.createNetworkRoute(updatedRoute.asJava, qSim.getNetsimNetwork.getNetwork)
+                        // update the mobsim (takes a complete route, not just the "inner")
+                        val route = RouteUtils.createNetworkRoute(updatedRoute.asJava, qSim.getNetsimNetwork.getNetwork)
 
-                    leg.setRoute(route)
-                    WithinDayAgentUtils.resetCaches(mobsimAgent)
+                        leg.setRoute(route)
+                        WithinDayAgentUtils.resetCaches(mobsimAgent)
 
-                    logger.debug(s"replanned route for ${response.request.requestClass} agent $agentId")
+                        logger.debug(s"replanned route for ${response.request.requestClass} agent $agentId")
 
-                    response.request.requestClass match {
-                      case RequestClass.SO(_) =>
-                        // continue to record the experienced agent route associated with this departure time
-                        completePathStore.get(agentId) match {
-                          case None =>
-                            completePathStore.update(agentId, Map(departureTime -> updatedRoute)) // in-place
-                          case Some(agentAlreadyRecordedInStore) =>
-                            completePathStore.update(
-                              agentId,
-                              agentAlreadyRecordedInStore.updated(departureTime, updatedRoute)
-                            ) // in-place
+                        response.request.requestClass match {
+                          case RequestClass.SO(_) =>
+                            // continue to record the experienced agent route associated with this departure time
+                            completePathStore.get(agentId) match {
+                              case None =>
+                                completePathStore.update(agentId, Map(departureTime -> updatedRoute)) // in-place
+                              case Some(agentAlreadyRecordedInStore) =>
+                                completePathStore.update(
+                                  agentId,
+                                  agentAlreadyRecordedInStore.updated(departureTime, updatedRoute)
+                                ) // in-place
+                            }
+
+                            self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
+                            self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
+                              case None =>
+                                logger.error(
+                                  s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added"
+                                )
+                              case Some(numberOfPathAssignments) =>
+                                logger.debug(
+                                  s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime"
+                                )
+                            }
+                          case RequestClass.UE =>
+                            // record that we assigned this agent a new route plan instead of relied on MATSim's routing
+                            ueAgentAssignedDijkstraRoute += agentId
                         }
-
-                        self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
-                        self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
-                          case None =>
-                            logger.error(
-                              s"cannot find data on recent (re)-planning for agent $agentId even though that data was just added"
-                            )
-                          case Some(numberOfPathAssignments) =>
-                            logger.debug(
-                              s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime"
-                            )
-                        }
-                      case RequestClass.UE =>
-                        // record that we assigned this agent a new route plan instead of relied on MATSim's routing
-                        ueAgentAssignedDijkstraRoute += agentId
-                    }
+                      }
                   }
               }
           }

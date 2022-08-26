@@ -23,6 +23,8 @@ import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure.SingleAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure.MultiAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
+import scala.collection.mutable
+import scala.util.Random
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -45,6 +47,10 @@ case class KarmaSelectionAlgorithm(
   val selectionPw: PrintWriter             = new PrintWriter(selectionLogFile.toFile)
   val networkPw: PrintWriter               = new PrintWriter(networkLogFile.toFile)
 
+  // create a random prefix for each run of the simulator so that the same agentId may
+  // be used across concurrent, overlapping simulations generating training data
+  val episodePrefix: String = java.util.UUID.randomUUID.toString
+
   val networkLogHeader: String = List(
     "batchId",
     networkPolicy.logHeader,
@@ -53,6 +59,9 @@ case class KarmaSelectionAlgorithm(
 
   selectionPw.write(karmaLogHeader + "\n")
   networkPw.write(networkLogHeader + "\n")
+
+  // whenever we see an agent start an RL episode, we store that information here
+  val agentsWithEpisodes: mutable.Set[String] = mutable.Set.empty
 
   val gen: NetworkPolicySignalGenerator = networkPolicy.buildGenerator
 
@@ -67,7 +76,16 @@ case class KarmaSelectionAlgorithm(
     driverPolicy match {
       case RLBasedDriverPolicy(structure, client) =>
         logger.info(s"sending final messages to RL server")
-        KarmaSelectionRlOps.endEpisodes(structure, client, experimentDirectory, allocationTransform, finalBank)
+        KarmaSelectionRlOps.endEpisodes(
+          structure,
+          client,
+          networkPolicy,
+          experimentDirectory,
+          allocationTransform,
+          agentsWithEpisodes.toSet,
+          finalBank,
+          episodePrefix
+        )
       case _ => IO.unit
     }
   }
@@ -129,13 +147,32 @@ case class KarmaSelectionAlgorithm(
         )
       } else {
 
-        // // we may need to start some RL episodes
-        // val startEpisodeResult = driverPolicy match {
-        //   case RLBasedDriverPolicy(structure, client) =>
-        //     val newReqs = alts.keys.toList.filter { r => activeAgentHistory.isNewArrival(r.agent) }
-        //     KarmaSelectionRlOps.startEpisodes(structure, client, newReqs)
-        //   case _ => IO.unit
-        // }
+        // we may need to start some RL episodes. RLlib has undefined behavior when we
+        // start an episode for an agent but close it before making any observations.
+        // by dealing with starting episodes here, we are only starting episodes for
+        // agents that will have at least one observation, made below.
+        val startEpisodeResult = driverPolicy match {
+          case RLBasedDriverPolicy(structure, client) =>
+            val newReqs = alts.keys.toList.filterNot { r => agentsWithEpisodes.contains(r.agent) }
+            val requests = newReqs.toList.map { req =>
+              val episodeId = Some(EpisodeId(req.agent, episodePrefix))
+              PolicyClientRequest.StartEpisodeRequest(episodeId, client.trainingEnabled)
+            }
+            // update our record of any active episodes
+            client.send(requests).map { _ =>
+              agentsWithEpisodes.addAll(newReqs.map { _.agent })
+              val sendMsg =
+                requests
+                  .flatMap { _.episode_id.map { _.toString } }
+                  .mkString("sent start episode requests for agents ", ",", "")
+              logger.info(sendMsg)
+              val sizeBefore = agentsWithEpisodes.size
+
+              val sizeAfter = agentsWithEpisodes.size
+              logger.info(s"now tracking $sizeAfter episodes up from $sizeBefore")
+            }
+          case _ => IO.unit
+        }
 
         val costFunction = (e: EdgeBPR) => marginalCostFunction(e)(Flow.Zero)
         val collabCostFn =
@@ -152,9 +189,10 @@ case class KarmaSelectionAlgorithm(
         // a path for each driver agent
         // get the costs associated with the trips
         val result = for {
-          // _      <- startEpisodeResult
-          bids   <- driverPolicy.applyDriverPolicy(alts, bank, activeAgentHistory, roadNetwork, costFunction)
+          _      <- startEpisodeResult
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
+          bids <- driverPolicy
+            .applyDriverPolicy(signal, alts, bank, activeAgentHistory, roadNetwork, costFunction, episodePrefix)
           selections = signal.assign(bids, alts)
           paths      = selections.map { case (_, _, path) => path }
           routesUo   = alts.values.flatMap(_.headOption).toList

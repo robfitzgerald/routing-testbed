@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
 
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
+import edu.colorado.fitzgero.sotestbed.algorithm.batching._
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
@@ -12,6 +12,15 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
 import cats.implicits._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.BernoulliDistributionSampling
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.BetaDistributionSampling
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.ThresholdSampling
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.UserOptimal
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.RandomPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
 
 sealed trait DriverPolicySpace
 
@@ -41,6 +50,11 @@ object DriverPolicySpace {
   case object BatchSize extends DriverPolicySpace
 
   /**
+    * pass along the network signal so we understand better what we are fighting for
+    */
+  case object NetworkSignal extends DriverPolicySpace
+
+  /**
     * use some combination of features
     *
     * @param features the features to encode
@@ -65,9 +79,10 @@ object DriverPolicySpace {
     def encodeObservation(
       request: Request,
       balance: Karma,
-      history: ActiveAgentHistory.AgentHistory,
+      history: AgentHistory,
       proposedPaths: List[Path],
-      batch: Map[Request, List[Path]]
+      batch: Map[Request, List[Path]],
+      networkSignal: NetworkPolicySignal
     ): IO[List[Double]] = {
       dps match {
         case Balance =>
@@ -80,15 +95,28 @@ object DriverPolicySpace {
             .map { v => List(v.max) }
         case BatchSize =>
           IO.pure(List(batch.size))
+        case NetworkSignal =>
+          networkSignal match {
+            case BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
+              IO.pure(List(thresholdPercent, bernoulliPercent))
+            case BetaDistributionSampling(dist) =>
+              IO.pure(List(dist.getAlpha, dist.getBeta))
+            case ThresholdSampling(thresholdPercent, random) =>
+              IO.pure(List(thresholdPercent))
+            case UserOptimal =>
+              val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
+              IO.raiseError(new Error(msg))
+          }
         case Combined(features) =>
-          features.flatTraverse { _.encodeObservation(request, balance, history, proposedPaths, batch) }
+          features.flatTraverse { _.encodeObservation(request, balance, history, proposedPaths, batch, networkSignal) }
       }
     }
 
     def encodeFinalObservation(
       originalTravelTimeEstimate: SimTime,
       finalTravelTime: SimTime,
-      finalBankBalance: Karma
+      finalBankBalance: Karma,
+      networkPolicyConfig: NetworkPolicyConfig
     ): IO[List[Double]] = dps match {
       case Balance =>
         IO.pure(List(finalBankBalance.value.toDouble))
@@ -99,8 +127,30 @@ object DriverPolicySpace {
         IO.pure(List(0.0))
       case BatchSize =>
         IO.pure(List(0.0))
+      case NetworkSignal =>
+        // generally here, we just want to make sure that the number of feature matches what
+        // would be encoded into each observation throughout the day; it should clearly be
+        // a network signal that requests zero % SO routing.
+        networkPolicyConfig match {
+          case NetworkPolicyConfig.UserOptimal =>
+            val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
+            IO.raiseError(new Error(msg))
+          case RandomPolicy(seed) =>
+            IO.pure(List(0.0))
+          case CongestionProportionalThreshold(seed) =>
+            IO.pure(List(0.0))
+          case ScaledProportionalThreshold(scale, seed) =>
+            IO.pure(List(0.0))
+        }
       case Combined(features) =>
-        features.flatTraverse(_.encodeFinalObservation(originalTravelTimeEstimate, finalTravelTime, finalBankBalance))
+        features.flatTraverse(
+          _.encodeFinalObservation(
+            originalTravelTimeEstimate,
+            finalTravelTime,
+            finalBankBalance,
+            networkPolicyConfig
+          )
+        )
     }
   }
 }

@@ -41,7 +41,8 @@ object PolicyClientOps {
             .post(uri"$host:$port")
         for {
           sttpRes <- request.send(backend)
-          res     <- IO.fromEither(sttpRes.body)
+          annotated = sttpRes.body.left.map { t => new Error(s"error from rl server for msg $reqBody", t) }
+          res <- IO.fromEither(annotated)
         } yield res
       }
 

@@ -2,9 +2,12 @@ package edu.colorado.fitzgero.sotestbed.rllib
 
 import io.circe.{Decoder, Encoder}
 
-final case class EpisodeId(value: String) extends AnyVal
+final class EpisodeId(private val value: String) extends AnyVal {
+  override def toString(): String = value
+}
 
 object EpisodeId {
-  implicit val enc: Encoder[EpisodeId] = Encoder[String].contramap { _.value }
-  implicit val dec: Decoder[EpisodeId] = Decoder[String].emap { s => Right(EpisodeId(s)) }
+  def apply(agentId: String, episodePrefix: String): EpisodeId = new EpisodeId(f"$episodePrefix-$agentId")
+  implicit val enc: Encoder[EpisodeId]                         = Encoder[String].contramap { _.value }
+  implicit val dec: Decoder[EpisodeId]                         = Decoder[String].emap { s => Right(new EpisodeId(s)) }
 }

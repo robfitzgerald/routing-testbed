@@ -26,6 +26,14 @@ object Reward {
     }
   }
 
+  implicit class RewardOps(r: Reward) {
+
+    def prettyPrint: String = r match {
+      case SingleAgentReward(reward) => reward.toString
+      case MultiAgentReward(reward)  => reward.asJson.noSpaces
+    }
+  }
+
   implicit val dec: Decoder[Reward] =
     List[Decoder[Reward]](
       Decoder[Double].map { SingleAgentReward.apply }.widen,

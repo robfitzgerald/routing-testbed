@@ -3,7 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.altpaths
 import scala.annotation.tailrec
 import scala.util.Random
 
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory.AgentHistory
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment}

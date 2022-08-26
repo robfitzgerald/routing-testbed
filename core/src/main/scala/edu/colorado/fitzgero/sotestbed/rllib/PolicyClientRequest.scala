@@ -20,8 +20,8 @@ object PolicyClientRequest {
   final case class LogReturnsRequest(
     episode_id: EpisodeId,
     reward: Reward,
-    info: Option[Map[String, String]],
-    done: Option[Map[AgentId, Boolean]]
+    info: Option[Map[String, String]] = None,
+    done: Option[Map[AgentId, Boolean]] = None
   ) extends PolicyClientRequest
   final case class EndEpisodeRequest(episode_id: EpisodeId, observation: Observation) extends PolicyClientRequest
 

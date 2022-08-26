@@ -13,6 +13,33 @@ object Observation {
   case class SingleAgentObservation(observation: List[Double])                    extends Observation
   case class MultiAgentObservation(observation: Map[AgentId, List[List[Double]]]) extends Observation
 
+  // def singleAgentObservationHeader(): String = o match {
+  //   case sao: SingleAgentObservation => sao.observation.indices.map { i => f"o${i + 1}" }.mkString(",")
+  //   case mao: MultiAgentObservation =>
+  //     throw new NotImplementedError
+  // mao.observation.toList
+  //   .sortBy { case (a, _) => a.value }
+  //   .zipWithIndex
+  //   .map {
+  //     case ((a, fs), idx) =>
+  //       val features = fs.map { i => f"a${idx}o${i + 1}" }
+  //       f"$a," + features
+  //   }
+  //   .mkString(",")
+  // }
+
+  implicit class ObservationOps(o: Observation) {
+
+    def prettyPrint: String = o match {
+      case SingleAgentObservation(observation) => observation.asJson.noSpaces
+      case MultiAgentObservation(observation) =>
+        throw new NotImplementedError
+      // observation.toList
+      // .sortBy { case (a, _) => a.value }
+      // .map { case (a, fs) => }
+    }
+  }
+
   implicit val obsMapEnc: Encoder[Map[AgentId, List[List[Double]]]] =
     CirceUtils.mapEncoder(_.value, identity)
 

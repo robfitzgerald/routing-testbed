@@ -5,40 +5,6 @@ import numpy as np
 from json import JSONEncoder
 
 
-def build_observation_space(feature_names: list[str], max_karma: int) -> spaces.Box:
-    # mapping from feature names listed in DriverPolicySpace.scala
-    # to their low/high value ranges
-    _OBSERVATION_SPACE_MAPPING = {
-        "balance": [0, max_karma],
-        "urgency": [np.NINF, np.Inf],
-        "worst-alternative": [np.NINF, np.Inf],
-        "batch-size": [0, np.Inf]
-    }
-
-    # grab the range of values for each feature requested
-    low, high = [], []
-    for name in feature_names:
-        feature_range = _OBSERVATION_SPACE_MAPPING.get(name)
-        if feature_range is None:
-            alts = ", ".join(_OBSERVATION_SPACE_MAPPING.keys())
-            msg = f"unknown feature name {name}, must be one of {{{alts}}}"
-            raise KeyError(msg)
-        l, h = feature_range
-        low.append(l)
-        high.append(h)
-
-    # construct the gym.spaces.Box for this run
-    n_dims = len(feature_names)
-    space = spaces.Box(
-        low=low,
-        high=high,
-        shape=(n_dims,),
-        dtype=np.float64
-    )
-
-    return space
-
-
 def build_action_space(space_idx: int, max_bid: int) -> spaces.Space:
 
     _SPACE = [

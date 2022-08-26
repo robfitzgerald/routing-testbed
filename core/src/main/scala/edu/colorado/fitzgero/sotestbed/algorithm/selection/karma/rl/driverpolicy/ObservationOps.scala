@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
 
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
-import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
+import edu.colorado.fitzgero.sotestbed.algorithm.batching._
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
@@ -27,14 +27,14 @@ object ObservationOps {
     * the system), then zero is returned.
     */
   def travelTimeDiffFromInitialTrip(
-    history: ActiveAgentHistory.AgentHistory
+    history: AgentHistory
   ): IO[Long] = {
     history.history match {
       case Nil => IO.pure(0L)
       case latest :: tail =>
         val result = for {
-          o <- IO.fromEither(history.first.overallTravelTimeEstimate)
-          c <- IO.fromEither(history.current.overallTravelTimeEstimate)
+          o <- IO.fromEither(history.originalRequest.overallTravelTimeEstimate)
+          c <- IO.fromEither(history.currentRequest.overallTravelTimeEstimate)
           diff = o.value - c.value
         } yield diff
         result
@@ -51,11 +51,11 @@ object ObservationOps {
     * computed as (originalEstimate - (experiencedTime + proposedAddedTime))
     */
   def travelTimeDiffFromAlternatives(
-    history: ActiveAgentHistory.AgentHistory,
+    history: AgentHistory,
     proposedPaths: List[Path]
   ): IO[List[Double]] = {
-    val result = history.first.overallTravelTimeEstimate.map { o =>
-      val c     = history.current.experiencedTravelTime
+    val result = history.originalRequest.overallTravelTimeEstimate.map { o =>
+      val c     = history.currentRequest.experiencedTravelTime
       val costs = proposedPaths.map(_.map { _.cost.value }.foldLeft(0.0) { _ + _ })
       val diffs = costs.map { tailCost => o.value - (c.value + tailCost) }
       diffs

@@ -16,6 +16,7 @@ import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentDiscreteAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentRealAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentDiscreteAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
 
 sealed trait RLDriverPolicyStructure
 
@@ -46,14 +47,15 @@ object RLDriverPolicyStructure extends BankOps {
       bank: Map[String, Karma],
       req: Request,
       paths: List[Path],
-      batch: Map[Request, List[Path]]
+      batch: Map[Request, List[Path]],
+      signal: NetworkPolicySignal
     ): IO[Observation] = dp match {
       case MultiAgentPolicy(space) => IO.raiseError(new NotImplementedError)
       case SingleAgentPolicy(space) =>
         for {
           balance  <- IO.fromEither(bank.getOrError(req.agent))
           thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
-          features <- space.encodeObservation(req, balance, thisHist, paths, batch)
+          features <- space.encodeObservation(req, balance, thisHist, paths, batch, signal)
         } yield Observation.SingleAgentObservation(features)
     }
 

@@ -150,7 +150,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             val soAlgorithmOrError = for {
               grid <- so.grid.build()
               _    <- checkRLKarmaUsesFreeFlow(so)
-              _    <- startEpisodesForRLPolicies(so.selectionAlgorithm, agentsUnderControl)
+              // _    <- startEpisodesForRLPolicies(so.selectionAlgorithm, agentsUnderControl)
             } yield {
               val ksp: AltPathsAlgorithmRunner = {
                 AltPathsAlgorithmRunner(
@@ -280,34 +280,34 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
     }
   }
 
-  def startEpisodesForRLPolicies(
-    sac: SelectionAlgorithmConfig,
-    agentsUnderControl: Set[Id[Person]]
-  ): Either[Error, Unit] = {
-    val program = sac match {
-      case rls: RLSelection =>
-        IO.raiseError(new NotImplementedError)
-      case ks: KarmaSelection =>
-        ks.driverPolicy match {
-          case erls: ExternalRLServer =>
-            val requests = agentsUnderControl.toList.map { personId =>
-              PolicyClientRequest.StartEpisodeRequest(
-                episode_id = Some(EpisodeId(personId.toString)),
-                training_enabled = erls.client.trainingEnabled
-              )
-            }
-            erls.client.send(requests).map { _ => () }
+  // def startEpisodesForRLPolicies(
+  //   sac: SelectionAlgorithmConfig,
+  //   agentsUnderControl: Set[Id[Person]]
+  // ): Either[Error, Unit] = {
+  //   val program = sac match {
+  //     case rls: RLSelection =>
+  //       IO.raiseError(new NotImplementedError)
+  //     case ks: KarmaSelection =>
+  //       ks.driverPolicy match {
+  //         case erls: ExternalRLServer =>
+  //           val requests = agentsUnderControl.toList.map { personId =>
+  //             PolicyClientRequest.StartEpisodeRequest(
+  //               episode_id = Some(EpisodeId(personId.toString)),
+  //               training_enabled = erls.client.trainingEnabled
+  //             )
+  //           }
+  //           erls.client.send(requests).map { _ => () }
 
-          case _ => IO.unit
-        }
-      case _ => IO.unit
-    }
+  //         case _ => IO.unit
+  //       }
+  //     case _ => IO.unit
+  //   }
 
-    // temp hack to down-shift to an Either context
-    import cats.effect.unsafe.implicits.global
-    Try {
-      program.unsafeRunSync
-    }.toEither.left.map { t => new Error(s"failed starting RL episodes", t) }
-  }
+  //   // temp hack to down-shift to an Either context
+  //   import cats.effect.unsafe.implicits.global
+  //   Try {
+  //     program.unsafeRunSync
+  //   }.toEither.left.map { t => new Error(s"failed starting RL episodes", t) }
+  // }
 
 }

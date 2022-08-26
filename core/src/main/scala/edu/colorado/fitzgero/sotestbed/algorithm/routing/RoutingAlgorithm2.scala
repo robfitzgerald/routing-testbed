@@ -22,6 +22,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, RunTime, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
 
 /**
   *
@@ -67,8 +68,14 @@ case class RoutingAlgorithm2(
     } else {
       logger.info("beginning SO routing algorithm")
 
-      val currentPathFn: String => IO[Path] =
-        RoutingAlgorithm2.getCurrentPath(batchingManager, roadNetwork, altPathsAlgorithmRunner.costFunction)
+      // REMOVED
+      // this was a way of injecting the current agent trip plan into the 0'th index of the
+      // alts with the premise that this would be the "best" choice over the true shortest path.
+      // maybe that idea makes sense for human drivers who want less replannings, less friction,
+      // but that adds a lot of noise, since those paths may be much farther from user-optimal,
+      // throwing off the whole game.
+      // val currentPathFn: String => IO[Path] =
+      // RoutingAlgorithm2.getCurrentPath(batchingManager, roadNetwork, altPathsAlgorithmRunner.costFunction)
 
       val result: IO[IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])]] = for {
         batchingFunctionStartTime <- IO { System.currentTimeMillis }
@@ -82,7 +89,7 @@ case class RoutingAlgorithm2(
             IO.pure((List.empty, bank))
           case Some(routeRequests) =>
             // if not replanAtSameLink, dismiss requests where the location
-            // (linkid) has not changed since their last request
+            // (linkid) has not changed since their last replanning event
             // afterward, remove batches where the batch size is less than
             // the configured minBatchSize threshold
             val preFilteredBatches =
@@ -91,10 +98,10 @@ case class RoutingAlgorithm2(
                 routeRequests.flatMap {
                   case (batchId, reqs) =>
                     reqs.filter { req =>
-                      batchingManager.storedHistory.getPreviousData(req.agent) match {
+                      batchingManager.storedHistory.getPreviousReplanning(req.agent) match {
                         case None => true
-                        case Some(prevRouteRequestData) =>
-                          prevRouteRequestData.request.location != req.location
+                        case Some(prevReplanned) =>
+                          prevReplanned.request.location != req.location
                       }
                     } match {
                       case Nil => None
@@ -128,11 +135,16 @@ case class RoutingAlgorithm2(
               batchAlts     <- altPathsResult
               _             <- IO.pure(logger.info(s"alt paths computed via $altsAlgName"))
               altResultData = AltPathsAlgorithmRunner.logAltsResultData(batchAlts)
-              altsRunTime             <- IO { RunTime(System.currentTimeMillis - altsStartTime) }
-              batchAltsFiltered       <- batchFilterFunction.filter(batchAlts, roadNetwork)
-              _                       <- IO.pure { logger.info(s"batch filter function completed via $batchFilterName") }
-              selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
-              selectionRunnerFixed    <- instantiateSelection(selectionRunnerRequests)
+              altsRunTime       <- IO { RunTime(System.currentTimeMillis - altsStartTime) }
+              batchAltsFiltered <- batchFilterFunction.filter(batchAlts, roadNetwork)
+              batchAltsNoSingletons = RoutingAlgorithm2.removeAgentsWithOnePathAlt(batchAltsFiltered)
+              _ <- IO.pure { logger.info(s"batch filter function completed via $batchFilterName") }
+              // selectionRunnerRequests <- RoutingAlgorithm2.getCurrentPaths(batchAltsFiltered, currentPathFn)
+              selectionRunnerRequests = batchAltsNoSingletons.map { b =>
+                val selectionAlts = b.filteredAlts.getOrElse(b.alts)
+                SelectionRunner.SelectionRunnerRequest(b.batchId, selectionAlts)
+              }
+              selectionRunnerFixed <- instantiateSelection(selectionRunnerRequests)
               selectionOutput <- RoutingAlgorithm2.runSelectionWithBank(
                 selectionRunnerRequests,
                 roadNetwork,
@@ -316,13 +328,23 @@ object RoutingAlgorithm2 {
       selectionOpt    <- selections
       selectionResult <- selectionOpt
       batchId = selectionResult.batchId
-      alts <- altsLookup.get(batchId)
+      kspResult <- altsLookup.get(batchId)
     } yield {
+      // soo... the selection algorithm may have only been exposed to "filtered alts"
+      // so the path that was selected and spit out by the SelectionAlgorithm may not
+      // complete the full trip. we need to go back to the ksp result and grab the correct
+      // path and inject it into the Response for each agent #hack #ugh #finish-the-phd
+      val responsesFixed =
+        for {
+          res   <- selectionResult.selection.selectedRoutes
+          paths <- kspResult.alts.get(res.request)
+          path = paths(res.pathIndex)
+        } yield res.copy(path = path.map { _.edgeId })
 
       val routingResult = RoutingAlgorithm.Result(
-        kspResult = alts.alts,
-        filteredKspResult = alts.filteredAlts.getOrElse(alts.alts),
-        responses = selectionResult.selection.selectedRoutes,
+        kspResult = kspResult.alts,
+        filteredKspResult = kspResult.filteredAlts.getOrElse(kspResult.alts),
+        responses = responsesFixed,
         agentHistory = batchingManager.storedHistory,
         kspRuntime = alternatePathsRuntime,
         batchingRuntime = batchingFunctionRuntime,
@@ -354,7 +376,7 @@ object RoutingAlgorithm2 {
     costFunction: EdgeBPR => Cost
   )(agentId: String): IO[List[PathSegment]] = {
     val result = for {
-      mostRecentOption <- IO.pure(batchingManager.storedHistory.getNewestData(agentId))
+      mostRecentOption <- IO.pure(batchingManager.storedHistory.getNewestRequest(agentId))
     } yield {
       mostRecentOption match {
         case None =>
@@ -387,6 +409,33 @@ object RoutingAlgorithm2 {
       b.alts.toList
         .traverse { case (r, alts) => currentPathFn(r.agent).map { p => (r, p +: alts) } }
         .map { paths => SelectionRunner.SelectionRunnerRequest(b.batchId, paths.toMap) }
+    }
+  }
+
+  /**
+    * remove agents from batches who only had one path in their alts set.
+    * if that reduces the size of a batch to zero or one, then it is no
+    * longer a feasible batch, so we remove the batch.
+    *
+    * @param ks the ksp result
+    * @return updated ksp result with agents without alternatives removed along
+    * with any batches that end up too small for SO routing
+    */
+  def removeAgentsWithOnePathAlt(
+    ks: List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]
+  ): List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult] = {
+    ks.flatMap { kspResult =>
+      // only keep agents with more than one alternative path
+      val filterFn     = (req: Request, paths: List[Path]) => paths.size > 1
+      val alts         = kspResult.alts.filter(filterFn.tupled)
+      val filteredAlts = kspResult.filteredAlts.map { _.filter(filterFn.tupled) }
+      // only keep batches with more than 1 agent after the above filter
+      if (alts.size < 2 && filteredAlts.exists { _.size < 2 }) {
+        None
+      } else {
+        val updated = kspResult.copy(alts = alts, filteredAlts = filteredAlts)
+        Some(updated)
+      }
     }
   }
 }

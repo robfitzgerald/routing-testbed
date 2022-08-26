@@ -6,10 +6,11 @@ import scala.util.Random
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 import org.apache.commons.math.distribution.{BetaDistribution, BetaDistributionImpl}
+import com.typesafe.scalalogging.LazyLogging
 
 sealed trait NetworkPolicySignal
 
-object NetworkPolicySignal {
+object NetworkPolicySignal extends LazyLogging {
 
   case object UserOptimal extends NetworkPolicySignal
 
@@ -127,11 +128,21 @@ object NetworkPolicySignal {
 
             // pick a random path for the redirected agents from range [1, n)
             // as path 0 is the true shortest path
-            val routesRedirected = pickPaths(bidsSo, alts, (bid, paths) => {
-              val selectedPathIdx = sop.random.nextInt(paths.length - 1) + 1
-              val path            = paths(selectedPathIdx)
-              (bid, selectedPathIdx, path)
-            })
+            val routesRedirected = pickPaths(
+              bidsSo,
+              alts,
+              (bid, paths) => {
+                if (paths.length == 1) {
+                  logger.warn(s"bid only has 1 path, must choose it: $bid")
+                  (bid, 0, paths.head)
+                } else {
+                  val selectedPathIdx = sop.random.nextInt(paths.length - 1) + 1
+                  val path            = paths(selectedPathIdx)
+                  (bid, selectedPathIdx, path)
+
+                }
+              }
+            )
             val routesShortestPath = pickPaths(bidsUo, alts, uoPathSelection)
             val result             = routesRedirected ++ routesShortestPath
             result

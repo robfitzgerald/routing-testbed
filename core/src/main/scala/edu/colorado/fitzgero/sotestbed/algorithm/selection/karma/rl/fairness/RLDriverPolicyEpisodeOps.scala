@@ -19,6 +19,7 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpace
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
 
 object RLDriverPolicyEpisodeOps extends LazyLogging {
 
@@ -52,17 +53,19 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
   def finalObservations(
     tripLogs: List[TripLogRow],
     space: DriverPolicySpace,
+    networkPolicyConfig: NetworkPolicyConfig,
     finalBank: Map[String, Karma]
-  ): IO[List[Observation]] = {
+  ): IO[List[(String, Observation)]] = {
     tripLogs.traverse { row =>
       for {
         balance <- IO.fromEither(finalBank.getOrError(row.agentId))
         obs <- space.encodeFinalObservation(
           originalTravelTimeEstimate = row.originalTravelTimeEstimate,
           finalTravelTime = row.finalTravelTime,
-          finalBankBalance = balance
+          finalBankBalance = balance,
+          networkPolicyConfig = networkPolicyConfig
         )
-      } yield Observation.SingleAgentObservation(obs)
+      } yield (row.agentId, Observation.SingleAgentObservation(obs))
     }
   }
 

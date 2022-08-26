@@ -22,21 +22,20 @@ listen sockets (in this example, between 9900 and 990n with n=worker_idx-1).
 You may connect more than one policy client to any open listen port.
 """
 
-import argparse
-import gym
+
 import os
 
 import ray
 from ray import tune
 from ray.rllib.agents.registry import get_trainer_class
 from rl_server.rllib_server.driver_cli import parser
-# from ray.rllib.env.policy_server_input import PolicyServerInput
+
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
 from ray.tune.logger import pretty_print
 
+# from ray.rllib.env.policy_server_input import PolicyServerInput
 from rl_server.so_routing.env.no_pickle_v3 import PolicyServerInput
 from rl_server.so_routing.env.driver_policy.driver_obs_space import DriverObsSpace, build_observation_space
-from rl_server.so_routing.env.driver_policy.driver_action_space import DriverActionSpace
 
 SERVER_ADDRESS = "localhost"
 # In this example, the user can run the policy server with
@@ -96,6 +95,19 @@ def run():
         # Number of rollout worker actors to create for parallel sampling. Setting
         # this to 0 will force rollouts to be done in the trainer actor.
         "num_workers": args.num_workers,
+        # How to build per-Sampler (RolloutWorker) batches, which are then
+        # usually concat'd to form the train batch. Note that "steps" below can
+        # mean different things (either env- or agent-steps) and depends on the
+        # `count_steps_by` (multiagent) setting below.
+        # truncate_episodes: Each produced batch (when calling
+        #   RolloutWorker.sample()) will contain exactly `rollout_fragment_length`
+        #   steps. This mode guarantees evenly sized batches, but increases
+        #   variance as the future return must now be estimated at truncation
+        #   boundaries.
+        # complete_episodes: Each unroll happens exactly over one episode, from
+        #   beginning to end. Data collection will not stop unless the episode
+        #   terminates or a configured horizon (hard or soft) is hit.
+        "batch_mode": "complete_episodes",
         # Number of environments to evaluate vector-wise per worker. This enables
         # model inference batching, which can improve performance for inference
         # bottlenecked workloads.
@@ -116,11 +128,11 @@ def run():
         # Example of using DQN (supports off-policy actions).
         config.update(
             {
-                "learning_starts": 100,
+                "learning_starts": 0,
                 "timesteps_per_iteration": 200,
                 "n_step": 3,
-                "rollout_fragment_length": 4,
-                "train_batch_size": 8,
+                "rollout_fragment_length": 200,
+                "train_batch_size": 200,
             }
         )
         config["model"] = {
@@ -186,7 +198,7 @@ def run():
         stop = {
             "training_iteration": args.stop_iters,
             "timesteps_total": args.stop_timesteps,
-            "episode_reward_mean": args.stop_reward,
+            # "episode_reward_mean": args.stop_reward,
         }
 
         tune.run(args.run, config=config, stop=stop,

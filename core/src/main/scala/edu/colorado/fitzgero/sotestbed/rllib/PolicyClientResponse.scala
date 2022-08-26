@@ -4,7 +4,7 @@ import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.util.CirceUtils
 import edu.colorado.fitzgero.sotestbed.rllib.Action._
-import io.circe._
+import io.circe.{Error => CirceError, _}
 import io.circe.generic.auto._
 import io.circe.syntax._
 import cats.syntax.functor._

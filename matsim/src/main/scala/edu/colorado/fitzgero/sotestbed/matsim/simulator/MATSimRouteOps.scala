@@ -169,14 +169,14 @@ object MATSimRouteOps extends LazyLogging {
   final case class EdgeDataRequestWithTravelTime(
     person: Person,
     vehicle: Vehicle,
-    startLinkSimTime: SimTime,
+    currentTime: SimTime,
     tt: TravelTime,
     minEstimatedSpeedMetersPerSecond: Double = MinSpeedMetersPerSecond
   ) {
 
     /**
       * get the travel time for a link as if we were starting to traverse it at the
-      * time we started traversing our current link
+      * some "current" time
       *
       * doing this because it's not documented how MATSim will interpret times "in the future"
       * passed as the time argument for getLinkTravelTime. it seems like an acceptable assumption
@@ -189,11 +189,17 @@ object MATSimRouteOps extends LazyLogging {
       * @return estimated travel time
       */
     def getTravelTime(link: Link): SimTime = {
-      val estTime    = tt.getLinkTravelTime(link, startLinkSimTime.value.toDouble, person, vehicle)
+      val estTime    = tt.getLinkTravelTime(link, currentTime.value.toDouble, person, vehicle)
       val estSpeed   = link.getLength / estTime
       val truncSpeed = math.max(minEstimatedSpeedMetersPerSecond, estSpeed)
       val truncTime  = link.getLength / truncSpeed
       val simTime    = SimTime(truncTime)
+      if (simTime > SimTime.minute(30)) {
+        logger.info(
+          f"link ${link.getId} dist ${link.getLength} estTime ${SimTime(estTime)} estSpeed " +
+            f"$estSpeed%.2f truncSpeed $truncSpeed%.2f truncTime ${SimTime(truncTime)}"
+        )
+      }
       simTime
     }
   }
@@ -202,6 +208,7 @@ object MATSimRouteOps extends LazyLogging {
     * takes a planned remaining path and adds Coordinates to each link
     * @param path the route
     * @param qSim the MATSim simulation
+    * @param travelTimeRequest optional travel time calculator instance
     * @return EdgeData representation of the experienced path
     */
   def convertRouteToEdgeData(
@@ -221,18 +228,13 @@ object MATSimRouteOps extends LazyLogging {
           val dst                       = link.getToNode.getCoord
           val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
           val linkTravelTime            = travelTimeRequest.map { _.getTravelTime(link) }
-
-          val edgeData = EdgeData(
-            EdgeId(head.toString),
-            srcCoordinate,
-            dstCoordinate,
-            linkTravelTime
-          )
+          val edgeData                  = EdgeData(EdgeId(head.toString), srcCoordinate, dstCoordinate, linkTravelTime)
 
           _convert(tail, edgeData +: result)
       }
 
-    _convert(path).reverse
+    val edgeDataPath = _convert(path).reverse
+    edgeDataPath
   }
 
   /**
@@ -275,28 +277,6 @@ object MATSimRouteOps extends LazyLogging {
   }
 
   /**
-    * accumulator used internally by [[MATSimRouteOps.selectRequestOriginLink]]
-    *
-    * @param remainingSlack when calculating how far into the future to start replanning, is used to capture
-    *                       the distance in time remaining before we can start considering a replanned route
-    * @param estimatedRemainingTravelTime the time estimated to traverse the links that we plan to replace
-    *                                     with a replanned route
-    * @param startPoint the link where the agent is currently located on the path
-    * @param pathPrefix links that we will keep which occur between the current link and the beginning of the
-    *                   replanned route segment
-    */
-  private[MATSimRouteOps] final case class ReasonableStartPointFoldAccumulator(
-    remainingSlack: TravelTimeSeconds,
-    estimatedRemainingTravelTime: TravelTimeSeconds = TravelTimeSeconds.Zero,
-    startPoint: Option[Id[Link]] = None,
-    pathPrefix: List[Id[Link]] = List.empty
-  ) {
-    def startPointFound: Boolean           = startPoint.nonEmpty
-    def startPointNotFound: Boolean        = startPoint.isEmpty
-    def clearedReplanningLeadTime: Boolean = remainingSlack <= TravelTimeSeconds.Zero
-  }
-
-  /**
     * finds where in the future to allow a replanning request to originate, or, if no such place exists, returns nothing
     * @param previousPathFromCurrentOrigin path we plan to replace
     * @param currentLinkId the agent's current link location
@@ -314,9 +294,10 @@ object MATSimRouteOps extends LazyLogging {
     currentLinkId: Id[Link],
     destinationLinkId: Id[Link],
     qSim: QSim,
+    ttRequest: EdgeDataRequestWithTravelTime,
     minimumReplanningLeadTime: TravelTimeSeconds,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
-  ): Option[EdgeId] = {
+  ): Option[Id[Link]] = {
 
     // start at the current link
     previousPathFromCurrentOrigin.dropWhile { _ != currentLinkId } match {
@@ -328,48 +309,34 @@ object MATSimRouteOps extends LazyLogging {
         // find a reasonable start point, starting on the link after the current one.
         // user may be asking for some point of time in the future,
         // but if there isn't enough "slack" remaining in their route for replan,
-        // then don't touch it.
-        val search: ReasonableStartPointFoldAccumulator =
-          restOfPath
-            .map { l =>
-              val link: Link = qSim.getNetsimNetwork
-                .getNetsimLink(Id.createLinkId(l.toString))
-                .getLink
-              (l, Meters.toTravelTime(Meters(link.getLength), MetersPerSecond(link.getFreespeed)))
-            }
-            .foldLeft(MATSimRouteOps.ReasonableStartPointFoldAccumulator(minimumReplanningLeadTime)) { (acc, tup) =>
-              val (linkId, linkTravelTime)              = tup
-              val nextRemainingSlack: TravelTimeSeconds = acc.remainingSlack - linkTravelTime
-              if (acc.clearedReplanningLeadTime && acc.startPointNotFound) {
-                // reasonable start point has been found. store it, and begin storing est. remaining travel time.
-                acc.copy(
-                  remainingSlack = nextRemainingSlack,
-                  estimatedRemainingTravelTime = linkTravelTime,
-                  startPoint = Some {
-                    linkId
-                  }
-                )
-              } else if (acc.clearedReplanningLeadTime && acc.startPointFound) {
-                // reasonable start point was found before. accumulate estimated remaining trip costs
-                val nextEstRemainingTravelTime: TravelTimeSeconds = acc.estimatedRemainingTravelTime + linkTravelTime
-                acc.copy(
-                  estimatedRemainingTravelTime = nextEstRemainingTravelTime
-                )
-              } else {
-                // searching for reasonable start point. update
-                acc.copy(
-                  remainingSlack = nextRemainingSlack,
-                  pathPrefix = acc.pathPrefix :+ linkId
-                )
-              }
-            }
+        // then don't create a request. uses current network travel times.
+        val linksWithTimes: List[(Id[Link], SimTime)] = for {
+          linkId <- restOfPath
+          link = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+          tt   = ttRequest.getTravelTime(link)
+        } yield (linkId, tt)
+        val remainingTime =
+          if (linksWithTimes.isEmpty) SimTime.Zero
+          else SimTime(linksWithTimes.map { case (_, tt) => tt.value }.sum)
 
-        val result: Option[EdgeId] = for {
-          possibleStartPoint <- search.startPoint
-          if minimumRemainingRouteTimeForReplanning < search.estimatedRemainingTravelTime
-        } yield EdgeId(possibleStartPoint.toString)
+        @tailrec
+        def _findStartLink(
+          remainingLinks: List[(Id[Link], SimTime)],
+          remainingTime: SimTime,
+          traversalTime: SimTime = SimTime.Zero
+        ): Option[Id[Link]] = {
+          remainingLinks match {
+            case Nil => None
+            case (nextLink, nextTT) :: tail =>
+              val canReplanHere =
+                traversalTime.value > minimumReplanningLeadTime.value &&
+                  remainingTime.value > minimumRemainingRouteTimeForReplanning.value
+              if (canReplanHere) Some(nextLink)
+              else _findStartLink(tail, remainingTime - nextTT, traversalTime + nextTT)
+          }
+        }
 
-        result
+        _findStartLink(linksWithTimes, remainingTime)
     }
   }
 
@@ -380,27 +347,32 @@ object MATSimRouteOps extends LazyLogging {
     * @param qSim the state of the physical simulation
     * @return true if the path is valid
     */
-  def confirmPathIsValid(path: List[Id[Link]], qSim: QSim): Boolean = {
+  def findErrorsInPath(path: List[Id[Link]], qSim: QSim): Option[List[(Id[Link], Id[Link])]] = {
 
     if (path.lengthCompare(2) < 0) {
       // path is 0 or 1 links, so, it is legal by definition
-      true
+      None
     } else {
 
       val network: Network = qSim.getNetsimNetwork.getNetwork
 
       // for each pair of subsequent links, confirm that the node
       // between them is the same.
-      val validTransitions = for {
+      val transitions = for {
         edgePair <- path.sliding(2)
         (linkId1, linkId2) = (edgePair.head, edgePair.last)
         link1              = network.getLinks.get(linkId1)
         link2              = network.getLinks.get(linkId2)
+        valid              = link1.getToNode.getId == link2.getFromNode.getId
       } yield {
-        link1.getToNode.getId == link2.getFromNode.getId
+        (link1.getId, link2.getId, valid)
       }
 
-      validTransitions.forall(_ == true)
+      // return any link pairs that are not actually adjacent
+      transitions.filterNot { case (_, _, valid) => valid }.toList match {
+        case Nil          => None
+        case invalidPairs => Some(invalidPairs.map { case (s, d, _) => (s, d) })
+      }
     }
   }
 

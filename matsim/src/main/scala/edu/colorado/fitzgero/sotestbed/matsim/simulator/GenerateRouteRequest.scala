@@ -13,16 +13,37 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.agent.TravelMode
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import org.matsim.api.core.v01.network.Link
+import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass.SO
+import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass.UE
+import cats.implicits._
 
 object GenerateRouteRequest {
 
+  /**
+    * translates the state for some agent from MATSim to a request to our routing service
+    *
+    * @param qSim the queue simulation
+    * @param personId the person
+    * @param vehicleId the person's vehicle, typically the same id
+    * @param requestClass UE or SO agent
+    * @param timeEnteredVehicle start of trip time
+    * @param travelTime optional context for estimating travel time for the remaining trip
+    * @param mostRecentTimeReplanned time in simulation when vehicle was last replanned, if any
+    * @param minimumReplanningLeadTime global threshold for lead time between replanning events
+    * @param minimumRemainingRouteTimeForReplanning global threshold for allowing replanning based on the amount
+    *                                               of travel time left on this trip
+    * @return either some optional request (None if not within thresholds) or an error
+    */
   def apply(
     qSim: QSim,
     personId: Id[Person],
     vehicleId: Id[Vehicle],
     requestClass: RequestClass,
     timeEnteredVehicle: SimTime,
-    travelTime: Option[TravelTime],
+    travelTime: TravelTime,
+    agentData: Option[AgentData],
     mostRecentTimeReplanned: Option[SimTime],
     minimumReplanningLeadTime: TravelTimeSeconds,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
@@ -31,17 +52,33 @@ object GenerateRouteRequest {
     val currentTime     = qSim.getSimTimer.getTimeOfDay.toLong
 
     // get the experienced and estimated remaining trip plans
-    val agentTripDataOrErr = for {
+    val agentTripDataOrErr: Either[Error, Either[Error, AgentTripData]] = for {
       as  <- agentStateOrErr
       leg <- as.getModifiableLeg
-    } yield AgentTripData.collectAgentTripData(
-      agentState = as,
-      experiencedRoute = List.empty,
-      leg = leg,
-      currentTime = currentTime,
-      travelTimeOption = travelTime,
-      qSim = qSim
-    )
+    } yield requestClass match {
+      case _: SO =>
+        agentData match {
+          case None => Left(new Error(s"must invoke GenerateRouteRequest for SO agents with AgentData in payload"))
+          case Some(ad) =>
+            val atd = AgentTripData.collectSOAgentTripData(
+              agentState = as,
+              agentData = ad,
+              leg = leg,
+              currentTime = currentTime,
+              travelTime = travelTime,
+              qSim = qSim
+            )
+            Right(atd)
+        }
+      case UE =>
+        val atd = AgentTripData.collectUEAgentTripData(
+          agentState = as,
+          leg = leg,
+          currentTime = currentTime,
+          qSim = qSim
+        )
+        Right(atd)
+    }
 
     // find a link along the remaining trip plan that is suitable for
     // originating a replanning request
@@ -52,11 +89,19 @@ object GenerateRouteRequest {
     } yield {
       val fullRoute = MATSimRouteOps.convertToCompleteRoute(leg)
       val endLinkId = leg.getRoute.getEndLinkId
+      val ttRequest =
+        MATSimRouteOps.EdgeDataRequestWithTravelTime(
+          as.person,
+          as.vehicle,
+          SimTime(currentTime),
+          travelTime
+        )
       MATSimRouteOps.selectRequestOriginLink(
         fullRoute,
         currentLinkId,
         endLinkId,
         qSim,
+        ttRequest,
         minimumReplanningLeadTime,
         minimumRemainingRouteTimeForReplanning
       )
@@ -83,7 +128,7 @@ object GenerateRouteRequest {
     // wrap the request in a RouteRequestData wrapper that
     // includes additional data about the request
     val result = for {
-      agentTripData <- agentTripDataOrErr
+      agentTripData <- agentTripDataOrErr.flatten
       requestOption <- reqOptOrErr
     } yield requestOption.map { request =>
       val remainingDistance: Meters =
