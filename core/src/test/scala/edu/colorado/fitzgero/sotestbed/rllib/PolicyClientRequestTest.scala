@@ -5,12 +5,14 @@ import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest._
 import edu.colorado.fitzgero.sotestbed.rllib.Reward.{MultiAgentReward, SingleAgentReward}
 
 class PolicyClientRequestTest extends SoTestBedBaseTest {
+  val mockPrefix = "prefix"
   "PolicyClientMessage" when {
     "toJson" when {
       "called on a StartEpisodeMessage" should {
         "produce valid json" in {
-          val msg: PolicyClientRequest = StartEpisodeRequest(Some(EpisodeId("ep_id")), training_enabled = true)
-          val encoded                  = msg.toJson
+          val msg: PolicyClientRequest =
+            StartEpisodeRequest(Some(EpisodeId("ep_id", mockPrefix)), training_enabled = true)
+          val encoded = msg.toJson
           encoded.as[PolicyClientRequest] match {
             case Left(error)        => fail(error)
             case Right(codecResult) => codecResult shouldBe a[StartEpisodeRequest]
@@ -21,7 +23,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
       "called on a GetActionMessage" should {
         "produce valid json" in {
           val obs     = Observation.MultiAgentObservation(Map(AgentId("bob") -> List(List(551212.2, 123.4))))
-          val msg     = GetActionRequest(EpisodeId("ep_id"), observation = obs)
+          val msg     = GetActionRequest(EpisodeId("ep_id", mockPrefix), observation = obs)
           val encoded = msg.toJson
           encoded.as[PolicyClientRequest] match {
             case Left(error)        => fail(error)
@@ -33,7 +35,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
         "produce valid json" in {
           val obs     = Observation.MultiAgentObservation(Map(AgentId("bob") -> List(List(551212.2, 123.4))))
           val act     = Action.MultiAgentDiscreteAction(Map(AgentId("bob") -> List(3)))
-          val msg     = LogActionRequest(EpisodeId("ep_id"), observation = obs, action = act)
+          val msg     = LogActionRequest(EpisodeId("ep_id", mockPrefix), observation = obs, action = act)
           val encoded = msg.toJson
           encoded.as[PolicyClientRequest] match {
             case Left(error)        => fail(error)
@@ -46,7 +48,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
           val obs     = Observation.MultiAgentObservation(Map(AgentId("bob") -> List(List(551212.2, 123.4))))
           val pi      = 3.14159
           val act     = Action.MultiAgentRealAction(Map(AgentId("bob") -> List(pi)))
-          val msg     = LogActionRequest(EpisodeId("ep_id"), observation = obs, action = act)
+          val msg     = LogActionRequest(EpisodeId("ep_id", mockPrefix), observation = obs, action = act)
           val encoded = msg.toJson
           encoded.as[PolicyClientRequest] match {
             case Left(error) => fail(error)
@@ -68,7 +70,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
         "produce valid json" in {
           val msg =
             LogReturnsRequest(
-              EpisodeId("ep_id"),
+              EpisodeId("ep_id", mockPrefix),
               reward = MultiAgentReward(Map(AgentId("Bob") -> 3.14)),
               info = Some(Map("config"                     -> "off")),
               done = None
@@ -86,7 +88,7 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
         "produce valid json" in {
           val msg =
             LogReturnsRequest(
-              EpisodeId("ep_id"),
+              EpisodeId("ep_id", mockPrefix),
               reward = MultiAgentReward(Map(AgentId("Bob") -> 3.14)),
               info = None,
               done = None
@@ -102,7 +104,10 @@ class PolicyClientRequestTest extends SoTestBedBaseTest {
       }
       "called on a EndEpisode" should {
         "produce valid json" in {
-          val msg     = EndEpisodeRequest(EpisodeId("ep_id"), observation = Observation.MultiAgentObservation(Map.empty))
+          val msg = EndEpisodeRequest(
+            EpisodeId("ep_id", mockPrefix),
+            observation = Observation.MultiAgentObservation(Map.empty)
+          )
           val encoded = msg.toJson
           encoded.as[PolicyClientRequest] match {
             case Left(error)        => fail(error)

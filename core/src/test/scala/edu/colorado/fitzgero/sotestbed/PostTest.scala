@@ -13,12 +13,13 @@ import io.circe.syntax._
 import io.circe.parser._
 
 class PostTest extends SoTestBedBaseTest {
+  val mockPrefix = "prefix"
   "POST" when {
     "StartEpisodeRequest called" should {
       "result in response" in {
 
         val msg: PolicyClientRequest =
-          StartEpisodeRequest(episode_id = Some(EpisodeId("floof")), training_enabled = true)
+          StartEpisodeRequest(episode_id = Some(EpisodeId("floof", mockPrefix)), training_enabled = true)
         val reqBody = msg.asJson.toString
 
 //        val reqBody = ModelRequest.newBuilder().setX("poop").setY(90124).setZ(8675308).build()
@@ -57,7 +58,7 @@ class PostTest extends SoTestBedBaseTest {
       "result in response" in {
 
         val msg: PolicyClientRequest = GetActionRequest(
-          episode_id = EpisodeId("floof"),
+          episode_id = EpisodeId("floof", mockPrefix),
           observation = Observation.MultiAgentObservation(
             Map(
               AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
@@ -104,7 +105,7 @@ class PostTest extends SoTestBedBaseTest {
       "result in response" in {
 
         val msg: PolicyClientRequest = LogActionRequest(
-          episode_id = EpisodeId("floof"),
+          episode_id = EpisodeId("floof", mockPrefix),
           observation = Observation.MultiAgentObservation(
             Map(
               AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
@@ -157,11 +158,11 @@ class PostTest extends SoTestBedBaseTest {
       "run to the end" in {
 
         // messages to send
-        val episodeId = EpisodeId("floof")
+        val episodeId = EpisodeId("floof", mockPrefix)
         val msg1: PolicyClientRequest =
           StartEpisodeRequest(episode_id = Some(episodeId), training_enabled = true)
         val msg2: PolicyClientRequest = GetActionRequest(
-          episode_id = EpisodeId("floof"),
+          episode_id = EpisodeId("floof", mockPrefix),
           observation = Observation.MultiAgentObservation(
             Map(
               AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
