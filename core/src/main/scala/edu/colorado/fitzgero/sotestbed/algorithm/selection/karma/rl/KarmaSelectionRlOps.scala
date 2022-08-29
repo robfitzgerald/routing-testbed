@@ -71,8 +71,11 @@ object KarmaSelectionRlOps extends LazyLogging {
           )
           logRewardsMsgs = rewards.map { case (a, r)      => LogReturnsRequest(EpisodeId(a, episodePrefix), r) }
           endEpisodeMsgs = observations.map { case (a, o) => EndEpisodeRequest(EpisodeId(a, episodePrefix), o) }
-          _ <- client.send(logRewardsMsgs)
-          _ <- client.send(endEpisodeMsgs) // needs to happen AFTER logging final reward for all agents
+          // the RL server can die here if it meets it's stopping condition on number of episodes observed
+          // but we don't want that to blow up our remaining cleanup after this point
+          _ <- client.send(logRewardsMsgs, failOnServerError = false)
+          // needs to happen AFTER logging final reward for all agents
+          _ <- client.send(endEpisodeMsgs, failOnServerError = false)
           _ <- logFinalRewards(rewards, observations, experimentDirectory)
         } yield logger.info(s"finished all RL episodes")
 

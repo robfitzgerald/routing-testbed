@@ -27,8 +27,8 @@ final case class RLDriverPolicyClient(host: String, port: Int, parallelism: Int,
     * helper for sending requests to the RL server for
     * DriverPolicy agents
     */
-  def send(reqs: List[PolicyClientRequest]): IO[List[PolicyClientResponse]] =
-    PolicyClientOps.send(reqs, host, port, parallelism)
+  def send(reqs: List[PolicyClientRequest], failOnServerError: Boolean = true): IO[List[PolicyClientResponse]] =
+    PolicyClientOps.send(reqs, host, port, parallelism, failOnServerError)
 
   /**
     * helper for sending requests to the RL server for

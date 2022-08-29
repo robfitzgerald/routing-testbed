@@ -29,21 +29,35 @@ object PolicyClientOps {
     msgs: List[PolicyClientRequest],
     host: String,
     port: Int,
-    parallelism: Int
+    parallelism: Int,
+    failOnServerError: Boolean = true
   ): IO[List[PolicyClientResponse]] = {
     AsyncHttpClientCatsBackend[IO]().flatMap { backend =>
-      def _send(msg: PolicyClientRequest): IO[PolicyClientResponse] = {
+      def _send(msg: PolicyClientRequest): IO[Option[PolicyClientResponse]] = {
         val reqBody = msg.asJson.toString
         val request =
           basicRequest
             .body(reqBody.getBytes)
             .response(asJson[PolicyClientResponse])
             .post(uri"$host:$port")
-        for {
+        val result = for {
           sttpRes <- request.send(backend)
-          annotated = sttpRes.body.left.map { t => new Error(s"error from rl server for msg $reqBody", t) }
-          res <- IO.fromEither(annotated)
-        } yield res
+        } yield {
+          val result: IO[Option[PolicyClientResponse]] =
+            if (sttpRes.code.isServerError && failOnServerError) {
+              IO.raiseError(new Error(s"received ${sttpRes.code} error ${sttpRes.statusText}"))
+            } else if (sttpRes.code.isServerError || !failOnServerError) {
+              IO.pure(None)
+            } else {
+              val annotated = sttpRes.body
+                .map { res => Some(res) }
+                .left
+                .map { t => new Error(s"error from rl server for msg $reqBody", t) }
+              IO.fromEither(annotated)
+            }
+          result
+        }
+        result.flatten
       }
 
       val batches = msgs.sliding(parallelism, parallelism).toList
@@ -51,7 +65,7 @@ object PolicyClientOps {
       for {
         responses <- batches.traverse { _.parTraverse(_send) }
         _         <- backend.close()
-      } yield responses.flatten
+      } yield responses.flatten.flatten
     }
   }
 

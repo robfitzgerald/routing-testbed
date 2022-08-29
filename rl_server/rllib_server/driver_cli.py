@@ -30,6 +30,11 @@ parser.add_argument(
     help="Do not restore from a previously saved checkpoint (location of "
     "which is saved in `last_checkpoint_[algo-name].out`).",
 )
+parser.add_argument(
+    "--checkpoint",
+    default=None,
+    help="checkpoint location, or none if no checkpoint to load"
+)
 
 # General args.
 parser.add_argument(
@@ -51,7 +56,7 @@ parser.add_argument(
     "--run=[IMPALA|PPO|R2D2]",
 )
 parser.add_argument(
-    "--stop-iters", type=int, default=7, help="Number of iterations to train."
+    "--stop-iters", type=int, default=6, help="Number of iterations to train."
 )
 parser.add_argument(
     "--stop-timesteps",

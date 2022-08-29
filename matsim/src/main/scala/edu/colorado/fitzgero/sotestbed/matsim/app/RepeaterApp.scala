@@ -16,8 +16,11 @@ import pureconfig.generic.auto._
 import com.monovore.decline._
 import com.monovore.decline.effect._
 
-object QMIXRepeaterApp
-    extends CommandIOApp(name = "so-testbed-experiment-app", header = "run a trial from a HOCON description") {
+object RepeaterApp
+    extends CommandIOApp(
+      name = "so-testbed-experiment-repeater-app",
+      header = "run a trial repeatedly from a HOCON description"
+    ) {
 
   val configFileOpt: Opts[Path] =
     Opts.option[Path](
@@ -45,7 +48,7 @@ object QMIXRepeaterApp
           startingNumber.iterateForeverM { iteration =>
             val itConf = prepareRunConfig(config, iteration)
             val runner = MATSimExperimentRunner3(itConf, random.nextLong)
-            println(s"--- running qmix repeater iteration $iteration")
+            println(s"--- running training repeater iteration $iteration")
             runner.run().map { _ => iteration + 1 }
           }
         }
@@ -78,7 +81,7 @@ object QMIXRepeaterApp
     val popSize = updatedConf.population.size
     val scenarioData = MATSimRunConfig.ScenarioData(
 //      algorithm = updatedConf.algorithm.name,
-      algorithm = s"qmix$iteration",
+      algorithm = s"repeated$iteration",
       variationName = popSize.toString,
       popSize = popSize,
       trialNumber = 0,
