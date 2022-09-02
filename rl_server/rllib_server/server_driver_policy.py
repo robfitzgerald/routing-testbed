@@ -66,6 +66,21 @@ def run():
         else:
             return None
 
+    # same as above but +1 on port
+    def _eval_input(ioctx):
+        # We are remote worker or we are local worker with num_workers=0:
+        # Create a PolicyServerInput.
+        if ioctx.worker_index > 0 or ioctx.worker.num_workers == 0:
+            return PolicyServerInput(
+                ioctx,
+                SERVER_ADDRESS,
+                args.port + ioctx.worker_index -
+                (1 if ioctx.worker_index > 0 else 0)+1,
+            )
+        # No InputReader (PolicyServerInput) needed.
+        else:
+            return None
+
     try:
         feature_list = args.feature_names.split(',')
         obs_space_names = list(map(lambda s: DriverObsSpace[s], feature_list))
@@ -127,7 +142,7 @@ def run():
         # Note that for Ape-X metrics are already only reported for the lowest
         # epsilon workers (least random workers).
         # Set to None (or 0) for no evaluation.
-        "evaluation_interval": None,
+        "evaluation_interval": 1,
         # Duration for which to run evaluation each `evaluation_interval`.
         # The unit for the duration can be set via `evaluation_duration_unit` to
         # either "episodes" (default) or "timesteps".
@@ -141,18 +156,33 @@ def run():
         # The unit, with which to count the evaluation duration. Either "episodes"
         # (default) or "timesteps".
         "evaluation_duration_unit": "episodes",
+        "evaluation_config": {
+            "input": _eval_input
+        }
     }
 
     # DQN.
-    if args.run == "DQN" or args.run == "APEX" or args.run == "R2D2":
+    if args.run == "DQN":
         # Example of using DQN (supports off-policy actions).
         config.update(
             {
+                "explore": True,
+                "exploration_config": {
+                    # Exploration sub-class by name or full path to module+class
+                    # (e.g. “ray.rllib.utils.exploration.epsilon_greedy.EpsilonGreedy”)
+                    "type": "EpsilonGreedy",
+                    # Parameters for the Exploration class' constructor:
+                    "initial_epsilon": 1.0,
+                    "final_epsilon": 0.02,
+                    "warmup_timesteps": 14000,
+                    # Timesteps over which to anneal epsilon.
+                    "epsilon_timesteps": 70000,
+                },
                 # "learning_starts": 0,
-                "timesteps_per_iteration": 200,
-                "n_step": 3,
-                "rollout_fragment_length": 200,
-                "train_batch_size": 200,
+                # "timesteps_per_iteration": 200,
+                # "n_step": 3,
+                # "rollout_fragment_length": 200,
+                # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
             }
         )
         config["model"] = {
@@ -184,28 +214,28 @@ def run():
     checkpoint_path = CHECKPOINT_FILE.format(args.run)
     # Attempt to restore from checkpoint, if possible.
     if not args.no_restore and os.path.exists(checkpoint_path):
-        checkpoint_path = open(args.checkpoint).read()
+        checkpoint_path = open(checkpoint_path).read()
     else:
         checkpoint_path = None
 
     # Manual training loop (no Ray tune).
     if args.no_tune:
         algo_cls = get_algorithm_class(args.run)
-        trainer = algo_cls(config=config)
+        algo = algo_cls(config=config)
 
         if checkpoint_path:
             print("Restoring from checkpoint path", checkpoint_path)
-            trainer.restore(checkpoint_path)
+            algo.restore(checkpoint_path)
 
         # Serving and training loop.
         ts = 0
         for _ in range(args.stop_iters):
-            results = trainer.train()
+            results = algo.train()
             print(pretty_print(results))
-            checkpoint = trainer.save()
+            checkpoint = algo.save()
             print("Last checkpoint", checkpoint)
-            with open(checkpoint_path, "w") as f:
-                f.write(checkpoint)
+            # with open(checkpoint_path, "w") as f:
+            #     f.write(checkpoint)
             if (
                 results["episode_reward_mean"] >= args.stop_reward
                 or ts >= args.stop_timesteps
