@@ -105,7 +105,7 @@ object Grouping {
     * @param file the JSON file with a mapping from GroupId to List of AgentId
     * @return the effect of loading this grouping
     */
-  def apply(file: File): IO[Grouping] = {
+  def apply(file: String): IO[Grouping] = {
     val result =
       for {
         source       <- IO.delay { scala.io.Source.fromFile(file) }

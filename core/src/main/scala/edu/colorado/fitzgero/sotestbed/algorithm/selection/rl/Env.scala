@@ -29,9 +29,14 @@ object Env {
           // use space + grouping to create observations
           val obsData = space.encodeObservation(costFunction)(roadNetwork, agents)
 
+          // todo:
+          // - had to deprecate this because a standard MultiAgentObservation is
+          //   a Map[AgentId, List[Double]], but this expects a List[List[Double]]
+          // - Grouped envs are different than MultiAgentObservations, perhaps we
+          //   need to handle these differently
           for {
             groupedObservations <- grouping.group(obsData, space.defaultObservation)
-          } yield MultiAgentObservation(groupedObservations)
+          } yield ??? /// MultiAgentObservation(groupedObservations)
       }
     }
 
@@ -40,7 +45,7 @@ object Env {
         case MultiAgentGroupedEnvironment(space, grouping) =>
           for {
             groupedObservations <- grouping.group(Map.empty, space.defaultObservation)
-          } yield MultiAgentObservation(groupedObservations)
+          } yield ??? // MultiAgentObservation(groupedObservations)
       }
 
     def decodeAction(
@@ -52,10 +57,13 @@ object Env {
           action match {
             case Action.MultiAgentDiscreteAction(action) =>
               // use space + grouping to decode action
-              for {
-                ungroupedActions <- grouping.ungroup(action)
-              } yield space.decodeAction(ungroupedActions, agents)
+              // for {
+              //   ungroupedActions <- grouping.ungroup(action)
+              // } yield space.decodeAction(ungroupedActions, agents)
 
+              // refactored because MultiAgent envs != Grouped MultiAgent Envs,
+              // need to add a grouped version to fix
+              ???
             case _ => Left(new NotImplementedError("only multiagent discrete actions implemented"))
           }
       }

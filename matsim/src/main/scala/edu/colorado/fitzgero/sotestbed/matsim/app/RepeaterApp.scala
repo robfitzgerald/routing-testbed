@@ -81,7 +81,7 @@ object RepeaterApp
     val popSize = updatedConf.population.size
     val scenarioData = MATSimRunConfig.ScenarioData(
 //      algorithm = updatedConf.algorithm.name,
-      algorithm = s"repeated$iteration",
+      algorithm = s"repeated-$iteration",
       variationName = popSize.toString,
       popSize = popSize,
       trialNumber = 0,

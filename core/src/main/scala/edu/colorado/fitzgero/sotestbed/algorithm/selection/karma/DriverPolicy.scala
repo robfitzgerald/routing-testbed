@@ -14,12 +14,14 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import kantan.csv._
 import kantan.csv.ops._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
 import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.PathSegment
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure._
 
 sealed trait DriverPolicy
 
@@ -60,7 +62,7 @@ object DriverPolicy {
     */
   case class DelayWithKarmaMapping(unit: Karma, maxBid: Option[Karma]) extends DriverPolicy
 
-  case class RLBasedDriverPolicy(structure: RLDriverPolicyStructure, client: RLDriverPolicyClient) extends DriverPolicy
+  case class RLBasedDriverPolicy(structure: DriverPolicyStructure, client: RayRLlibClient) extends DriverPolicy
 
   case class InterpLookupTable(table: (Karma, Urgency) => Karma) extends DriverPolicy
 
@@ -122,29 +124,34 @@ object DriverPolicy {
       activeAgentHistory: ActiveAgentHistory,
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
       costFunction: EdgeBPR => Cost,
-      episodePrefix: String
+      episodePrefix: String,
+      episodeId: Option[EpisodeId]
     ): IO[List[Bid]] =
       policy match {
 
         case fixed: Fixed =>
-          alts.keys.toList.traverse { req =>
-            val inner = bank
-              .getOrError(req.agent)
+          val result: IO[List[Bid]] = alts.keys.toList.traverse { req =>
+            val inner: Either[Error, Bid] = bank
+              .get(req.agent)
+              .toRight(new Error(s"agent ${req.agent} not found in bank"))
               .map { karmaBalance =>
                 val bid = Karma(math.min(karmaBalance.value, fixed.bid.value))
                 Bid(req, bid)
               }
             IO.fromEither(inner)
           }
+          result
 
         case DelayProportional(maxBid) =>
           alts.keys.toList.traverse { req =>
-            val bidIO = for {
-              karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
-              oldest       <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
-              latest       <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
-              oldestTime   <- IO.fromEither(oldest.overallTravelTimeEstimate)
-              latestTime   <- IO.fromEither(latest.overallTravelTimeEstimate)
+            val bidIO: IO[Bid] = for {
+              karmaBalance <- IO.fromEither(
+                bank.get(req.agent).toRight(new Error(s"agent ${req.agent} not found in bank"))
+              )
+              oldest     <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
+              latest     <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
+              oldestTime <- IO.fromEither(oldest.overallTravelTimeEstimate)
+              latestTime <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
               // as proportional increase, lower bounded by zero
               // calculated in real numbers, then discretized back to Karma at the end
@@ -168,12 +175,14 @@ object DriverPolicy {
 
         case DelayWithKarmaMapping(unit, maxBid) =>
           alts.keys.toList.traverse { req =>
-            val bidIO = for {
-              karmaBalance <- IO.fromEither(bank.getOrError(req.agent))
-              oldest       <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
-              latest       <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
-              oldestTime   <- IO.fromEither(oldest.overallTravelTimeEstimate)
-              latestTime   <- IO.fromEither(latest.overallTravelTimeEstimate)
+            val bidIO: IO[Bid] = for {
+              karmaBalance <- IO.fromEither(
+                bank.get(req.agent).toRight(new Error(s"agent ${req.agent} not found in bank"))
+              )
+              oldest     <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
+              latest     <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
+              oldestTime <- IO.fromEither(oldest.overallTravelTimeEstimate)
+              latestTime <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
               // as proportional increase, lower bounded by zero
               // calculated in real numbers, then discretized back to Karma at the end
@@ -196,53 +205,32 @@ object DriverPolicy {
           }
 
         case rl: RLBasedDriverPolicy =>
-          // function to get the RLlib Observation for a request and its path alternatives
-          val getObservation: (Request, List[List[PathSegment]]) => IO[(Request, Observation)] =
-            (req, paths) => {
-              rl.structure
-                .encodeObservation(activeAgentHistory, bank, req, paths, alts, signal)
-                .map { obs => (req, obs) }
-            }
+          rl.structure match {
+            case map: MultiAgentPolicy =>
+              IO.fromOption(episodeId)(new Error(s"multiagent scenario missing EpisodeId"))
+                .flatMap { epId =>
+                  KarmaSelectionRlOps.getMultiAgentBids(
+                    client = rl.client,
+                    structure = map,
+                    episodeId = epId,
+                    alts = alts,
+                    signal = signal,
+                    bank = bank,
+                    activeAgentHistory = activeAgentHistory
+                  )
+                }
 
-          // function to call the RL server and get an RLlib Action for this request
-          val getActions: List[(Request, Observation)] => IO[List[Action]] =
-            (reqsWithObs) => {
-              val getActionRequests = reqsWithObs.map {
-                case (r, o) =>
-                  val episodeId = EpisodeId(r.agent, episodePrefix)
-                  GetActionRequest(episodeId, o)
-              }
-              rl.client
-                .send(getActionRequests)
-                .flatMap(
-                  _.traverse {
-                    case GetActionResponse(action) =>
-                      IO.pure(action)
-                    case other =>
-                      val msg = s"expecting GetActionResponse but received $other"
-                      IO.raiseError(new Error(msg))
-                  }
-                )
-            }
-
-          // function to map an action to a bid for some request to use within the simulation
-          val getBid: (Request, Action) => IO[Bid] = { (req, action) =>
-            for {
-              bidValue <- rl.structure.decodeActionAsBid(action)
-              bidTrunc <- IO.fromEither(bank.limitBidByBalance(bidValue, req.agent))
-            } yield Bid(req, bidTrunc)
+            case sap: SingleAgentPolicy =>
+              KarmaSelectionRlOps.getSingleAgentBids(
+                client = rl.client,
+                structure = sap,
+                episodePrefix = episodePrefix,
+                alts = alts,
+                signal = signal,
+                bank = bank,
+                activeAgentHistory = activeAgentHistory
+              )
           }
-
-          // for each request, generate a bid
-          val result = for {
-            reqsWithObs <- alts.toList.traverse(getObservation.tupled)
-            (reqs, obs) = reqsWithObs.unzip
-            actions <- getActions(reqsWithObs)
-            reqsWithActions = reqs.zip(actions)
-            bids <- reqsWithActions.traverse(getBid.tupled)
-          } yield bids
-
-          result
 
         case lookup: InterpLookupTable =>
           alts.keys.toList.traverse { req =>

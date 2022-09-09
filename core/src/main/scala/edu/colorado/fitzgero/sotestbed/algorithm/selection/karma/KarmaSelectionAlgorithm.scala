@@ -20,11 +20,15 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.DriverPolicy._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness._
 import edu.colorado.fitzgero.sotestbed.rllib._
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure.SingleAgentPolicy
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure.MultiAgentPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.SingleAgentPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.MultiAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
 import scala.collection.mutable
 import scala.util.Random
+import scala.reflect.macros.NonemptyAttachments
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse.StartEpisodeResponse
+
+import cats.effect.unsafe.implicits.global
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -49,7 +53,26 @@ case class KarmaSelectionAlgorithm(
 
   // create a random prefix for each run of the simulator so that the same agentId may
   // be used across concurrent, overlapping simulations generating training data
+  // only used with SingleAgentPolicies
   val episodePrefix: String = java.util.UUID.randomUUID.toString
+
+  // whenever we see an agent start an RL episode, we store that information here
+  // only used with SingleAgentPolicies
+  val agentsWithEpisodes: mutable.Set[String] = mutable.Set.empty
+
+  // in the case of a MultiAgentPolicy, we create exactly one episode per experiment
+  // and start the episode now
+  val multiAgentEpisodeId: Option[EpisodeId] = driverPolicy match {
+    case RLBasedDriverPolicy(structure, client) =>
+      structure match {
+        case _: MultiAgentPolicy =>
+          val episodeId = EpisodeId()
+          KarmaSelectionRlOps.startMultiAgentEpisode(client, Some(episodeId)).unsafeRunSync()
+          Some(episodeId)
+        case _: SingleAgentPolicy => None
+      }
+    case _ => None
+  }
 
   val networkLogHeader: String = List(
     "batchId",
@@ -59,9 +82,6 @@ case class KarmaSelectionAlgorithm(
 
   selectionPw.write(karmaLogHeader + "\n")
   networkPw.write(networkLogHeader + "\n")
-
-  // whenever we see an agent start an RL episode, we store that information here
-  val agentsWithEpisodes: mutable.Set[String] = mutable.Set.empty
 
   val gen: NetworkPolicySignalGenerator = networkPolicy.buildGenerator
 
@@ -76,16 +96,36 @@ case class KarmaSelectionAlgorithm(
     driverPolicy match {
       case RLBasedDriverPolicy(structure, client) =>
         logger.info(s"sending final messages to RL server")
-        KarmaSelectionRlOps.endEpisodes(
-          structure,
-          client,
-          networkPolicy,
-          experimentDirectory,
-          allocationTransform,
-          agentsWithEpisodes.toSet,
-          finalBank,
-          episodePrefix
-        )
+        structure match {
+          case multiAgentPolicy: MultiAgentPolicy =>
+            val epId = IO.fromOption(this.multiAgentEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
+            for {
+              episodeId <- epId
+              _ <- KarmaSelectionRlOps.endMultiAgentEpisode(
+                episodeId,
+                multiAgentPolicy,
+                client,
+                networkPolicy,
+                experimentDirectory,
+                allocationTransform,
+                agentsWithEpisodes.toSet,
+                finalBank
+              )
+            } yield ()
+
+          case singleAgentPolicy: SingleAgentPolicy =>
+            KarmaSelectionRlOps.endSingleAgentEpisodes(
+              singleAgentPolicy,
+              client,
+              networkPolicy,
+              experimentDirectory,
+              allocationTransform,
+              agentsWithEpisodes.toSet,
+              finalBank,
+              episodePrefix
+            )
+        }
+
       case _ => IO.unit
     }
   }
@@ -150,27 +190,51 @@ case class KarmaSelectionAlgorithm(
         // we may need to start some RL episodes. RLlib has undefined behavior when we
         // start an episode for an agent but close it before making any observations.
         // by dealing with starting episodes here, we are only starting episodes for
-        // agents that will have at least one observation, made below.
-        val startEpisodeResult = driverPolicy match {
+        // agents that will have at least one observation, made below. this only
+        // applies for SingleAgentPolicy problems.
+        val updateRlClientServerResult = driverPolicy match {
           case RLBasedDriverPolicy(structure, client) =>
             val newReqs = alts.keys.toList.filterNot { r => agentsWithEpisodes.contains(r.agent) }
-            val requests = newReqs.toList.map { req =>
-              val episodeId = Some(EpisodeId(req.agent, episodePrefix))
-              PolicyClientRequest.StartEpisodeRequest(episodeId, client.trainingEnabled)
+
+            val startEpResult: IO[List[PolicyClientResponse]] = structure match {
+              case map: MultiAgentPolicy =>
+                // nothing to do, though we still track newly-observed agents below
+                IO.pure(List.empty)
+              case sap: SingleAgentPolicy =>
+                val requests = newReqs.toList.map { req =>
+                  val episodeId = Some(EpisodeId(req.agent, episodePrefix))
+                  PolicyClientRequest.StartEpisodeRequest(episodeId, client.trainingEnabled)
+                }
+                client.send(requests)
             }
-            // update our record of any active episodes
-            client.send(requests).map { _ =>
-              agentsWithEpisodes.addAll(newReqs.map { _.agent })
-              val sendMsg =
-                requests
-                  .flatMap { _.episode_id.map { _.toString } }
-                  .mkString("sent start episode requests for agents ", ",", "")
-              logger.info(sendMsg)
+
+            startEpResult.map { responses =>
+              // update local information about active RL agents (Single or MultiAgent)
               val sizeBefore = agentsWithEpisodes.size
+              agentsWithEpisodes.addAll(newReqs.map { _.agent })
+
+              // log newly-activated SingleAgent episodes
+              if (responses.nonEmpty) {
+                val sendMsg =
+                  responses
+                    .flatMap {
+                      case StartEpisodeResponse(episode_id) => episode_id.value
+                      case _                                => ""
+                    }
+                    .mkString("sent start episode requests for agents ", ",", "")
+                logger.info(sendMsg)
+              }
+
+              // val agentDoneResult: IO[Unit] = structure match {
+              //   case sap: SingleAgentPolicy => ()
+              //   case map: MultiAgentPolicy =>
+              //     val agents
+              // }
 
               val sizeAfter = agentsWithEpisodes.size
-              logger.info(s"now tracking $sizeAfter episodes up from $sizeBefore")
+              logger.info(s"now tracking $sizeAfter RL agents up from $sizeBefore")
             }
+
           case _ => IO.unit
         }
 
@@ -189,10 +253,19 @@ case class KarmaSelectionAlgorithm(
         // a path for each driver agent
         // get the costs associated with the trips
         val result = for {
-          _      <- startEpisodeResult
+          _      <- updateRlClientServerResult
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           bids <- driverPolicy
-            .applyDriverPolicy(signal, alts, bank, activeAgentHistory, roadNetwork, costFunction, episodePrefix)
+            .applyDriverPolicy(
+              signal,
+              alts,
+              bank,
+              activeAgentHistory,
+              roadNetwork,
+              costFunction,
+              episodePrefix,
+              multiAgentEpisodeId
+            )
           selections = signal.assign(bids, alts)
           paths      = selections.map { case (_, _, path) => path }
           routesUo   = alts.values.flatMap(_.headOption).toList

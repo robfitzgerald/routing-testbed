@@ -36,6 +36,11 @@ import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig._
 import edu.colorado.fitzgero.sotestbed.rllib._
 import cats.implicits._
 import scala.util.Try
+import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
+import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
+import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.MultiAgentPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.SingleAgentPolicy
 
 //import kantan.csv._
 //import kantan.csv.ops._
@@ -60,17 +65,31 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       agentsUnderControlPercentage = if (matsimRunConfig.algorithm.isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
       else matsimRunConfig.routing.adoptionRate
       agentsUnderControl <- matsimRunConfig.algorithm match {
-        case _: Algorithm.Selfish => Right(Set.empty[Id[Person]])
+        case _: Algorithm.Selfish        => Right(Set.empty[Id[Person]])
         case so: Algorithm.SystemOptimal =>
-          so.selectionAlgorithm match {
-            case rl: SelectionAlgorithmConfig.RLSelection =>
-              PopulationOps.readGrouping(rl.groupingFile)
-            case _ =>
+          // do we have a grouping file? if so, load that
+          val groupingFile: Option[String] = so.selectionAlgorithm match {
+            case ks: SelectionAlgorithmConfig.KarmaSelection if ks.driverPolicy.isInstanceOf[ExternalRLServer] =>
+              ks.driverPolicy match {
+                case ExternalRLServer(structure, client) =>
+                  structure match {
+                    case MultiAgentPolicy(space, groupingFile) => groupingFile
+                    case SingleAgentPolicy(space)              => None
+                  }
+                case _ => throw new Exception
+              }
+            case rl: SelectionAlgorithmConfig.RLSelection => Some(rl.groupingFile)
+            case _                                        => None
+          }
+          groupingFile match {
+            case Some(gf) => PopulationOps.readGrouping(gf)
+            case None =>
               PopulationOps.loadAgentsUnderControl(
                 matsimRunConfig.io.populationFile,
                 agentsUnderControlPercentage
               )
           }
+
       }
       config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {

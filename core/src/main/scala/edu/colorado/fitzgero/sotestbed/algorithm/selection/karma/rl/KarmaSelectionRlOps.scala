@@ -7,6 +7,7 @@ import cats.effect._
 import java.nio.file.{Path => JavaNioPath}
 import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import com.typesafe.scalalogging.LazyLogging
 import java.io.PrintWriter
@@ -14,32 +15,170 @@ import scala.util.Try
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
 import scala.util.Failure
 import scala.util.Success
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse.Empty
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse.GetActionResponse
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse.StartEpisodeResponse
+import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentDiscreteAction
+import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentRealAction
+import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentDiscreteAction
+import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Bid
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 
 object KarmaSelectionRlOps extends LazyLogging {
 
-  // def startEpisode(
-  //   structure: RLDriverPolicyStructure,
-  //   client: RLDriverPolicyClient,
-  //   req: Request
-  // ): IO[PolicyClientResponse] = {
-  //   structure match {
-  //     case RLDriverPolicyStructure.MultiAgentPolicy(space) =>
-  //       throw new NotImplementedError
-  //     case RLDriverPolicyStructure.SingleAgentPolicy(space) =>
-  //       // start episodes for any new agents
-  //       val agentId = req.agent
-  //       logger.info(s"starting RL episode for agent ${req.agent}")
-  //       val startReq = PolicyClientRequest.StartEpisodeRequest(
-  //         Some(EpisodeId(agentId)),
-  //         client.trainingEnabled
-  //       )
-  //       client.send(startReq)
-  //   }
-  // }
+  def startMultiAgentEpisode(
+    client: RayRLlibClient,
+    episodeId: Option[EpisodeId]
+  ): IO[PolicyClientResponse] = {
+    val startReq = PolicyClientRequest.StartEpisodeRequest(
+      episodeId,
+      client.trainingEnabled
+    )
+    client.send(startReq)
+  }
 
-  def endEpisodes(
-    structure: RLDriverPolicyStructure,
-    client: RLDriverPolicyClient,
+  def startSingleAgentEpisodeForRequests(
+    client: RayRLlibClient,
+    episodePrefix: String,
+    alts: Map[Request, List[Path]],
+    agentsWithEpisodes: scala.collection.mutable.Set[String]
+  ): IO[List[Request]] = {
+    val newReqs = alts.keys.toList.filterNot { r => agentsWithEpisodes.contains(r.agent) }
+    val requests = newReqs.toList.map { req =>
+      val episodeId = Some(EpisodeId(req.agent, episodePrefix))
+      PolicyClientRequest.StartEpisodeRequest(episodeId, client.trainingEnabled)
+    }
+
+    // update our record of any active episodes
+    client.send(requests).map { _ => newReqs }
+  }
+
+  def extractAction(res: PolicyClientResponse): IO[Action] = {
+    res match {
+      case x: GetActionResponse => IO.pure(x.action)
+      case other                => IO.raiseError(new Error(s"expected GetActionResponse, found $other"))
+    }
+  }
+
+  def getSingleAgentBids(
+    client: RayRLlibClient,
+    structure: DriverPolicyStructure.SingleAgentPolicy,
+    episodePrefix: String,
+    alts: Map[Request, List[Path]],
+    signal: NetworkPolicySignal,
+    bank: Map[String, Karma],
+    activeAgentHistory: ActiveAgentHistory
+  ): IO[List[Bid]] = {
+    import PolicyClientRequest._
+    import Action._
+    import Observation._
+    val requests = alts.keys.toList
+    val actionReqs: IO[List[PolicyClientRequest]] = alts.toList.traverse {
+      case (req, paths) =>
+        structure
+          .encodeObservation(activeAgentHistory, bank, req, paths, alts, signal)
+          .map { obs =>
+            val episodeId = EpisodeId(req.agent, episodePrefix)
+            GetActionRequest(episodeId, SingleAgentObservation(obs))
+          }
+    }
+    for {
+      reqs      <- actionReqs
+      responses <- client.send(reqs)
+      actions   <- responses.traverse(extractAction)
+      bidValues <- actions.traverse { structure.decodeSingleAgentActionAsBid }
+      reqsWithBids = requests.zip(bidValues)
+      bidTrunks <- reqsWithBids.traverse {
+        case (req, bidVal) =>
+          IO.fromEither(bank.limitBidByBalance(bidVal, req.agent))
+            .map { case truncBid => Bid(req, truncBid) }
+      }
+    } yield bidTrunks
+  }
+
+  def getMultiAgentBids(
+    client: RayRLlibClient,
+    structure: DriverPolicyStructure.MultiAgentPolicy,
+    episodeId: EpisodeId,
+    alts: Map[Request, List[Path]],
+    signal: NetworkPolicySignal,
+    bank: Map[String, Karma],
+    activeAgentHistory: ActiveAgentHistory
+  ): IO[List[Bid]] = {
+    import PolicyClientRequest._
+    import Action._
+    import Observation._
+    val requests = alts.keys.toList
+    val agentObsResult = alts.toList.traverse {
+      case (req, paths) =>
+        structure
+          .encodeObservation(activeAgentHistory, bank, req, paths, alts, signal)
+          .map { obs => (AgentId(req.agent), obs) }
+    }
+    for {
+      agentObs <- agentObsResult
+      mao = MultiAgentObservation(agentObs.toMap)
+      gar = GetActionRequest(episodeId, mao)
+      response  <- client.send(gar)
+      action    <- extractAction(response)
+      bidValues <- structure.decodeMultiAgentActionAsBid(action)
+      reqsWBids <- requests.traverse { r =>
+        IO.fromOption(bidValues.get(r.agent).map { k => (r, k) }) {
+          new Error(s"action request $r not found in RL server response")
+        }
+      }
+      bidTrunks <- reqsWBids.traverse {
+        case (req, bidVal) =>
+          IO.fromEither(bank.limitBidByBalance(bidVal, req.agent))
+            .map { case truncBid => Bid(req, truncBid) }
+      }
+    } yield bidTrunks
+  }
+
+  def endMultiAgentEpisode(
+    episodeId: EpisodeId,
+    multiAgentStructure: DriverPolicyStructure.MultiAgentPolicy,
+    client: RayRLlibClient,
+    networkPolicyConfig: NetworkPolicyConfig,
+    experimentDirectory: JavaNioPath,
+    allocationTransform: AllocationTransform,
+    agentsWithEpisodes: Set[String],
+    finalBank: Map[String, Karma]
+  ) = {
+    import PolicyClientRequest._
+    import Reward._
+    import Observation._
+    val finalData = collectFinalRewardsAndObservations(
+      experimentDirectory = experimentDirectory,
+      agentsWithEpisodes = agentsWithEpisodes,
+      allocationTransform = allocationTransform,
+      driverPolicySpace = multiAgentStructure.space,
+      networkPolicyConfig = networkPolicyConfig,
+      finalBank = finalBank
+    )
+    for {
+      data <- finalData
+      (rewards, observations) = data
+      rewardValues            = rewards.map { case (a, r) => AgentId(a) -> r }
+      mar                     = MultiAgentReward(rewardValues.toMap)
+      obsValues               = observations.map { case (a, o) => AgentId(a) -> o }
+      mao                     = MultiAgentObservation(obsValues.toMap)
+      logReturnsReq           = LogReturnsRequest(episodeId, mar)
+      endEpisodeReq           = EndEpisodeRequest(episodeId, mao)
+      _ <- client.send(logReturnsReq)
+      // needs to happen AFTER logging final reward for all agents
+      _ <- client.send(endEpisodeReq)
+      _ <- logFinalRewards(rewards, observations, experimentDirectory)
+    } yield logger.info(s"finished multi-agent RL episode $episodeId")
+
+  }
+
+  def endSingleAgentEpisodes(
+    singleAgentStructure: DriverPolicyStructure.SingleAgentPolicy,
+    client: RayRLlibClient,
     networkPolicyConfig: NetworkPolicyConfig,
     experimentDirectory: JavaNioPath,
     allocationTransform: AllocationTransform,
@@ -47,45 +186,64 @@ object KarmaSelectionRlOps extends LazyLogging {
     finalBank: Map[String, Karma],
     episodePrefix: String
   ) = {
-    structure match {
-      case RLDriverPolicyStructure.MultiAgentPolicy(space) =>
-        IO.raiseError(new NotImplementedError)
-      case policy: RLDriverPolicyStructure.SingleAgentPolicy =>
-        import PolicyClientRequest._
+    import PolicyClientRequest._
+    import Reward._
+    import Observation._
 
-        // trip log contains the initial travel time estimate along with the final travel time, but not all
-        // agents in the trip log can be guaranteed to have RL episodes
-        // see [[]]
-        // here, we filter the trip log to the agents with known RL episodes before sending requests to log + close
-        // those episodes. we also log all of the final rewards and observations to a file.
-        val result: IO[Unit] = for {
-          tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
-          tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
-          // tripsSorted       = tripsWithEpisodes.sortBy { _.agentId }(agentIdOrdering)
-          rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(tripsWithEpisodes, allocationTransform)
-          observations <- RLDriverPolicyEpisodeOps.finalObservations(
-            tripsWithEpisodes,
-            policy.space,
-            networkPolicyConfig,
-            finalBank
-          )
-          logRewardsMsgs = rewards.map { case (a, r)      => LogReturnsRequest(EpisodeId(a, episodePrefix), r) }
-          endEpisodeMsgs = observations.map { case (a, o) => EndEpisodeRequest(EpisodeId(a, episodePrefix), o) }
-          // the RL server can die here if it meets it's stopping condition on number of episodes observed
-          // but we don't want that to blow up our remaining cleanup after this point
-          _ <- client.send(logRewardsMsgs, failOnServerError = false)
-          // needs to happen AFTER logging final reward for all agents
-          _ <- client.send(endEpisodeMsgs, failOnServerError = false)
-          _ <- logFinalRewards(rewards, observations, experimentDirectory)
-        } yield logger.info(s"finished all RL episodes")
+    // trip log contains the initial travel time estimate along with the final travel time, but not all
+    // agents in the trip log can be guaranteed to have RL episodes
+    // see [[]]
+    // here, we filter the trip log to the agents with known RL episodes before sending requests to log + close
+    // those episodes. we also log all of the final rewards and observations to a file.
+    val result: IO[Unit] = for {
+      data <- collectFinalRewardsAndObservations(
+        experimentDirectory = experimentDirectory,
+        agentsWithEpisodes = agentsWithEpisodes,
+        allocationTransform = allocationTransform,
+        driverPolicySpace = singleAgentStructure.space,
+        networkPolicyConfig = networkPolicyConfig,
+        finalBank = finalBank
+      )
+      (rewardValues, obsValues) = data
+      rewards                   = rewardValues.map { case (a, r) => a -> SingleAgentReward(r) }
+      observations              = obsValues.map { case (a, o) => a -> SingleAgentObservation(o) }
+      logRewardsMsgs            = rewards.map { case (a, r) => LogReturnsRequest(EpisodeId(a, episodePrefix), r) }
+      endEpisodeMsgs            = observations.map { case (a, o) => EndEpisodeRequest(EpisodeId(a, episodePrefix), o) }
+      // the RL server can die here if it meets it's stopping condition on number of episodes observed
+      // but we don't want that to blow up our remaining cleanup after this point
+      _ <- client.send(logRewardsMsgs, failOnServerError = false)
+      // needs to happen AFTER logging final reward for all agents
+      _ <- client.send(endEpisodeMsgs, failOnServerError = false)
+      _ <- logFinalRewards(rewardValues, obsValues, experimentDirectory)
+    } yield logger.info(s"finished all single agent RL episodes")
 
-        result
-    }
+    result
+  }
+
+  def collectFinalRewardsAndObservations(
+    experimentDirectory: JavaNioPath,
+    agentsWithEpisodes: Set[String],
+    allocationTransform: AllocationTransform,
+    driverPolicySpace: DriverPolicySpace,
+    networkPolicyConfig: NetworkPolicyConfig,
+    finalBank: Map[String, Karma]
+  ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
+    for {
+      tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+      tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+      rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(tripsWithEpisodes, allocationTransform)
+      observations <- RLDriverPolicyEpisodeOps.finalObservations(
+        tripsWithEpisodes,
+        driverPolicySpace,
+        networkPolicyConfig,
+        finalBank
+      )
+    } yield (rewards, observations)
   }
 
   def logFinalRewards(
-    rewards: List[(String, Reward)],
-    observations: List[(String, Observation)],
+    rewards: List[(String, Double)],
+    observations: List[(String, List[Double])],
     experimentDirectory: JavaNioPath
   ): IO[Unit] = {
     IO.fromTry {
@@ -97,7 +255,7 @@ object KarmaSelectionRlOps extends LazyLogging {
           (a, o) <- observations
           r      <- rewardsLookup.get(a)
         } {
-          pw.write(f"""$a,${r.prettyPrint},"${o.prettyPrint}"""" + "\n")
+          pw.write(f"""$a,$r,"${o.mkString("[", ",", "]")}"""" + "\n")
         }
         pw.close()
       }

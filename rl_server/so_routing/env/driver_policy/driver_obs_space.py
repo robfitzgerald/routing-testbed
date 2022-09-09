@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 from gym import spaces
 import numpy as np
 from json import JSONEncoder
@@ -43,7 +43,10 @@ class DriverObsSpace(Enum):
         return _OBSERVATION_SPACE_MAPPING.get(driver_obs_space)
 
 
-def build_observation_space(feature_names: list[DriverObsSpace], max_karma: int) -> spaces.Box:
+def build_observation_space(
+        feature_names: list[DriverObsSpace],
+        max_karma: int,
+        agents: Optional[List[str]] = None) -> spaces.Space:
 
     # grab the range of values for each feature requested
     low, high = [], []
@@ -72,7 +75,12 @@ def build_observation_space(feature_names: list[DriverObsSpace], max_karma: int)
         dtype=np.float64
     )
 
-    return space
+    if agents is None:
+        return space
+    else:
+        # expand into a multiagent space
+        mapping = {agent: space for agent in agents}
+        return spaces.Dict(mapping)
 
 
 class DriverObsSpaceEncoder(JSONEncoder):

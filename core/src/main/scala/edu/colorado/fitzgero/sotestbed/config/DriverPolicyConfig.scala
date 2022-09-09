@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.config
 import java.io.File
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy._
 
 sealed trait DriverPolicyConfig
@@ -50,8 +51,7 @@ object DriverPolicyConfig {
     * @param structure the structure of the problem, be it single or multi-agent
     * @param client HTTP client parameters
     */
-  case class ExternalRLServer(structure: RLDriverPolicyStructure, client: RLDriverPolicyClient)
-      extends DriverPolicyConfig
+  case class ExternalRLServer(structure: DriverPolicyStructure, client: RayRLlibClient) extends DriverPolicyConfig
 
   /**
     * reads a lookup table from file

@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
+package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl
 
 import java.io.InputStream
 
@@ -14,14 +14,14 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import kantan.csv._
 import kantan.csv.ops._
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RLDriverPolicyStructure
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure
 import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.rllib.Action
 
-final case class RLDriverPolicyClient(host: String, port: Int, parallelism: Int, trainingEnabled: Boolean) {
+final case class RayRLlibClient(host: String, port: Int, parallelism: Int, trainingEnabled: Boolean) {
 
   /**
     * helper for sending requests to the RL server for

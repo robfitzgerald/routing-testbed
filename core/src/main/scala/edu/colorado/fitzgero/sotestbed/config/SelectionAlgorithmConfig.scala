@@ -124,7 +124,7 @@ object SelectionAlgorithmConfig {
     host: String,
     port: Int,
     space: Space,
-    groupingFile: File
+    groupingFile: String
   ) extends SelectionAlgorithmConfig {
 
     def build(outDir: Path): SelectionAlgorithm = {

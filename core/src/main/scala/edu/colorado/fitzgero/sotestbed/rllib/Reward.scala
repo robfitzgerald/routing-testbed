@@ -38,7 +38,7 @@ object Reward {
     List[Decoder[Reward]](
       Decoder[Double].map { SingleAgentReward.apply }.widen,
       Decoder[Option[Map[AgentId, Double]]].emap {
-        case None    => Right(MultiAgentReward(Map.empty))
+        case None    => Right(MultiAgentReward(Map.empty[AgentId, Double]))
         case Some(m) => Right(MultiAgentReward(m))
       }
     ).reduceLeft(_.or(_))

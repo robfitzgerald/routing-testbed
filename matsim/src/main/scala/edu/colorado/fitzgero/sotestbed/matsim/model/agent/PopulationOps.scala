@@ -10,10 +10,12 @@ import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.population.Person
 import cats.implicits._
 
-import io.circe._
+import io.circe.{Error => CirceError, _}
 import io.circe.syntax._
 import io.circe.generic.auto._
 import io.circe.parser._
+import java.nio.file.Files
+import java.nio.file.Paths
 
 object PopulationOps {
 
@@ -23,11 +25,11 @@ object PopulationOps {
     * @return either an error, or the agent ids listed in the grouping file
     *         based on [[https://docs.ray.io/en/latest/rllib-env.html#grouping-agents]]
     */
-  def readGrouping(groupingFile: File): Either[Throwable, Set[Id[Person]]] = {
+  def readGrouping(groupingFile: String): Either[Throwable, Set[Id[Person]]] = {
     val fileStringOrError = Try {
       val source = scala.io.Source.fromFile(groupingFile)
-      val string = source.getLines.mkString
-      source.close
+      val string = source.getLines.mkString("\n")
+      source.close()
       string
     }.toEither
 

@@ -23,6 +23,7 @@ You may connect more than one policy client to any open listen port.
 """
 
 
+import json
 import os
 
 import ray
@@ -32,6 +33,7 @@ from rl_server.rllib_server.driver_cli import parser
 
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
 from ray.tune.logger import pretty_print
+from ray.rllib.policy.policy import PolicySpec
 
 # from ray.rllib.env.policy_server_input import PolicyServerInput
 from rl_server.so_routing.env.policy_server_no_pickle_v4 import PolicyServerInput
@@ -83,17 +85,76 @@ def run():
 
     try:
         feature_list = args.feature_names.split(',')
-        obs_space_names = list(map(lambda s: DriverObsSpace[s], feature_list))
+        o_names = list(map(lambda s: DriverObsSpace[s], feature_list))
     except Exception as e:
         raise Exception(f"failed parsing observation features") from e
 
-    obs_space = build_observation_space(obs_space_names, args.max_account)
-    act_space = args.action_space.action_space(args.max_bid)
+    grouping = None
+    agents_list = None
+    if args.grouping_file is not None:
+        with open(args.grouping_file, 'r') as f:
+            grouping = json.loads(f.read())
+            agents_list = [agent for group in grouping.values()
+                           for agent in group]
+        print(
+            f'grouping file with {len(agents_list)} agents in {len(grouping)} groups')
 
-    print("observation space")
-    print(obs_space)
-    print("action space")
-    print(act_space)
+    obs_space = build_observation_space(o_names, args.max_account, agents_list)
+    act_space = args.action_space.action_space(args.max_bid, agents_list)
+    is_multi = grouping is not None
+    obs_space_instance = list(obs_space.values())[0] if is_multi else obs_space
+    act_space_instance = list(act_space.values())[0] if is_multi else act_space
+
+    # print("observation space")
+    # print(obs_space)
+    # print("action space")
+    # print(act_space)
+
+    multiagent = {
+        # Map of type MultiAgentPolicyConfigDict from policy ids to tuples
+        # of (policy_cls, obs_space, act_space, config). This defines the
+        # observation and action spaces of the policies and any extra config.
+        "policies": {
+            "driver": PolicySpec(None, obs_space_instance, act_space_instance),
+        },
+        # Keep this many policies in the "policy_map" (before writing
+        # least-recently used ones to disk/S3).
+        # "policy_map_capacity": 100,
+        # Where to store overflowing (least-recently used) policies?
+        # Could be a directory (str) or an S3 location. None for using
+        # the default output dir.
+        # "policy_map_cache": None,
+        # Function mapping agent ids to policy ids.
+        # "policy_mapping_fn": None,
+        "policy_mapping_fn": lambda agent_id, episode, worker, **kwargs: "driver"
+        # Determines those policies that should be updated.
+        # Options are:
+        # - None, for all policies.
+        # - An iterable of PolicyIDs that should be updated.
+        # - A callable, taking a PolicyID and a SampleBatch or MultiAgentBatch
+        #   and returning a bool (indicating whether the given policy is trainable
+        #   or not, given the particular batch). This allows you to have a policy
+        #   trained only on certain data (e.g. when playing against a certain
+        #   opponent).
+        # "policies_to_train": None,
+        # Optional function that can be used to enhance the local agent
+        # observations to include more state.
+        # See rllib/evaluation/observation_function.py for more info.
+        # "observation_fn": None,
+        # When replay_mode=lockstep, RLlib will replay all the agent
+        # transitions at a particular timestep together in a batch. This allows
+        # the policy to implement differentiable shared computations between
+        # agents it controls at that timestep. When replay_mode=independent,
+        # transitions are replayed independently per policy.
+        # "replay_mode": "independent",
+        # Which metric to use as the "batch size" when building a
+        # MultiAgentBatch. The two supported values are:
+        # env_steps: Count each time the env is "stepped" (no matter how many
+        #   multi-agent actions are passed/how many multi-agent observations
+        #   have been returned in the previous step).
+        # agent_steps: Count each individual agent step as one step.
+        # "count_steps_by": "env_steps",
+    }
 
     # Trainer config. Note that this config is sent to the client only in case
     # the client needs to create its own policy copy for local inference.
@@ -142,7 +203,7 @@ def run():
         # Note that for Ape-X metrics are already only reported for the lowest
         # epsilon workers (least random workers).
         # Set to None (or 0) for no evaluation.
-        "evaluation_interval": 1,
+        "evaluation_interval": 10,
         # Duration for which to run evaluation each `evaluation_interval`.
         # The unit for the duration can be set via `evaluation_duration_unit` to
         # either "episodes" (default) or "timesteps".
@@ -152,13 +213,17 @@ def run():
         # - For `evaluation_parallel_to_training=True`: Will run as many
         #   episodes/timesteps that fit into the (parallel) training step.
         # - For `evaluation_parallel_to_training=False`: Error.
-        "evaluation_duration": 10,
+        "evaluation_duration": 1,
         # The unit, with which to count the evaluation duration. Either "episodes"
         # (default) or "timesteps".
         "evaluation_duration_unit": "episodes",
         "evaluation_config": {
-            "input": _eval_input
-        }
+            "input": _eval_input,
+            "observation_space": obs_space,
+            "action_space": act_space,
+            "multiagent": multiagent
+        },
+        "multiagent": multiagent
     }
 
     # DQN.
@@ -220,8 +285,7 @@ def run():
 
     # Manual training loop (no Ray tune).
     if args.no_tune:
-        algo_cls = get_algorithm_class(args.run)
-        algo = algo_cls(config=config)
+        algo = get_algorithm_class(args.run)(config=config)
 
         if checkpoint_path:
             print("Restoring from checkpoint path", checkpoint_path)
@@ -236,12 +300,17 @@ def run():
             print("Last checkpoint", checkpoint)
             # with open(checkpoint_path, "w") as f:
             #     f.write(checkpoint)
-            if (
-                results["episode_reward_mean"] >= args.stop_reward
-                or ts >= args.stop_timesteps
-            ):
+            met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
+            met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
+            print(f"met reward stopping condition? {met_reward_condition}")
+            if args.stop_timesteps is not None:
+                print(f"met timestep stopping condition? {met_ts_condition}")
+
+            if met_reward_condition or met_ts_condition:
                 break
             ts += results["timesteps_total"]
+
+        print('finished training, terminating server.')
 
     # Run with Tune for auto env and trainer creation and TensorBoard.
     else:

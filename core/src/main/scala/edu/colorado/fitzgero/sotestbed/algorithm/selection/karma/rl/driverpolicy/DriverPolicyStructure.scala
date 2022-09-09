@@ -17,16 +17,22 @@ import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentRealAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentDiscreteAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import java.io.File
 
-sealed trait RLDriverPolicyStructure
+sealed trait DriverPolicyStructure
 
-object RLDriverPolicyStructure extends BankOps {
+object DriverPolicyStructure extends BankOps {
 
-  case class SingleAgentPolicy(space: DriverPolicySpace) extends RLDriverPolicyStructure
+  case class SingleAgentPolicy(space: DriverPolicySpace) extends DriverPolicyStructure
 
-  case class MultiAgentPolicy(space: DriverPolicySpace) extends RLDriverPolicyStructure
+  case class MultiAgentPolicy(space: DriverPolicySpace, groupingFile: Option[String]) extends DriverPolicyStructure
 
-  implicit class DriverPolicyExt(dp: RLDriverPolicyStructure) {
+  implicit class DriverPolicyExt(dp: DriverPolicyStructure) {
+
+    def space: DriverPolicySpace = dp match {
+      case SingleAgentPolicy(space)   => space
+      case MultiAgentPolicy(space, _) => space
+    }
 
     /**
       * constructs an observation based on this driver policy. this will
@@ -49,15 +55,12 @@ object RLDriverPolicyStructure extends BankOps {
       paths: List[Path],
       batch: Map[Request, List[Path]],
       signal: NetworkPolicySignal
-    ): IO[Observation] = dp match {
-      case MultiAgentPolicy(space) => IO.raiseError(new NotImplementedError)
-      case SingleAgentPolicy(space) =>
-        for {
-          balance  <- IO.fromEither(bank.getOrError(req.agent))
-          thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
-          features <- space.encodeObservation(req, balance, thisHist, paths, batch, signal)
-        } yield Observation.SingleAgentObservation(features)
-    }
+    ): IO[List[Double]] =
+      for {
+        balance  <- IO.fromEither(bank.getOrError(req.agent))
+        thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
+        features <- dp.space.encodeObservation(req, balance, thisHist, paths, batch, signal)
+      } yield features
 
     /**
       * decodes an action into a bid for an agent
@@ -66,21 +69,37 @@ object RLDriverPolicyStructure extends BankOps {
       * @return this action as a [[Karma]] bid or an error if the
       * action does not match the current configurations
       */
-    def decodeActionAsBid(
+    def decodeSingleAgentActionAsBid(
       action: Action
     ): IO[Karma] = {
       dp match {
-        case MultiAgentPolicy(space) => IO.raiseError(new NotImplementedError)
+        case MultiAgentPolicy(space, _) =>
+          IO.raiseError(new Error("provided single agent action, found MultiAgentPolicy"))
         case SingleAgentPolicy(space) =>
           action match {
             case MultiAgentDiscreteAction(action) =>
-              IO.raiseError(new IllegalStateException)
+              IO.raiseError(new Error("expected single agent action, found MultiAgentDiscreteAction"))
             case MultiAgentRealAction(action) =>
-              IO.raiseError(new IllegalStateException)
+              IO.raiseError(new Error("expected single agent action, found MultiAgentRealAction"))
             case SingleAgentDiscreteAction(action) => IO.pure(Karma(action.toLong))
             case SingleAgentRealAction(action)     => IO.pure(Karma(action.toLong))
           }
       }
+    }
+
+    def decodeMultiAgentActionAsBid(action: Action): IO[Map[String, Karma]] = {
+      val extractedActionResult: IO[Map[String, Karma]] = action match {
+        case _: SingleAgentDiscreteAction =>
+          IO.raiseError(new Error("expected multiagent action, found SingleAgentDiscreteAction"))
+        case _: SingleAgentRealAction =>
+          IO.raiseError(new Error("expected multiagent action, found SingleAgentRealAction"))
+        case MultiAgentDiscreteAction(action) =>
+          IO.pure(action.map { case (k, v) => k.value -> Karma(v.toLong) })
+        case MultiAgentRealAction(action) =>
+          IO.pure(action.map { case (k, v) => k.value -> Karma(v.toLong) })
+      }
+
+      extractedActionResult
     }
   }
 }

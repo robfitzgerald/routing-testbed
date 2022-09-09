@@ -61,7 +61,6 @@ parser.add_argument(
 parser.add_argument(
     "--stop-timesteps",
     type=int,
-    default=14000,
     help="Number of timesteps to train.",
 )
 parser.add_argument(
@@ -120,6 +119,12 @@ parser.add_argument(
 #     "it should instead be the number of 'episodes' to expect",
 #     required=True
 # )
+
+parser.add_argument(
+    "--grouping-file",
+    type=str,
+    help="file with list of agents under control used in multiagent RL"
+)
 parser.add_argument(
     "--max-bid",
     type=int,

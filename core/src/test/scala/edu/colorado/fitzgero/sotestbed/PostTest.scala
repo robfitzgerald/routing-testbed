@@ -61,9 +61,13 @@ class PostTest extends SoTestBedBaseTest {
           episode_id = EpisodeId("floof", mockPrefix),
           observation = Observation.MultiAgentObservation(
             Map(
-              AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
-              AgentId("group_2") -> List(List(10.0, 10.0, 0.0, 00.0, 0.02), List(0.0, 0.0, -10.0, -10.0, 0.99))
+              AgentId("group_1") -> List(0.0, 0.0, 10.0, 10.0, 0.10),
+              AgentId("group_2") -> List(10.0, 10.0, 0.0, 00.0, 0.02)
             )
+            // Map(
+            //   AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
+            //   AgentId("group_2") -> List(List(10.0, 10.0, 0.0, 00.0, 0.02), List(0.0, 0.0, -10.0, -10.0, 0.99))
+            // )
           )
         )
         val reqBody = msg.asJson.toString
@@ -108,14 +112,14 @@ class PostTest extends SoTestBedBaseTest {
           episode_id = EpisodeId("floof", mockPrefix),
           observation = Observation.MultiAgentObservation(
             Map(
-              AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
-              AgentId("group_2") -> List(List(10.0, 10.0, 0.0, 00.0, 0.02), List(0.0, 0.0, -10.0, -10.0, 0.99))
+              AgentId("group_1") -> List(0.0, 0.0, 10.0, 10.0, 0.10),
+              AgentId("group_2") -> List(10.0, 10.0, 0.0, 00.0, 0.02)
             )
           ),
           action = Action.MultiAgentDiscreteAction(
             Map(
-              AgentId("group_1") -> List(0, 7),
-              AgentId("group_2") -> List(8, 4)
+              // AgentId("group_1") -> List(0, 7),
+              // AgentId("group_2") -> List(8, 4)
             )
           )
         )
@@ -165,8 +169,8 @@ class PostTest extends SoTestBedBaseTest {
           episode_id = EpisodeId("floof", mockPrefix),
           observation = Observation.MultiAgentObservation(
             Map(
-              AgentId("group_1") -> List(List(0.0, 0.0, 10.0, 10.0, 0.10), List(-10.0, -10.0, 0.0, 0.0, 0.70)),
-              AgentId("group_2") -> List(List(10.0, 10.0, 0.0, 00.0, 0.02), List(0.0, 0.0, -10.0, -10.0, 0.99))
+              AgentId("group_1") -> List(0.0, 0.0, 10.0, 10.0, 0.10),
+              AgentId("group_2") -> List(10.0, 10.0, 0.0, 00.0, 0.02)
             )
           )
 //          action = Action.MultiAgentDiscreteAction(

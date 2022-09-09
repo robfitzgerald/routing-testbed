@@ -8,7 +8,7 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
     "allocations are empty" should {
       "return an empty list" in {
         RLDriverPolicyEpisodeOps
-          .generateSingleAgentRewards(List.empty) match {
+          .generateSingleAgentRewardValues(List.empty) match {
           case Left(value)  => fail("should not fail", value)
           case Right(value) => value.isEmpty should be(true)
         }
@@ -16,7 +16,7 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
       }
     }
     "all agents have matching travel time improvement" should {
-      "return 0.0 (100%)" in {
+      "return 1.0 (100%)" in {
         // example 1 scheme 2 from Jain paper, page 6
         // all agents have the same value so it is a perfectly fair result
         val xs = List("a", "b", "c").zip(
@@ -28,11 +28,10 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
         )
 
         RLDriverPolicyEpisodeOps
-          .generateSingleAgentRewards(xs)
+          .generateSingleAgentRewardValues(xs)
           .foreach {
             _.unzip._2.foreach {
-              case r: Reward.SingleAgentReward => r.reward should equal(0.0)
-              case other                       => fail("returned wrong type of reward")
+              _ should equal(1.0)
             }
           }
       }
@@ -48,12 +47,9 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
         )
 
         RLDriverPolicyEpisodeOps
-          .generateSingleAgentRewards(xs)
+          .generateSingleAgentRewardValues(xs)
           .foreach {
-            _.unzip._2.foreach {
-              case r: Reward.SingleAgentReward => println(r)
-              case other                       => fail("returned wrong type of reward")
-            }
+            _.unzip._2.foreach { println }
           }
       }
     }
@@ -67,21 +63,21 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
           )
         )
 
-        RLDriverPolicyEpisodeOps.generateSingleAgentRewards(xs).foreach(println)
+        RLDriverPolicyEpisodeOps.generateSingleAgentRewardValues(xs).foreach(println)
       }
     }
     "called on a distribution that sums to zero" should {
       "not be affected (when using the default allocation transform)" in {
         val xs     = List("a", "b", "c").zip(List(-60.0, 0.0, 60.0))
-        val result = RLDriverPolicyEpisodeOps.generateSingleAgentRewards(xs)
+        val result = RLDriverPolicyEpisodeOps.generateSingleAgentRewardValues(xs)
         result match {
           case Left(value) => fail("should not have failed", value)
           case Right(rewards) =>
             rewards match {
               case (_, r1) :: (_, r2) :: (_, r3) :: Nil =>
-                r1 should equal(Reward.SingleAgentReward(-1.0))
-                r2 should equal(Reward.SingleAgentReward(0.0))
-                r3 should equal(Reward.SingleAgentReward(0.0))
+                r1 should equal(0.0)
+                r2 should equal(1.0)
+                r3 should equal(1.0) // value was flattened to zero in transform
               case other =>
                 fail(s"unexpected result size ${other.size}")
             }

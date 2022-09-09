@@ -10,6 +10,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 
 sealed trait NetworkPolicyConfig
 
@@ -58,6 +59,8 @@ object NetworkPolicyConfig {
     * @param seed random number generator seed value
     */
   case class ScaledProportionalThreshold(scale: Double, seed: Option[Long]) extends NetworkPolicyConfig
+
+  // case class ExternalRLServer(structure: Int, client: RayRLlibClient) extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
 

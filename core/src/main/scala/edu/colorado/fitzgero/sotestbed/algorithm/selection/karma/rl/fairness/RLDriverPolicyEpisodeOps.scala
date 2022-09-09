@@ -44,9 +44,9 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
   def endOfEpisodeRewardByTripComparison(
     tripLogs: List[TripLogRow],
     allocationTransform: AllocationTransform = AllocationTransform.default()
-  ): IO[List[(String, Reward)]] = {
+  ): IO[List[(String, Double)]] = {
     val diffs  = tripLogs.map { r => (r.agentId, r.travelTimeDiff.value.toDouble) }
-    val result = generateSingleAgentRewards(diffs, allocationTransform)
+    val result = generateSingleAgentRewardValues(diffs, allocationTransform)
     IO.fromEither(result)
   }
 
@@ -55,7 +55,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     space: DriverPolicySpace,
     networkPolicyConfig: NetworkPolicyConfig,
     finalBank: Map[String, Karma]
-  ): IO[List[(String, Observation)]] = {
+  ): IO[List[(String, List[Double])]] = {
     tripLogs.traverse { row =>
       for {
         balance <- IO.fromEither(finalBank.getOrError(row.agentId))
@@ -65,7 +65,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
           finalBankBalance = balance,
           networkPolicyConfig = networkPolicyConfig
         )
-      } yield (row.agentId, Observation.SingleAgentObservation(obs))
+      } yield (row.agentId, obs)
     }
   }
 
@@ -116,10 +116,10 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
       @tparam T some object containing data about the agent that we don't care about
     * @return the agents and their rewards after computing our user fairness metric
     */
-  def generateSingleAgentRewards[T](
+  def generateSingleAgentRewardValues[T](
     diffs: List[(T, Double)],
     transform: AllocationTransform = AllocationTransform.default()
-  ): Either[Error, List[(T, Reward)]] = {
+  ): Either[Error, List[(T, Double)]] = {
 
     val (agentData, agentDiffs) = diffs.unzip
 
@@ -132,12 +132,10 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
             s"but there are ${allocations.length} allocations"
           logger.warn(warning)
         }
-        val zeroRewards = agentData.toList.map { case a => (a, Reward.SingleAgentReward(0.0)) }
+        val zeroRewards = agentData.toList.map { case a => (a, 0.0) }
         Right(zeroRewards)
       case Some(userFairness) =>
-        //
-        val rewards = userFairness.map { Reward.SingleAgentReward.apply }
-        val result  = agentData.toList.zip(rewards)
+        val result = agentData.toList.zip(userFairness)
         Right(result)
     }
   }
