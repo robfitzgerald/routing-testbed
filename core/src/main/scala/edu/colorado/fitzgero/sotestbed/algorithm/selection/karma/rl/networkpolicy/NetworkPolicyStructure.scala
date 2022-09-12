@@ -9,6 +9,12 @@ import cats.effect._
 import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 
+/**
+  * at this point we aren't using this abstraction because all
+  * network policy signals are multiagent, but in the future,
+  * the NetworkPolicySpace would be brokered through this layer
+  * that would dictate the agent structure of the problem.
+  */
 sealed trait NetworkPolicyStructure
 
 object NetworkPolicyStructure {
@@ -23,14 +29,6 @@ object NetworkPolicyStructure {
       case SingleAgentPolicy(space) => space
       case MultiAgentPolicy(space)  => space
     }
-
-    def encodeObservation(
-      network: RoadNetwork[IO, Coordinate, EdgeBPR],
-      costFunction: EdgeBPR => Cost
-    ): IO[List[Double]] = nps.space.encodeObservation(network, costFunction)
-
-    def decodeAction(action: Action): IO[Unit] = IO.unit
-
   }
 
 }

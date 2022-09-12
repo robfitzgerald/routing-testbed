@@ -23,6 +23,15 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ExternalRLServer
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.RandomPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.UserOptimal
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse
 
 /**
   *
@@ -230,41 +239,56 @@ object RoutingAlgorithm2 {
   ): IO[SelectionRunner] = {
     selectionRunner.selectionAlgorithm match {
       case k: KarmaSelectionAlgorithm =>
-        // special handling for Karma-based selection
-        // for each batch, observe the congestion effects of that batch
-        val batchesWithCongestionObservations = selectionRunnerRequest
-          .flatTraverse {
-            case SelectionRunnerRequest(batchId, batch) =>
-              val batchEdgeIds = batch.keys.toList.map { _.location }.distinct
-              val observationIO = k.congestionObservation.observeCongestion(
-                roadNetwork,
-                k.freeFlowCostFunction,
-                k.marginalCostFunction,
-                batchEdgeIds
-              )
-              observationIO.map {
-                case None      => List.empty
-                case Some(obs) => List(batchId -> obs)
+        // generate a signal for each batch
+        val batchesWithSignals: IO[Map[String, NetworkPolicySignal]] = k.networkPolicy match {
+          case ExternalRLServer(underlying, space, client) =>
+            // v2: special handling for Karma-based selection
+            // that integrates with an external control module when generating
+            // network policy signals
+
+            // we assume here that everything is correctly configured so that batching
+            // was informed by the NetworkPolicySpace and therefore ZoneIds match.
+            for {
+              epId <- IO.fromOption(k.multiAgentEpisodeId)(new Error("missing episode id"))
+              obs  <- space.encodeObservation(roadNetwork)
+              res  <- client.send(PolicyClientRequest.GetActionRequest(epId, obs))
+              act  <- res.getAction
+              sigs <- k.gen.generateSignalsForZones(act)
+            } yield sigs
+
+          case _ =>
+            // v1: heuristic-based network policy signal generation
+            val batchesWithCongestionObservations = selectionRunnerRequest
+              .flatTraverse {
+                case SelectionRunnerRequest(batchId, batch) =>
+                  val batchEdgeIds = batch.keys.toList.map { _.location }.distinct
+                  val observationIO = k.congestionObservation.observeCongestion(
+                    roadNetwork,
+                    k.freeFlowCostFunction,
+                    k.marginalCostFunction,
+                    batchEdgeIds
+                  )
+                  observationIO.map {
+                    case None      => List.empty
+                    case Some(obs) => List(batchId -> obs)
+                  }
               }
-          }
 
-        // for each batch with observations, compute the network signal
-        val batchesWithSignals = batchesWithCongestionObservations
-          .map {
-            _.map {
-              case (batchId, obs) =>
-                val signal = k.gen.generateSignal(obs)
-                (batchId, obs, signal)
-            }
-          }
-
+            // for each batch with observations, compute the network signal
+            batchesWithCongestionObservations
+              .map {
+                _.map {
+                  case (batchId, obs) =>
+                    val signal = k.gen.generateSignal(obs)
+                    (batchId, signal)
+                }.toMap
+              }
+        }
         // pass the generated batch data to the inner Karma algorithm
         batchesWithSignals.map { batches =>
-          val observations = batches.map { case (bId, obs, _) => bId -> obs }.toMap
-          val signals      = batches.map { case (bId, _, sig) => bId -> sig }.toMap
+          val signals = batches
           val fixedKarmaSelection = k.build(
             batchingManager.storedHistory,
-            observations,
             signals,
             k.selectionPw,
             k.networkPw
@@ -272,7 +296,6 @@ object RoutingAlgorithm2 {
 
           selectionRunner.copy(selectionAlgorithm = fixedKarmaSelection)
         }
-
       case _ => IO.pure(selectionRunner)
     }
   }

@@ -2,9 +2,9 @@ package edu.colorado.fitzgero.sotestbed.rllib
 
 import io.circe.{Decoder, Encoder}
 import cats.syntax.functor._
-
 import io.circe.generic.auto._
 import io.circe.syntax._
+import cats.effect.IO
 import edu.colorado.fitzgero.sotestbed.util.CirceUtils
 
 sealed trait Action
@@ -49,4 +49,16 @@ object Action {
         case Some(m) => Right(MultiAgentRealAction(m))
       }
     ).reduceLeft(_.or(_))
+
+  def extractSingleAgentRealAction(action: Action): IO[Double] =
+    action match {
+      case SingleAgentRealAction(action) => IO.pure(action)
+      case other                         => IO.raiseError(new Error(s"expected SingleAgentRealAction, found $other"))
+    }
+
+  def extractMultiAgentRealAction(action: Action): IO[Map[AgentId, Double]] =
+    action match {
+      case MultiAgentRealAction(action) => IO.pure(action)
+      case other                        => IO.raiseError(new Error(s"expected MultiAgentRealAction, found $other"))
+    }
 }

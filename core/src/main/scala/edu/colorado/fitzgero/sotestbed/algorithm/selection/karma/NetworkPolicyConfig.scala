@@ -11,6 +11,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicySpace
 
 sealed trait NetworkPolicyConfig
 
@@ -60,7 +61,8 @@ object NetworkPolicyConfig {
     */
   case class ScaledProportionalThreshold(scale: Double, seed: Option[Long]) extends NetworkPolicyConfig
 
-  // case class ExternalRLServer(structure: Int, client: RayRLlibClient) extends NetworkPolicyConfig
+  case class ExternalRLServer(underlying: NetworkPolicyConfig, space: NetworkPolicySpace, client: RayRLlibClient)
+      extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
 
@@ -75,6 +77,7 @@ object NetworkPolicyConfig {
       case ScaledProportionalThreshold(scale, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.ScaledThresholdSamplingGenerator(scale, rng)
+      case ext: ExternalRLServer => ext.underlying.buildGenerator
     }
 
     def logHeader: String = policy match {
@@ -82,6 +85,7 @@ object NetworkPolicyConfig {
       case _: RandomPolicy                    => ""
       case _: CongestionProportionalThreshold => ""
       case _: ScaledProportionalThreshold     => "scale"
+      case ext: ExternalRLServer              => ext.underlying.logHeader
     }
 
     def getLogData: String = policy match {
@@ -89,6 +93,7 @@ object NetworkPolicyConfig {
       case _: RandomPolicy                       => ""
       case CongestionProportionalThreshold(_)    => ""
       case ScaledProportionalThreshold(scale, _) => scale.toString
+      case ext: ExternalRLServer                 => ext.underlying.getLogData
     }
   }
 }

@@ -153,7 +153,6 @@ case class KarmaSelectionAlgorithm(
     */
   def build(
     activeAgentHistory: ActiveAgentHistory,
-    networkObservations: Map[String, CongestionObservationResult],
     networkPolicySignals: Map[String, NetworkPolicySignal],
     selectionLog: PrintWriter,
     networkLog: PrintWriter

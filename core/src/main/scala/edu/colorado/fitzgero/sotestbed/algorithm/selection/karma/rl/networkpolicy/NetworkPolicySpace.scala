@@ -8,6 +8,13 @@ import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.rllib.Action
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentDiscreteAction
+import edu.colorado.fitzgero.sotestbed.rllib.Action.MultiAgentRealAction
+import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentDiscreteAction
+import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
+import edu.colorado.fitzgero.sotestbed.rllib.AgentId
+import edu.colorado.fitzgero.sotestbed.rllib.Observation
 
 sealed trait NetworkPolicySpace
 
@@ -22,7 +29,7 @@ object NetworkPolicySpace {
     *
     * this assumes the CostFunction provided when encoding produces Costs
     * which are also in Meters Per Second.
-    *Ma
+    *
     * @param zones
     */
   case class ZonalSpeedDelta(zones: List[NetworkZone], aggFn: ObservationAggregation) extends NetworkPolicySpace
@@ -30,22 +37,23 @@ object NetworkPolicySpace {
   implicit class NPSExtensions(nps: NetworkPolicySpace) {
 
     def encodeObservation(
-      network: RoadNetwork[IO, Coordinate, EdgeBPR],
-      costFunction: EdgeBPR => Cost
-    ): IO[List[Double]] = nps match {
+      network: RoadNetwork[IO, Coordinate, EdgeBPR]
+    ): IO[Observation] = nps match {
       case ZonalSpeedDelta(zones, aggFn) =>
-        zones.traverse { zone =>
+        val speedByZone = zones.traverse { zone =>
           for {
             edges <- network.edges(zone.edges)
           } yield {
-            val obs = edges.map { ea => ea.attribute.freeFlowSpeed.value - costFunction(ea.attribute).value }
-            aggFn.aggregate(obs)
+            val speeds    = edges.map(ea => ea.attribute.freeFlowSpeed.value - ea.attribute.observedSpeed.value)
+            val aggSpeeds = aggFn.aggregate(speeds)
+            (AgentId(zone.zoneId), List(aggSpeeds))
           }
         }
+        speedByZone.map { obs => Observation.MultiAgentObservation(obs.toMap) }
     }
 
-    def decodeAction(action: Action): IO[NetworkPolicySignal] = ???
+    def decodeAction(action: Action, sigGen: NetworkPolicySignalGenerator): IO[Map[String, NetworkPolicySignal]] =
+      sigGen.generateSignalsForZones(action)
 
   }
-
 }
