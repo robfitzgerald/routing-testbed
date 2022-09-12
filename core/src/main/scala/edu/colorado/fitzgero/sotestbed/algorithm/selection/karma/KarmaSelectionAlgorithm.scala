@@ -48,8 +48,12 @@ case class KarmaSelectionAlgorithm(
 
   val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve(KarmaLogFilename)
   val networkLogFile: java.nio.file.Path   = experimentDirectory.resolve(KarmaNetworkLogFilename)
+  val rlClientLogFile: java.nio.file.Path  = experimentDirectory.resolve(ClientLogFilename)
   val selectionPw: PrintWriter             = new PrintWriter(selectionLogFile.toFile)
   val networkPw: PrintWriter               = new PrintWriter(networkLogFile.toFile)
+  val clientPw: PrintWriter                = new PrintWriter(rlClientLogFile.toFile)
+  // todo: intercept all client communications and write to json newline-formatted file
+  //  - maybe RayRLlibClient.send takes an optional callback for logging?
 
   // create a random prefix for each run of the simulator so that the same agentId may
   // be used across concurrent, overlapping simulations generating training data
@@ -93,6 +97,7 @@ case class KarmaSelectionAlgorithm(
     selectionPw.close()
     logger.info(s"closing $KarmaNetworkLogFilename")
     networkPw.close()
+    clientPw.close()
     driverPolicy match {
       case RLBasedDriverPolicy(structure, client) =>
         logger.info(s"sending final messages to RL server")
@@ -204,7 +209,7 @@ case class KarmaSelectionAlgorithm(
                   val episodeId = Some(EpisodeId(req.agent, episodePrefix))
                   PolicyClientRequest.StartEpisodeRequest(episodeId, client.trainingEnabled)
                 }
-                client.send(requests)
+                client.sendMany(requests, failOnServerError = true)
             }
 
             startEpResult.map { responses =>
@@ -361,6 +366,7 @@ object KarmaSelectionAlgorithm {
   val karmaLogHeader: String  = "batchId,agentId,startKarma,endKarma,bidValue,selectedRoute"
   val KarmaLogFilename        = "karma_log.csv"
   val KarmaNetworkLogFilename = "karma_network_log.csv"
+  val ClientLogFilename       = "client_log.json"
 
   final case class KarmaBatchData(batchId: String, obs: CongestionObservationResult, signal: NetworkPolicySignal)
 

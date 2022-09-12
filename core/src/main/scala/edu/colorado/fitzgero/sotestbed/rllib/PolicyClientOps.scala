@@ -23,6 +23,9 @@ object PolicyClientOps {
     * @param msg the message to send, which is a PolicyClientRequest
     * @param host the host string, e.g., http://localhost
     * @param port the port number to contact
+    * @param parallelism number of parallel HTTP connections to use
+    * @param failOnServerError if false, any server error respones will become "PolicyClientResponse.Empty" objects
+    * @param logFn callback to invoke for logging purposes
     * @return the effect of calling the server
     */
   def send(
@@ -30,42 +33,18 @@ object PolicyClientOps {
     host: String,
     port: Int,
     parallelism: Int,
-    failOnServerError: Boolean = true
+    failOnServerError: Boolean,
+    logFn: Option[(List[PolicyClientRequest], List[PolicyClientResponse]) => IO[Unit]]
   ): IO[List[PolicyClientResponse]] = {
     AsyncHttpClientCatsBackend[IO]().flatMap { backend =>
-      def _send(msg: PolicyClientRequest): IO[Option[PolicyClientResponse]] = {
-        val reqBody = msg.asJson.toString
-        val request =
-          basicRequest
-            .body(reqBody.getBytes)
-            .response(asJson[PolicyClientResponse])
-            .post(uri"$host:$port")
-        val result = for {
-          sttpRes <- request.send(backend)
-        } yield {
-          val result: IO[Option[PolicyClientResponse]] =
-            if (sttpRes.code.isServerError && failOnServerError) {
-              IO.raiseError(new Error(s"received ${sttpRes.code} error ${sttpRes.statusText}"))
-            } else if (sttpRes.code.isServerError || !failOnServerError) {
-              IO.pure(None)
-            } else {
-              val annotated = sttpRes.body
-                .map { res => Some(res) }
-                .left
-                .map { t => new Error(s"error from rl server for msg $reqBody", t) }
-              IO.fromEither(annotated)
-            }
-          result
-        }
-        result.flatten
-      }
-
-      val batches = msgs.sliding(parallelism, parallelism).toList
+      val sendFn: PolicyClientRequest => IO[PolicyClientResponse] = _send(host, port, backend, failOnServerError)
+      val batches                                                 = msgs.sliding(parallelism, parallelism).toList
 
       for {
-        responses <- batches.traverse { _.parTraverse(_send) }
+        responses <- batches.traverse { _.parTraverse(sendFn) }.map { _.flatten }
         _         <- backend.close()
-      } yield responses.flatten.flatten
+        _         <- logFn.map { f => f(msgs, responses) }.getOrElse(IO.unit)
+      } yield responses
     }
   }
 
@@ -78,22 +57,47 @@ object PolicyClientOps {
     * @param msg the message to send, which is a PolicyClientRequest
     * @param host the host string, e.g., http://localhost
     * @param port the port number to contact
+    * @param failOnServerError if false, any server error respones will become "PolicyClientResponse.Empty" objects
+    * @param logFn callback to invoke for logging purposes
     * @return the effect of calling the server
     */
-  def send(msg: PolicyClientRequest, host: String, port: Int): IO[PolicyClientResponse] = {
-    AsyncHttpClientCatsBackend[IO]().flatMap { backend =>
-      val reqBody = msg.asJson.toString
-      val request =
-        basicRequest
-          .body(reqBody.getBytes)
-          .response(asJson[PolicyClientResponse])
-          .post(uri"$host:$port")
+  def send(
+    msg: PolicyClientRequest,
+    host: String,
+    port: Int,
+    failOnServerError: Boolean,
+    logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]]
+  ): IO[PolicyClientResponse] = {
+    for {
+      backend  <- AsyncHttpClientCatsBackend[IO]()
+      response <- _send(host, port, backend, failOnServerError)(msg)
+      _        <- logFn.map { f => f(msg, response) }.getOrElse(IO.unit)
+    } yield response
+    // AsyncHttpClientCatsBackend[IO]().flatMap { backend => _send(host, port, backend, failOnServerError)(msg) }
+  }
 
-      for {
-        sttpRes <- request.send(backend)
-        res     <- IO.fromEither(sttpRes.body)
-        _       <- backend.close
-      } yield res
+  def _send(host: String, port: Int, backend: SttpBackend[IO, Any], failOnServerError: Boolean)(
+    msg: PolicyClientRequest
+  ): IO[PolicyClientResponse] = {
+    val reqBody = msg.asJson.toString
+    val request =
+      basicRequest
+        .body(reqBody.getBytes)
+        .response(asJson[PolicyClientResponse])
+        .post(uri"$host:$port")
+
+    val result = request.send(backend).flatMap { sttpRes =>
+      if (sttpRes.code.isServerError && failOnServerError) {
+        IO.raiseError(new Error(s"received ${sttpRes.code} error ${sttpRes.statusText}"))
+      } else if (sttpRes.code.isServerError || !failOnServerError) {
+        IO.pure(PolicyClientResponse.Empty)
+      } else {
+        val annotated = sttpRes.body.left
+          .map { t => new Error(s"error from rl server for msg $reqBody", t) }
+        IO.fromEither(annotated)
+      }
     }
+
+    result
   }
 }

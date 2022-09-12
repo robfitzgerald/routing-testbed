@@ -64,9 +64,15 @@ final class RLSelectionAlgorithm(
 
     // query the client to get an action
     val result: IO[SelectionAlgorithm.SelectionAlgorithmResult] = for {
-      selfish       <- costFn(alts.values.flatMap { _.headOption }.toList)
-      observation   <- IO.fromEither(env.encodeObservation(cf)(roadNetwork, alts))
-      response      <- PolicyClientOps.send(GetActionRequest(episodeId, observation), host, port)
+      selfish     <- costFn(alts.values.flatMap { _.headOption }.toList)
+      observation <- IO.fromEither(env.encodeObservation(cf)(roadNetwork, alts))
+      response <- PolicyClientOps.send(
+        GetActionRequest(episodeId, observation),
+        host,
+        port,
+        failOnServerError = true,
+        logFn = None
+      )
       action        <- response.getAction
       decodedAction <- IO.fromEither(env.decodeAction(action, alts))
       selectedRoutes = RLSelectionAlgorithm.actionToPaths(decodedAction, alts)
@@ -79,7 +85,13 @@ final class RLSelectionAlgorithm(
       // todo: actually create "infos" and "dones" here
       info = None
       done = Some(Map(AgentId("__all__") -> false))
-      _ <- PolicyClientOps.send(LogReturnsRequest(episodeId, reward, info, done), host, port)
+      _ <- PolicyClientOps.send(
+        LogReturnsRequest(episodeId, reward, info, done),
+        host,
+        port,
+        failOnServerError = true,
+        logFn = None
+      )
     } yield {
 
       val selfishCost = selfish.overallCost
@@ -127,7 +139,7 @@ final class RLSelectionAlgorithm(
   def close(): IO[Unit] = {
     for {
       obs <- IO.fromEither(env.emptyObservation)
-      _   <- PolicyClientOps.send(EndEpisodeRequest(episodeId, obs), host, port)
+      _   <- PolicyClientOps.send(EndEpisodeRequest(episodeId, obs), host, port, failOnServerError = true, logFn = None)
     } yield ()
   }
 }
@@ -136,7 +148,7 @@ object RLSelectionAlgorithm {
 
   def apply(host: String, port: Int, env: Env): IO[RLSelectionAlgorithm] = {
     for {
-      res       <- PolicyClientOps.send(StartEpisodeRequest(), host, port)
+      res       <- PolicyClientOps.send(StartEpisodeRequest(), host, port, failOnServerError = true, logFn = None)
       episodeId <- res.getEpisodeId
     } yield new RLSelectionAlgorithm(host, port, env, episodeId)
   }

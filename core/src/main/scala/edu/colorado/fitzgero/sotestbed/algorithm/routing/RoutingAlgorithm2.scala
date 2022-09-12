@@ -251,7 +251,7 @@ object RoutingAlgorithm2 {
             for {
               epId <- IO.fromOption(k.multiAgentEpisodeId)(new Error("missing episode id"))
               obs  <- space.encodeObservation(roadNetwork)
-              res  <- client.send(PolicyClientRequest.GetActionRequest(epId, obs))
+              res  <- client.sendOne(PolicyClientRequest.GetActionRequest(epId, obs))
               act  <- res.getAction
               sigs <- k.gen.generateSignalsForZones(act)
             } yield sigs

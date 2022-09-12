@@ -21,19 +21,33 @@ import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.rllib.Action
 
-final case class RayRLlibClient(host: String, port: Int, parallelism: Int, trainingEnabled: Boolean) {
+final case class RayRLlibClient(
+  host: String,
+  port: Int,
+  parallelism: Int,
+  trainingEnabled: Boolean
+) {
 
   /**
     * helper for sending requests to the RL server for
     * DriverPolicy agents
     */
-  def send(reqs: List[PolicyClientRequest], failOnServerError: Boolean = true): IO[List[PolicyClientResponse]] =
-    PolicyClientOps.send(reqs, host, port, parallelism, failOnServerError)
+  def sendMany(
+    reqs: List[PolicyClientRequest],
+    failOnServerError: Boolean = true,
+    logFn: Option[(List[PolicyClientRequest], List[PolicyClientResponse]) => IO[Unit]] = None
+  ): IO[List[PolicyClientResponse]] =
+    PolicyClientOps.send(reqs, host, port, parallelism, failOnServerError, logFn)
 
   /**
     * helper for sending requests to the RL server for
     * DriverPolicy agents
     */
-  def send(req: PolicyClientRequest): IO[PolicyClientResponse] = PolicyClientOps.send(req, host, port)
+  def sendOne(
+    req: PolicyClientRequest,
+    failOnServerError: Boolean = true,
+    logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
+  ): IO[PolicyClientResponse] =
+    PolicyClientOps.send(req, host, port, failOnServerError, logFn)
 
 }

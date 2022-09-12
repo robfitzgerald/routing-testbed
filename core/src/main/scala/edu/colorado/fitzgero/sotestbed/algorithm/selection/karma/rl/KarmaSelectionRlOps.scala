@@ -37,7 +37,7 @@ object KarmaSelectionRlOps extends LazyLogging {
       episodeId,
       client.trainingEnabled
     )
-    client.send(startReq)
+    client.sendOne(startReq)
   }
 
   def startSingleAgentEpisodeForRequests(
@@ -53,7 +53,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     }
 
     // update our record of any active episodes
-    client.send(requests).map { _ => newReqs }
+    client.sendMany(requests, failOnServerError = true).map { _ => newReqs }
   }
 
   def extractAction(res: PolicyClientResponse): IO[Action] = {
@@ -87,7 +87,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     }
     for {
       reqs      <- actionReqs
-      responses <- client.send(reqs)
+      responses <- client.sendMany(reqs, failOnServerError = true)
       actions   <- responses.traverse(extractAction)
       bidValues <- actions.traverse { structure.decodeSingleAgentActionAsBid }
       reqsWithBids = requests.zip(bidValues)
@@ -122,7 +122,7 @@ object KarmaSelectionRlOps extends LazyLogging {
       agentObs <- agentObsResult
       mao = MultiAgentObservation(agentObs.toMap)
       gar = GetActionRequest(episodeId, mao)
-      response  <- client.send(gar)
+      response  <- client.sendOne(gar)
       action    <- extractAction(response)
       bidValues <- structure.decodeMultiAgentActionAsBid(action)
       reqsWBids <- requests.traverse { r =>
@@ -168,9 +168,9 @@ object KarmaSelectionRlOps extends LazyLogging {
       mao                     = MultiAgentObservation(obsValues.toMap)
       logReturnsReq           = LogReturnsRequest(episodeId, mar)
       endEpisodeReq           = EndEpisodeRequest(episodeId, mao)
-      _ <- client.send(logReturnsReq)
+      _ <- client.sendOne(logReturnsReq, failOnServerError = false)
       // needs to happen AFTER logging final reward for all agents
-      _ <- client.send(endEpisodeReq)
+      _ <- client.sendOne(endEpisodeReq, failOnServerError = false)
       _ <- logFinalRewards(rewards, observations, experimentDirectory)
     } yield logger.info(s"finished multi-agent RL episode $episodeId")
 
@@ -211,9 +211,9 @@ object KarmaSelectionRlOps extends LazyLogging {
       endEpisodeMsgs            = observations.map { case (a, o) => EndEpisodeRequest(EpisodeId(a, episodePrefix), o) }
       // the RL server can die here if it meets it's stopping condition on number of episodes observed
       // but we don't want that to blow up our remaining cleanup after this point
-      _ <- client.send(logRewardsMsgs, failOnServerError = false)
+      _ <- client.sendMany(logRewardsMsgs, failOnServerError = false)
       // needs to happen AFTER logging final reward for all agents
-      _ <- client.send(endEpisodeMsgs, failOnServerError = false)
+      _ <- client.sendMany(endEpisodeMsgs, failOnServerError = false)
       _ <- logFinalRewards(rewardValues, obsValues, experimentDirectory)
     } yield logger.info(s"finished all single agent RL episodes")
 
