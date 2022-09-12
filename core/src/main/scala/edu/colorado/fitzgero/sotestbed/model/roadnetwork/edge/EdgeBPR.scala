@@ -8,6 +8,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric._
   *
   * @param distance link distance, in meters
   * @param freeFlowSpeed free flow speed
+  * @param observedSpeed speeds observed within the simulation at this time
   * @param capacity a strictly positive real for the max carrying capacity of vehicles on this edge
   * @param flow the current flow value from which cost flows will be calculated
   * @param flowHistory a Queue of [[Flow]]s, latest at the back; Queue offers constant/amoritized constant head/last ops
@@ -17,6 +18,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric._
 case class EdgeBPR(
   distance: Meters,
   freeFlowSpeed: MetersPerSecond,
+  observedSpeed: MetersPerSecond,
   capacity: Capacity,
   flow: Flow = Flow.Zero,
   flowHistory: Queue[Flow] = Queue(Flow.Zero),

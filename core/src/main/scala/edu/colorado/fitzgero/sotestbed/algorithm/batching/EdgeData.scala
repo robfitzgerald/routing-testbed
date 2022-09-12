@@ -18,6 +18,7 @@ final case class EdgeData(
   edgeId: EdgeId,
   linkSourceCoordinate: Coordinate,
   linkDestinationCoordinate: Coordinate,
+  linkDistance: Double,
   estimatedTimeAtEdge: Option[SimTime] = None
 ) {
 

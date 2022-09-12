@@ -1,7 +1,16 @@
 package edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge
 
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Capacity, Cost, Flow, Meters, MetersPerSecond, NonNegativeNumber, SimTime, TravelTimeSeconds}
+import edu.colorado.fitzgero.sotestbed.model.numeric.{
+  Capacity,
+  Cost,
+  Flow,
+  Meters,
+  MetersPerSecond,
+  NonNegativeNumber,
+  SimTime,
+  TravelTimeSeconds
+}
 
 class EdgeBPRCostOpsTest extends SoTestBedBaseTest {
 
@@ -15,6 +24,7 @@ class EdgeBPRCostOpsTest extends SoTestBedBaseTest {
       val edge: EdgeBPR = EdgeBPR(
         distance = Meters(100),
         freeFlowSpeed = MetersPerSecond(Meters(10), TravelTimeSeconds(1)),
+        observedSpeed = MetersPerSecond(Meters(10), TravelTimeSeconds(1)),
         capacity = Capacity(10)
       )
       val costFlows: Flow => Cost = fn(edge)
@@ -34,7 +44,12 @@ class EdgeBPRCostOpsTest extends SoTestBedBaseTest {
         val timeStep: SimTime = SimTime(60)
         // 100 meter links
         val linkLength: Double = 100
-        case class LinkType(name: String, freespeed: MetersPerSecond, capacity: Capacity, distance: Meters = Meters(linkLength))
+        case class LinkType(
+          name: String,
+          freespeed: MetersPerSecond,
+          capacity: Capacity,
+          distance: Meters = Meters(linkLength)
+        )
         val linkTypes = List(
           LinkType("motorway", MetersPerSecond(33.333333), Capacity(2000.0 * 2)),
           LinkType("motorway_link", MetersPerSecond(22.222222), Capacity(1500.0)),
@@ -58,7 +73,7 @@ class EdgeBPRCostOpsTest extends SoTestBedBaseTest {
         } {
           val linkTypesWithTravelTimes: List[Cost] = linkTypes.map { l =>
             val edgeCapacity     = Capacity((l.capacity.value * timeStep.value) / 3600.0)
-            val edgeBPR          = EdgeBPR(l.distance, l.freespeed, edgeCapacity, flow = flow)
+            val edgeBPR          = EdgeBPR(l.distance, l.freespeed, l.freespeed, edgeCapacity, flow = flow)
             val travelTime: Cost = fn(edgeBPR)(Flow.Zero)
             travelTime
           }
@@ -69,7 +84,8 @@ class EdgeBPRCostOpsTest extends SoTestBedBaseTest {
 //                f"${travelTime.value}%.2f"
                 f"$mph%.2f"
               }
-              .mkString(f"${flow.value},", ",", ""))
+              .mkString(f"${flow.value},", ",", "")
+          )
 //          println(f"flow: ${flow.value}%.2f cost: ${costFlows(flow).value}%.2f")
         }
       }

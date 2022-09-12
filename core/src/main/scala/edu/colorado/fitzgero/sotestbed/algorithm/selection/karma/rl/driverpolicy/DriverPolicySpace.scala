@@ -55,6 +55,21 @@ object DriverPolicySpace {
   case object NetworkSignal extends DriverPolicySpace
 
   /**
+    * remaining travel distance along the current path
+    */
+  case object RemainingDistance extends DriverPolicySpace
+
+  /**
+    * the travel time estimated for the currently-assigned route
+    */
+  case object RemainingTravelTimeEstimate extends DriverPolicySpace
+
+  /**
+    * count of replanning events already experienced
+    */
+  case object ReplanningEvents extends DriverPolicySpace
+
+  /**
     * use some combination of features
     *
     * @param features the features to encode
@@ -107,6 +122,16 @@ object DriverPolicySpace {
               val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
               IO.raiseError(new Error(msg))
           }
+        case RemainingDistance =>
+          val dist = history.currentRequest.remainingRoute.foldLeft(0.0) { _ + _.linkDistance }
+          IO.pure(List(dist))
+        case RemainingTravelTimeEstimate =>
+          val ttEstimate = history.currentRequest.remainingRoute.foldLeft(0.0) {
+            _ + _.estimatedTimeAtEdge.getOrElse(SimTime.Zero).value.toDouble
+          }
+          IO.pure(List(ttEstimate))
+        case ReplanningEvents =>
+          IO.pure(List(history.replanningEvents))
         case Combined(features) =>
           features.flatTraverse { _.encodeObservation(request, balance, history, proposedPaths, batch, networkSignal) }
       }
@@ -131,17 +156,13 @@ object DriverPolicySpace {
         // generally here, we just want to make sure that the number of feature matches what
         // would be encoded into each observation throughout the day; it should clearly be
         // a network signal that requests zero % SO routing.
-        networkPolicyConfig match {
-          case NetworkPolicyConfig.UserOptimal =>
-            val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
-            IO.raiseError(new Error(msg))
-          case RandomPolicy(seed) =>
-            IO.pure(List(0.0))
-          case CongestionProportionalThreshold(seed) =>
-            IO.pure(List(0.0))
-          case ScaledProportionalThreshold(scale, seed) =>
-            IO.pure(List(0.0))
-        }
+        IO.pure(List(0.0))
+      case RemainingDistance =>
+        IO.pure(List(0.0))
+      case RemainingTravelTimeEstimate =>
+        IO.pure(List(0.0))
+      case ReplanningEvents =>
+        IO.pure(List(0.0)) // would it be better if we stored the final count instead?
       case Combined(features) =>
         features.flatTraverse(
           _.encodeFinalObservation(

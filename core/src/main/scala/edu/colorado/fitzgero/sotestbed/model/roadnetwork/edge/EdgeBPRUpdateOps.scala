@@ -3,8 +3,18 @@ package edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge
 import scala.collection.immutable.Queue
 
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, SimTime}
+import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
 
 object EdgeBPRUpdateOps {
+
+  def withSpeedUpdate(flowUpdate: (EdgeBPR, Flow) => EdgeBPR): (EdgeBPR, Option[Flow], MetersPerSecond) => EdgeBPR =
+    (e: EdgeBPR, f: Option[Flow], s: MetersPerSecond) => {
+      val withFlowUpdate = f match {
+        case None            => e
+        case Some(flowValue) => flowUpdate(e, flowValue)
+      }
+      withFlowUpdate.copy(observedSpeed = s)
+    }
 
   /**
     * update a link by replacing the current flow with this flow value
@@ -13,14 +23,7 @@ object EdgeBPRUpdateOps {
     * @param flow the marginal flow value
     * @return the updated link
     */
-  def edgeUpdateWithFlowCount(e: EdgeBPR, flow: Flow): EdgeBPR = {
-    val flowUpdate: Flow = Flow(math.max(0, e.flow.value + flow.value)) // protect against negatives
-    e.copy(
-      flow = flowUpdate,
-      flowHistory = Queue.empty,
-      flowHistoryLength = 0
-    )
-  }
+  def edgeUpdateWithFlowCount(e: EdgeBPR, flow: Flow): EdgeBPR = e.copy(flow = flow)
 
   /**
     * update a link which stores a buffer of recent flow counts and averages them into a flow per time value
@@ -29,6 +32,7 @@ object EdgeBPRUpdateOps {
     * @param e a link
     * @param marginalFlow the new flow value to add to the buffer. cost flow value will be sampled from the average of buffer values.
     * @return the updated link
+    * @deprecated
     */
   def edgeUpdateWithFlowRate(flowRateBufferTime: SimTime)(e: EdgeBPR, marginalFlow: Flow): EdgeBPR = {
 
@@ -101,6 +105,7 @@ object EdgeBPRUpdateOps {
     * @param e a link
     * @param flow the new flow value to add to the buffer. cost flow value will be sampled from the average of buffer values.
     * @return the updated link
+    * @deprecated
     */
   def edgeUpdateWithMarginalFlowAndDecay(decay: Flow, epsilon: Flow)(e: EdgeBPR, flow: Flow): EdgeBPR = {
     val nextFlowHistory: Queue[Flow] =

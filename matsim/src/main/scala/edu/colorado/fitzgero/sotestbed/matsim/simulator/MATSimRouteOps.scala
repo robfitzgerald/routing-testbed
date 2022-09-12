@@ -151,10 +151,12 @@ object MATSimRouteOps extends LazyLogging {
         val dst                       = link.getToNode.getCoord
         val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
         val travelTime: SimTime       = SimTime(cost.value)
+        val linkDistance              = link.getLength
         val edgeData: EdgeData = EdgeData(
           EdgeId(linkId.toString),
           srcCoordinate,
           dstCoordinate,
+          linkDistance,
           Some { travelTime }
         )
         edgeData +: acc
@@ -166,12 +168,39 @@ object MATSimRouteOps extends LazyLogging {
   val MinSpeedMph             = 5.0
   val MinSpeedMetersPerSecond = (MinSpeedMph / 3600.0) * 1609.0
 
+  /**
+    * this helper takes advantage of the fact that we know
+    * the TravelTimeCalculator's implementation of TravelTime.getLinkTravelTime
+    * can be passed a null Person and null Vehicle. in that case, it gets the
+    * speed un-bounded by limitations of a vehicle. it appears the
+    * Person argument is ignored regardless.
+    *
+    * @param link the link to get speeds for
+    * @return the travel time estimate for that
+    */
+  def getLinkTravelTime(tt: TravelTime, link: Link, currentTime: SimTime, vehicle: Option[Vehicle] = None): SimTime = {
+    val veh: Vehicle = vehicle.getOrElse(null)
+    val estTime      = tt.getLinkTravelTime(link, currentTime.value, null, veh)
+    val estSpeed     = link.getLength / estTime
+    val truncSpeed   = math.max(MinSpeedMetersPerSecond, estSpeed)
+    val truncTime    = link.getLength / truncSpeed
+    val simTime      = SimTime(truncTime)
+    if (simTime > SimTime.minute(30)) {
+      val forPerson = vehicle.map { v => f"for agent ${v.getId.toString} " }.getOrElse(" ")
+      logger.warn(
+        f"link ${link.getId}${forPerson}has travel time estimate > 30min. detail: " +
+          f"dist ${link.getLength} estTime ${SimTime(estTime)} estSpeed " +
+          f"$estSpeed%.2f truncSpeed $truncSpeed%.2f truncTime ${SimTime(truncTime)}"
+      )
+    }
+    simTime
+  }
+
   final case class EdgeDataRequestWithTravelTime(
     person: Person,
     vehicle: Vehicle,
     currentTime: SimTime,
-    tt: TravelTime,
-    minEstimatedSpeedMetersPerSecond: Double = MinSpeedMetersPerSecond
+    tt: TravelTime
   ) {
 
     /**
@@ -189,18 +218,7 @@ object MATSimRouteOps extends LazyLogging {
       * @return estimated travel time
       */
     def getTravelTime(link: Link): SimTime = {
-      val estTime    = tt.getLinkTravelTime(link, currentTime.value.toDouble, person, vehicle)
-      val estSpeed   = link.getLength / estTime
-      val truncSpeed = math.max(minEstimatedSpeedMetersPerSecond, estSpeed)
-      val truncTime  = link.getLength / truncSpeed
-      val simTime    = SimTime(truncTime)
-      if (simTime > SimTime.minute(30)) {
-        logger.info(
-          f"link ${link.getId} dist ${link.getLength} estTime ${SimTime(estTime)} estSpeed " +
-            f"$estSpeed%.2f truncSpeed $truncSpeed%.2f truncTime ${SimTime(truncTime)}"
-        )
-      }
-      simTime
+      getLinkTravelTime(this.tt, link, this.currentTime, Some(this.vehicle))
     }
   }
 
@@ -228,7 +246,9 @@ object MATSimRouteOps extends LazyLogging {
           val dst                       = link.getToNode.getCoord
           val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
           val linkTravelTime            = travelTimeRequest.map { _.getTravelTime(link) }
-          val edgeData                  = EdgeData(EdgeId(head.toString), srcCoordinate, dstCoordinate, linkTravelTime)
+          val linkDistance              = link.getLength
+
+          val edgeData = EdgeData(EdgeId(head.toString), srcCoordinate, dstCoordinate, linkDistance, linkTravelTime)
 
           _convert(tail, edgeData +: result)
       }

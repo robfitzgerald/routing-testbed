@@ -11,6 +11,7 @@ import org.matsim.api.core.v01.network.Node
 import org.matsim.core.mobsim.qsim.QSim
 
 import scala.collection.JavaConverters._
+import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
 
 final case class QSimRoadNetwork(qSim: QSim) extends RoadNetwork[IO, Node, Link] {
 
@@ -157,7 +158,7 @@ final case class QSimRoadNetwork(qSim: QSim) extends RoadNetwork[IO, Node, Link]
 
   // data structure
   def updateEdgeFlows(
-    flows: List[(EdgeId, Flow)],
-    edgeUpdateFunction: (Link, Flow) => Link
+    flows: List[(EdgeId, Option[Flow], MetersPerSecond)],
+    updateFn: (Link, Option[Flow], MetersPerSecond) => Link
   ): IO[RoadNetwork[IO, Node, Link]] = IO.raiseError(new Error("updateEdgeFlows not defined on QSimRoadNetwork"))
 }

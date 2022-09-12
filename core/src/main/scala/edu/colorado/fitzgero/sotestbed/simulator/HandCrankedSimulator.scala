@@ -4,6 +4,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData
 import edu.colorado.fitzgero.sotestbed.model.agent.Response
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
 
 /**
   * a set of operations describing a simulator which is pausable and can be hand-cranked.
@@ -30,11 +31,11 @@ trait HandCrankedSimulator[F[_]] {
   def advance(): F[Unit]
 
   /**
-    * captures the link flow deltas which occurred last time advance was called
+    * captures the changes in state of the simulation
     *
-    * @return a list of edge id and marginal flow tuples
+    * @return a list of edge id, marginal flow, and optional observed speeds
     */
-  def getUpdatedEdges: F[List[(EdgeId, Flow)]]
+  def getUpdatedEdges: F[List[(EdgeId, Option[Flow], MetersPerSecond)]]
 
   /**
     * produces all routing requests which have recently become available for replanning

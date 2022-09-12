@@ -108,33 +108,30 @@ case class LocalAdjacencyListFlowNetwork(
   }
 
   def updateEdgeFlows(
-    flows: List[(EdgeId, Flow)],
-    edgeUpdateFunction: (EdgeBPR, Flow) => EdgeBPR
+    flows: List[(EdgeId, Option[Flow], MetersPerSecond)],
+    edgeUpdateFunction: (EdgeBPR, Option[Flow], MetersPerSecond) => EdgeBPR
   ): IO[LocalAdjacencyListFlowNetwork] =
     if (flows.isEmpty) IO { this }
-    else
-      IO {
+    else {
+      val initial: IO[LocalAdjacencyListFlowNetwork] = IO.pure(this)
+      val result = flows.foldLeft(initial) {
+        case (acc, (edgeId, flow, speedObservation)) =>
+          acc.flatMap { builder =>
+            val edgeTripOption = builder.edgesMap.get(edgeId)
 
-        val flowsMap: Map[EdgeId, Flow] = flows.toMap
-
-        // update all edges with marginal flows
-        val updatedEdges: Map[EdgeId, RoadNetwork.EdgeTriplet[EdgeBPR]] =
-          this.edgesMap.keys.foldLeft(edgesMap) {
-            case (acc, edgeId) =>
-              val marginalFlow: Flow = flowsMap.getOrElse(edgeId, Flow.Zero)
-              acc.get(edgeId) match {
-                case None => acc
-                case Some(edgeTriplet) =>
-                  val updatedEdgeTriplet: RoadNetwork.EdgeTriplet[EdgeBPR] =
-                    edgeTriplet.copy(attr = edgeUpdateFunction(edgeTriplet.attr, marginalFlow))
-                  acc.updated(edgeId, updatedEdgeTriplet)
-              }
+            builder.edgesMap.get(edgeId) match {
+              case None => IO.raiseError(new Error(s"attempting to update missing edge $edgeId"))
+              case Some(edgeTriplet) =>
+                val updatedEdge     = edgeUpdateFunction(edgeTriplet.attr, flow, speedObservation)
+                val updatedTriplet  = edgeTriplet.copy(attr = updatedEdge)
+                val updatedEdgesMap = builder.edgesMap.updated(edgeId, updatedTriplet)
+                val updatedBuilder  = builder.copy(edgesMap = updatedEdgesMap)
+                IO(updatedBuilder)
+            }
           }
-
-        this.copy(
-          edgesMap = updatedEdges
-        )
       }
+      result
+    }
 }
 
 object LocalAdjacencyListFlowNetwork {
@@ -218,7 +215,7 @@ object LocalAdjacencyListFlowNetwork {
           capacity  <- capacityOption
           length    <- lengthOption
         } yield {
-          EdgeBPR(length, freespeed, capacity)
+          EdgeBPR(length, freespeed, freespeed, capacity)
         }
       } match {
         case None => edgesBuilder.copy(failedEdges = link.toString +: edgesBuilder.failedEdges)

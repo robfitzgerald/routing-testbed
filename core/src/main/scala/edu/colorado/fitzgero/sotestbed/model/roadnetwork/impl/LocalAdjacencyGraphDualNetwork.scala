@@ -6,6 +6,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.Flow
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
 
 final case class LocalAdjacencyGraphDualNetwork(
   verticesMap: Map[VertexId, LocalAdjacencyGraphDualNetwork.DualEdge],
@@ -77,8 +78,8 @@ final case class LocalAdjacencyGraphDualNetwork(
     IO.raiseError(new Error("graph dual has no edge ids, edge attributes"))
 
   def updateEdgeFlows(
-    flows: List[(EdgeId, Flow)],
-    edgeUpdateFunction: (Unit, Flow) => Unit
+    flows: List[(EdgeId, Option[Flow], MetersPerSecond)],
+    edgeUpdateFunction: (Unit, Option[Flow], MetersPerSecond) => Unit
   ): IO[RoadNetwork[IO, DualEdge, Unit]] =
     IO.raiseError(new Error("graph dual has no edge ids, edge attributes, does not update"))
 }

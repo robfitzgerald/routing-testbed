@@ -79,7 +79,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var selfishAgentRoutesAssigned: Int                  = 0
 
   // simulation state containers and handlers
-  var roadNetworkDeltaHandler: RoadNetworkDeltaHandler   = _
+  var roadNetworkFlowHandler: RoadNetworkFlowHandler     = _
   var soAgentReplanningHandler: SOAgentReplanningHandler = _
 
   val completePathStore: collection.mutable.Map[Id[Person], Map[DepartureTime, List[Id[Link]]]] =
@@ -188,7 +188,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       config.routing.maxPathAssignments,
       config.routing.minimumReplanningWaitTime
     )
-    self.roadNetworkDeltaHandler = new RoadNetworkDeltaHandler(config.routing.minNetworkUpdateThreshold)
+    self.roadNetworkFlowHandler = new RoadNetworkFlowHandler
 
     // track iterations in MATSimProxy
     self.controler.addControlerListener(new IterationStartsListener {
@@ -217,7 +217,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
         self.ueAgentAssignedDijkstraRoute.clear()
         self.departureTimeStore.clear()
         self.soAgentReplanningHandler.clear()
-        self.roadNetworkDeltaHandler.clear()
+        self.roadNetworkFlowHandler.clear()
 
         self.soReplanningThisIteration = if (event.getIteration == 0) {
           // user determines first iteration so routing behavior
@@ -278,7 +278,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
               if (!matsimOverridingModuleAdded) {
 
                 self.qSim.getEventsManager.addHandler(self.soAgentReplanningHandler)
-                self.qSim.getEventsManager.addHandler(self.roadNetworkDeltaHandler)
+                self.qSim.getEventsManager.addHandler(self.roadNetworkFlowHandler)
                 self.qSim.getEventsManager.addHandler(self.travelTimeCalculator)
 
               }
@@ -938,17 +938,21 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
     *
     * @return a list of edge id and marginal flow tuples, which may be empty
     */
-  override def getUpdatedEdges: IO[List[(EdgeId, Flow)]] = IO {
+  override def getUpdatedEdges: IO[List[(EdgeId, Option[Flow], MetersPerSecond)]] = IO {
 
     val currentTime = SimTime(self.playPauseSimulationControl.getLocalTime)
+    val tt          = self.travelTimeCalculator.getLinkTravelTimes
+    val rows = this.qSim.getNetsimNetwork.getNetwork.getLinks.values.asScala.toList.map {
+      case link: Link =>
+        val linkId     = link.getId
+        val edgeId     = EdgeId(linkId.toString)
+        val travelTime = MATSimRouteOps.getLinkTravelTime(tt, link, currentTime)
+        val speed      = MetersPerSecond(Meters(link.getLength.toLong), TravelTimeSeconds(travelTime.value))
+        val flow       = roadNetworkFlowHandler.getFlow(linkId)
+        (edgeId, flow, speed)
+    }
 
-    // attempt to grab the deltas. empty if we are restricted by this.minNetworkUpdateThreshold.
-    // if we aren't, we get the deltas and the RoadNetworkDeltaHandler is reset.
-    val updatedEdges: List[(EdgeId, Flow)] = roadNetworkDeltaHandler.getDeltas(currentTime)
-
-    // todo: get zeroes here too!
-
-    updatedEdges
+    rows
   }
 
   /**

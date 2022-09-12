@@ -2,6 +2,7 @@ package edu.colorado.fitzgero.sotestbed.model.roadnetwork
 
 import edu.colorado.fitzgero.sotestbed.model.numeric.Flow
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork.EdgeTriplet
+import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
 
 trait RoadNetwork[F[_], V, E] {
   // topology
@@ -26,7 +27,10 @@ trait RoadNetwork[F[_], V, E] {
   // paths
 
   // data structure
-  def updateEdgeFlows(flows: List[(EdgeId, Flow)], edgeUpdateFunction: (E, Flow) => E): F[RoadNetwork[F, V, E]]
+  def updateEdgeFlows(
+    flows: List[(EdgeId, Option[Flow], MetersPerSecond)],
+    updateFn: (E, Option[Flow], MetersPerSecond) => E
+  ): F[RoadNetwork[F, V, E]]
 }
 
 object RoadNetwork {
