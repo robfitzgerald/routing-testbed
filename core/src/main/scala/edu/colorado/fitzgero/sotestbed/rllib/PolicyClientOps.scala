@@ -71,11 +71,22 @@ object PolicyClientOps {
     for {
       backend  <- AsyncHttpClientCatsBackend[IO]()
       response <- _send(host, port, backend, failOnServerError)(msg)
+      _        <- backend.close()
       _        <- logFn.map { f => f(msg, response) }.getOrElse(IO.unit)
     } yield response
-    // AsyncHttpClientCatsBackend[IO]().flatMap { backend => _send(host, port, backend, failOnServerError)(msg) }
   }
 
+  /**
+    * underlying send helper which makes one HTTP call with the provided message
+    * and handles the server response
+    *
+    * @param host HTTP host string
+    * @param port HTTP port
+    * @param backend STTP resource for making requests
+    * @param failOnServerError if false, any server errors will create an Empty response
+    * @param msg message (request) to send
+    * @return the effect of making this HTTP call
+    */
   def _send(host: String, port: Int, backend: SttpBackend[IO, Any], failOnServerError: Boolean)(
     msg: PolicyClientRequest
   ): IO[PolicyClientResponse] = {

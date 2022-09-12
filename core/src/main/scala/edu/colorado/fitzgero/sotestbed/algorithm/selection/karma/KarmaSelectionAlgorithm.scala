@@ -5,6 +5,8 @@ import java.io.PrintWriter
 import cats.effect.IO
 import cats.implicits._
 
+import io.circe.syntax._
+
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, TrueShortestSelectionAlgorithm}
@@ -114,7 +116,13 @@ case class KarmaSelectionAlgorithm(
                 experimentDirectory,
                 allocationTransform,
                 agentsWithEpisodes.toSet,
-                finalBank
+                finalBank,
+                Some((req, res) =>
+                  IO {
+                    clientPw.write(req.asJson.noSpaces.toString + "\n")
+                    clientPw.write(res.asJson.noSpaces.toString + "\n")
+                  }
+                )
               )
             } yield ()
 
@@ -127,7 +135,13 @@ case class KarmaSelectionAlgorithm(
               allocationTransform,
               agentsWithEpisodes.toSet,
               finalBank,
-              episodePrefix
+              episodePrefix,
+              Some((reqs, ress) =>
+                IO {
+                  reqs.foreach { req => clientPw.write(req.asJson.noSpaces.toString + "\n") }
+                  ress.foreach { res => clientPw.write(res.asJson.noSpaces.toString + "\n") }
+                }
+              )
             )
         }
 
@@ -160,7 +174,8 @@ case class KarmaSelectionAlgorithm(
     activeAgentHistory: ActiveAgentHistory,
     networkPolicySignals: Map[String, NetworkPolicySignal],
     selectionLog: PrintWriter,
-    networkLog: PrintWriter
+    networkLog: PrintWriter,
+    clientLog: PrintWriter
   ): SelectionAlgorithm = new SelectionAlgorithm {
 
     import KarmaSelectionAlgorithm._
@@ -268,7 +283,13 @@ case class KarmaSelectionAlgorithm(
               roadNetwork,
               costFunction,
               episodePrefix,
-              multiAgentEpisodeId
+              multiAgentEpisodeId,
+              Some((req, res) =>
+                IO {
+                  clientPw.write(req.asJson.noSpaces.toString + "\n")
+                  clientPw.write(res.asJson.noSpaces.toString + "\n")
+                }
+              )
             )
           selections = signal.assign(bids, alts)
           paths      = selections.map { case (_, _, path) => path }
@@ -348,6 +369,7 @@ case class KarmaSelectionAlgorithm(
 
             selectionLog.flush()
             networkLog.flush()
+            clientLog.flush()
 
             selectionAlgorithmResult
           }

@@ -125,7 +125,8 @@ object DriverPolicy {
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
       costFunction: EdgeBPR => Cost,
       episodePrefix: String,
-      episodeId: Option[EpisodeId]
+      episodeId: Option[EpisodeId],
+      logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
     ): IO[List[Bid]] =
       policy match {
 
@@ -216,7 +217,8 @@ object DriverPolicy {
                     alts = alts,
                     signal = signal,
                     bank = bank,
-                    activeAgentHistory = activeAgentHistory
+                    activeAgentHistory = activeAgentHistory,
+                    logFn = logFn
                   )
                 }
 

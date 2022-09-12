@@ -291,7 +291,8 @@ object RoutingAlgorithm2 {
             batchingManager.storedHistory,
             signals,
             k.selectionPw,
-            k.networkPw
+            k.networkPw,
+            k.clientPw
           )
 
           selectionRunner.copy(selectionAlgorithm = fixedKarmaSelection)

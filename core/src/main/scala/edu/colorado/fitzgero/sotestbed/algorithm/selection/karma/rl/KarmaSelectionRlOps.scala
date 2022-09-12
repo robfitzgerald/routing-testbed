@@ -70,7 +70,8 @@ object KarmaSelectionRlOps extends LazyLogging {
     alts: Map[Request, List[Path]],
     signal: NetworkPolicySignal,
     bank: Map[String, Karma],
-    activeAgentHistory: ActiveAgentHistory
+    activeAgentHistory: ActiveAgentHistory,
+    logFn: Option[(List[PolicyClientRequest], List[PolicyClientResponse]) => IO[Unit]] = None
   ): IO[List[Bid]] = {
     import PolicyClientRequest._
     import Action._
@@ -88,6 +89,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     for {
       reqs      <- actionReqs
       responses <- client.sendMany(reqs, failOnServerError = true)
+      _         <- logFn.map { f => f(reqs, responses) }.getOrElse(IO.unit)
       actions   <- responses.traverse(extractAction)
       bidValues <- actions.traverse { structure.decodeSingleAgentActionAsBid }
       reqsWithBids = requests.zip(bidValues)
@@ -106,7 +108,8 @@ object KarmaSelectionRlOps extends LazyLogging {
     alts: Map[Request, List[Path]],
     signal: NetworkPolicySignal,
     bank: Map[String, Karma],
-    activeAgentHistory: ActiveAgentHistory
+    activeAgentHistory: ActiveAgentHistory,
+    logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
   ): IO[List[Bid]] = {
     import PolicyClientRequest._
     import Action._
@@ -123,6 +126,7 @@ object KarmaSelectionRlOps extends LazyLogging {
       mao = MultiAgentObservation(agentObs.toMap)
       gar = GetActionRequest(episodeId, mao)
       response  <- client.sendOne(gar)
+      _         <- logFn.map { f => f(gar, response) }.getOrElse(IO.unit)
       action    <- extractAction(response)
       bidValues <- structure.decodeMultiAgentActionAsBid(action)
       reqsWBids <- requests.traverse { r =>
@@ -146,7 +150,8 @@ object KarmaSelectionRlOps extends LazyLogging {
     experimentDirectory: JavaNioPath,
     allocationTransform: AllocationTransform,
     agentsWithEpisodes: Set[String],
-    finalBank: Map[String, Karma]
+    finalBank: Map[String, Karma],
+    logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
   ) = {
     import PolicyClientRequest._
     import Reward._
@@ -171,6 +176,8 @@ object KarmaSelectionRlOps extends LazyLogging {
       _ <- client.sendOne(logReturnsReq, failOnServerError = false)
       // needs to happen AFTER logging final reward for all agents
       _ <- client.sendOne(endEpisodeReq, failOnServerError = false)
+      _ <- logFn.map { f => f(logReturnsReq, PolicyClientResponse.Empty) }.getOrElse(IO.unit)
+      _ <- logFn.map { f => f(endEpisodeReq, PolicyClientResponse.Empty) }.getOrElse(IO.unit)
       _ <- logFinalRewards(rewards, observations, experimentDirectory)
     } yield logger.info(s"finished multi-agent RL episode $episodeId")
 
@@ -184,7 +191,8 @@ object KarmaSelectionRlOps extends LazyLogging {
     allocationTransform: AllocationTransform,
     agentsWithEpisodes: Set[String],
     finalBank: Map[String, Karma],
-    episodePrefix: String
+    episodePrefix: String,
+    logFn: Option[(List[PolicyClientRequest], List[PolicyClientResponse]) => IO[Unit]] = None
   ) = {
     import PolicyClientRequest._
     import Reward._
@@ -211,10 +219,12 @@ object KarmaSelectionRlOps extends LazyLogging {
       endEpisodeMsgs            = observations.map { case (a, o) => EndEpisodeRequest(EpisodeId(a, episodePrefix), o) }
       // the RL server can die here if it meets it's stopping condition on number of episodes observed
       // but we don't want that to blow up our remaining cleanup after this point
-      _ <- client.sendMany(logRewardsMsgs, failOnServerError = false)
+      logRewResponses <- client.sendMany(logRewardsMsgs, failOnServerError = false)
       // needs to happen AFTER logging final reward for all agents
-      _ <- client.sendMany(endEpisodeMsgs, failOnServerError = false)
-      _ <- logFinalRewards(rewardValues, obsValues, experimentDirectory)
+      endEpRepsonses <- client.sendMany(endEpisodeMsgs, failOnServerError = false)
+      _              <- logFn.map { f => f(logRewardsMsgs, logRewResponses) }.getOrElse(IO.unit)
+      _              <- logFn.map { f => f(endEpisodeMsgs, endEpRepsonses) }.getOrElse(IO.unit)
+      _              <- logFinalRewards(rewardValues, obsValues, experimentDirectory)
     } yield logger.info(s"finished all single agent RL episodes")
 
     result
@@ -261,23 +271,4 @@ object KarmaSelectionRlOps extends LazyLogging {
       }
     }
   }
-
-  // /**
-  //  * process agents by trip id and then agent id. this should help process all
-  //  * episodes
-  //  *
-  //  */
-  // def agentIdOrdering: Ordering[String] = Ordering.by { s =>
-  //   s.split('-').lastOption match {
-  //     case None => throw new Error(s"agentIds expected to have hyphens, found $s")
-  //     case Some(value) =>
-  //       Try { value.toInt } match {
-  //         case Failure(e) =>
-  //           throw new Error(s"agentIds expected to end with a number, but found $value", e)
-  //         case Success(value) =>
-  //           // sort by trip ID (Integers), then agent ID (lexicagraphically)
-  //           (value, s)
-  //       }
-  //   }
-  // }
 }
