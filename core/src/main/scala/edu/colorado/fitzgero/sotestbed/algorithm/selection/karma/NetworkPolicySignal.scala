@@ -87,9 +87,10 @@ object NetworkPolicySignal extends LazyLogging {
     */
   def getLogHeader(networkPolicy: NetworkPolicyConfig): String = networkPolicy match {
     case NetworkPolicyConfig.UserOptimal                        => ""
-    case _: NetworkPolicyConfig.RandomPolicy                    => ""
+    case _: NetworkPolicyConfig.RandomPolicy                    => "p"
     case _: NetworkPolicyConfig.CongestionProportionalThreshold => "p"
     case _: NetworkPolicyConfig.ScaledProportionalThreshold     => "p"
+    case ext: NetworkPolicyConfig.ExternalRLServer              => getLogHeader(ext.underlying)
   }
 
   implicit class NetworkPolicySignalOps(sig: NetworkPolicySignal) {
