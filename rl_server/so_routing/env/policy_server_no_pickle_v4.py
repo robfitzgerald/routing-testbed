@@ -1,3 +1,4 @@
+import csv
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import logging
 import queue
@@ -223,6 +224,10 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
 
+            # fieldnames = ['command', 'episode_id', 'observation', 'action', 'reward', 'info', 'done']
+            # self.f = open('rl_events_log.json', 'w')
+            # self.writer = csv.DictWriter(self.f, fieldnames, extrasaction='ignore')
+
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length"), 0)
             raw_body = self.rfile.read(content_len)
@@ -239,6 +244,9 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                 print(response_str)
                 response_bytes = response_str.encode(encoding='utf_8')
                 self.wfile.write(response_bytes)
+                # # log request and response
+                # self.writer.writerow(parsed_input)
+                # self.writer.writerow(response)
             except Exception:
                 print("server error exception when handling POST call")
                 print()
