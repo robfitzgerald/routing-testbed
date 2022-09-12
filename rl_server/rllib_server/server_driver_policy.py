@@ -126,7 +126,7 @@ def run():
         # "policy_map_cache": None,
         # Function mapping agent ids to policy ids.
         # "policy_mapping_fn": None,
-        "policy_mapping_fn": lambda agent_id, episode, worker, **kwargs: "driver"
+        "policy_mapping_fn": lambda agent_id, episode, worker, **kwargs: "driver",
         # Determines those policies that should be updated.
         # Options are:
         # - None, for all policies.
@@ -153,7 +153,7 @@ def run():
         #   multi-agent actions are passed/how many multi-agent observations
         #   have been returned in the previous step).
         # agent_steps: Count each individual agent step as one step.
-        # "count_steps_by": "env_steps",
+        "count_steps_by": "agent_steps",
     }
 
     # Trainer config. Note that this config is sent to the client only in case
@@ -250,10 +250,10 @@ def run():
                 # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
             }
         )
-        config["model"] = {
-            "fcnet_hiddens": [64],
-            "fcnet_activation": "linear",
-        }
+        # config["model"] = {
+        #     "fcnet_hiddens": [64],
+        #     "fcnet_activation": "linear",
+        # }
         if args.run == "R2D2":
             config["model"]["use_lstm"] = args.use_lstm
 
@@ -276,39 +276,38 @@ def run():
             }
         )
 
-    checkpoint_path = CHECKPOINT_FILE.format(args.run)
-    # Attempt to restore from checkpoint, if possible.
-    if not args.no_restore and os.path.exists(checkpoint_path):
-        checkpoint_path = open(checkpoint_path).read()
-    else:
-        checkpoint_path = None
-
-    # Manual training loop (no Ray tune).
+    # Manual training loop (no Ray tune), allows for using checkpoint
     if args.no_tune:
         algo = get_algorithm_class(args.run)(config=config)
 
-        if checkpoint_path:
-            print("Restoring from checkpoint path", checkpoint_path)
-            algo.restore(checkpoint_path)
+        if args.checkpoint_path:
+            print("Restoring from checkpoint path", args.checkpoint_path)
+            algo.restore(args.checkpoint_path)
 
         # Serving and training loop.
         ts = 0
-        for _ in range(args.stop_iters):
+        for i in range(algo.iteration, args.stop_iters):
+
+            print(f"begin training iteration #{i}")
             results = algo.train()
+
+            print(f'results for training iteration #{i}')
             print(pretty_print(results))
+
+            print(f"saving checkingpoint for iteration #{i}")
             checkpoint = algo.save()
             print("Last checkpoint", checkpoint)
-            # with open(checkpoint_path, "w") as f:
-            #     f.write(checkpoint)
+
+            ts += results["timesteps_total"]
             met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
             met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
             print(f"met reward stopping condition? {met_reward_condition}")
             if args.stop_timesteps is not None:
                 print(f"met timestep stopping condition? {met_ts_condition}")
 
+            print(f"end of training iteration #{i}")
             if met_reward_condition or met_ts_condition:
                 break
-            ts += results["timesteps_total"]
 
         print('finished training, terminating server.')
 

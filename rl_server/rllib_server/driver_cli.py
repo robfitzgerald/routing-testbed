@@ -104,11 +104,11 @@ parser.add_argument(
 #     action="store_true",
 #     help="Activates info-messages for different events on "
 #          "server/client (episode steps, postprocessing, etc..).")
-# parser.add_argument(
-#     "--checkpoint-path",
-#     help="location of checkpoint directory",
-#     default=None
-# )
+parser.add_argument(
+    "--checkpoint-path",
+    help="location of checkpoint directory",
+    default=None
+)
 
 # SO TESTBED ARGUMENTS
 # parser.add_argument(
