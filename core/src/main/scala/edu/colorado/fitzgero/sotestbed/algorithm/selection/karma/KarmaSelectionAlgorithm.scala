@@ -244,12 +244,6 @@ case class KarmaSelectionAlgorithm(
                 logger.info(sendMsg)
               }
 
-              // val agentDoneResult: IO[Unit] = structure match {
-              //   case sap: SingleAgentPolicy => ()
-              //   case map: MultiAgentPolicy =>
-              //     val agents
-              // }
-
               val sizeAfter = agentsWithEpisodes.size
               logger.info(s"now tracking $sizeAfter RL agents up from $sizeBefore")
             }

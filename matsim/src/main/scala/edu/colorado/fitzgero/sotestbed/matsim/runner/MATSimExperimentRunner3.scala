@@ -167,7 +167,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         config.algorithm match {
           case so: Algorithm.SystemOptimal =>
             val soAlgorithmOrError = for {
-              grid <- so.grid.build()
+              grid <- so.grid.build(network)
               _    <- checkRLKarmaUsesFreeFlow(so)
               // _    <- startEpisodesForRLPolicies(so.selectionAlgorithm, agentsUnderControl)
             } yield {

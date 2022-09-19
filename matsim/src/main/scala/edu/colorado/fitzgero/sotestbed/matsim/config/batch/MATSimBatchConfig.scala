@@ -73,6 +73,7 @@ object MATSimBatchConfig {
           case _: BatchingFunctionConfig.Greedy                         => "0"
           case bf: BatchingFunctionConfig.CoordinateGridGrouping        => bf.batchType
           case _: BatchingFunctionConfig.LabelBasedTrajectoryClustering => "traj"
+          case _: BatchingFunctionConfig.NetworkZoneBatching            => "0"
         }
     }
     val gridCellSideLength: String = config.algorithm match {

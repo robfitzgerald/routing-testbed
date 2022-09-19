@@ -138,6 +138,10 @@ object LocalAdjacencyListFlowNetwork {
 
   final case class Coordinate(x: Double, y: Double)
 
+  def midpoint(a: Coordinate, b: Coordinate): Coordinate = {
+    Coordinate((a.x + b.x) / 2.0, (a.y + b.y) / 2.0)
+  }
+
   final case class VerticesBuilder(
     vertices: Map[VertexId, Coordinate] = Map.empty,
     failedVertices: List[String] = List.empty

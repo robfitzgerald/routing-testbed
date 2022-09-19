@@ -7,6 +7,7 @@ import java.time.LocalTime
 import scala.concurrent.duration.Duration
 
 import cats.Monad
+import cats.effect.IO
 
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 import pureconfig._
@@ -191,7 +192,7 @@ object MATSimConfig {
           roadNetwork: RoadNetwork[cats.effect.IO, Coordinate, EdgeBPR],
           activeRouteRequests: List[RouteRequestData],
           currentTime: SimTime
-        ): cats.effect.IO[Option[List[(String, List[Request])]]] = cats.effect.IO.pure { None }
+        ): cats.effect.IO[Option[BatchingFunction.BatchingResult]] = cats.effect.IO.pure { None }
       }
     }
 
@@ -223,8 +224,8 @@ object MATSimConfig {
         srid: Int
       ) {
 
-        def build(): Either[Error, CoordinateGrid2] =
-          CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid)
+        def build(rn: RoadNetwork[IO, Coordinate, EdgeBPR]): Either[Error, CoordinateGrid2] =
+          CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid, rn)
       }
     }
 

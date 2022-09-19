@@ -32,6 +32,11 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import edu.colorado.fitzgero.sotestbed.rllib.Observation
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
+import edu.colorado.fitzgero.sotestbed.rllib.Observation.MultiAgentObservation
+import edu.colorado.fitzgero.sotestbed.rllib.Observation.SingleAgentObservation
 
 /**
   *
@@ -88,15 +93,15 @@ case class RoutingAlgorithm2(
 
       val result: IO[IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])]] = for {
         batchingFunctionStartTime <- IO { System.currentTimeMillis }
-        routeRequestsOpt          <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
+        batchingResultOpt         <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
         batchingRuntime           <- IO { RunTime(System.currentTimeMillis - batchingFunctionStartTime) }
       } yield {
         logger.info(s"request batching computed via ${batchingFunction.getClass.getSimpleName}")
-        routeRequestsOpt match {
+        batchingResultOpt match {
           case None =>
             logger.info("no viable requests after applying batching function")
             IO.pure((List.empty, bank))
-          case Some(routeRequests) =>
+          case Some(BatchingFunction.BatchingResult(routeRequests, zoneLookup)) =>
             // if not replanAtSameLink, dismiss requests where the location
             // (linkid) has not changed since their last replanning event
             // afterward, remove batches where the batch size is less than
@@ -135,7 +140,8 @@ case class RoutingAlgorithm2(
                 roadNetwork,
                 requests,
                 batchingManager,
-                bank
+                bank,
+                zoneLookup
               )
             }
 
@@ -161,7 +167,6 @@ case class RoutingAlgorithm2(
                 bank
               )
               (soResults, updatedBank) = selectionOutput
-              //              soResults <- selectionRunnerRequests.traverse { r => selAlg.run(r, roadNetwork, bank) }
               _ <- IO.pure(logger.info(s"selection algorithm completed via $selectionName"))
             } yield {
               // re-combine data by batch id and package as a RoutingAlgorithm.Result
@@ -235,7 +240,8 @@ object RoutingAlgorithm2 {
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     selectionRunnerRequest: List[SelectionRunnerRequest],
     batchingManager: BatchingManager,
-    bank: Map[String, Karma]
+    bank: Map[String, Karma],
+    zoneLookup: Map[String, List[EdgeId]]
   ): IO[SelectionRunner] = {
     selectionRunner.selectionAlgorithm match {
       case k: KarmaSelectionAlgorithm =>
@@ -250,39 +256,24 @@ object RoutingAlgorithm2 {
             // was informed by the NetworkPolicySpace and therefore ZoneIds match.
             for {
               epId <- IO.fromOption(k.multiAgentEpisodeId)(new Error("missing episode id"))
-              obs  <- space.encodeObservation(roadNetwork)
+              obs  <- space.encodeObservation(roadNetwork, zoneLookup)
               res  <- client.sendOne(PolicyClientRequest.GetActionRequest(epId, obs))
               act  <- res.getAction
               sigs <- k.gen.generateSignalsForZones(act)
             } yield sigs
 
-          case _ =>
-            // v1: heuristic-based network policy signal generation
-            val batchesWithCongestionObservations = selectionRunnerRequest
-              .flatTraverse {
-                case SelectionRunnerRequest(batchId, batch) =>
-                  val batchEdgeIds = batch.keys.toList.map { _.location }.distinct
-                  val observationIO = k.congestionObservation.observeCongestion(
-                    roadNetwork,
-                    k.freeFlowCostFunction,
-                    k.marginalCostFunction,
-                    batchEdgeIds
-                  )
-                  observationIO.map {
-                    case None      => List.empty
-                    case Some(obs) => List(batchId -> obs)
-                  }
-              }
+          case UserOptimal => IO.pure(Map.empty)
 
-            // for each batch with observations, compute the network signal
-            batchesWithCongestionObservations
-              .map {
-                _.map {
-                  case (batchId, obs) =>
-                    val signal = k.gen.generateSignal(obs)
-                    (batchId, signal)
-                }.toMap
-              }
+          case otherPolicy =>
+            val spaceResult =
+              IO.fromOption(otherPolicy.space)(new Error(s"policy $otherPolicy expected to have a NetworkPolicySpace"))
+
+            for {
+              space <- spaceResult
+              obs   <- space.encodeObservation(roadNetwork, zoneLookup)
+              sigs  <- multiAgentObsToSignals(obs, k.gen)
+            } yield sigs
+
         }
         // pass the generated batch data to the inner Karma algorithm
         batchesWithSignals.map { batches =>
@@ -298,6 +289,26 @@ object RoutingAlgorithm2 {
           selectionRunner.copy(selectionAlgorithm = fixedKarmaSelection)
         }
       case _ => IO.pure(selectionRunner)
+    }
+  }
+
+  def multiAgentObsToSignals(
+    obs: Observation,
+    npsg: NetworkPolicySignalGenerator
+  ): IO[Map[String, NetworkPolicySignal]] = {
+    obs match {
+      case sao: SingleAgentObservation =>
+        IO.raiseError(new Error(s"expected multiagent observation, found $sao"))
+      case MultiAgentObservation(observation) =>
+        observation.toList
+          .traverse {
+            case (agentId, obsFeatures) =>
+              // todo:
+              // - this code only handles single-featured network observations, but this isn't future-proof
+              val sigOpt = obsFeatures.headOption.map { o => (agentId.value, npsg.generateSignal(o)) }
+              IO.fromOption(sigOpt)(new Error(s"expected single observation feature but was empty"))
+          }
+          .map { _.toMap }
     }
   }
 

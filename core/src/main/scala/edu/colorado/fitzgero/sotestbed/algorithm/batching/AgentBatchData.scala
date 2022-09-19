@@ -38,17 +38,17 @@ object AgentBatchData {
     lastReplanningTime: Option[SimTime]
   ) extends AgentBatchData {
 
-    // /**
-    //   * report only travel times observed in the simulation, at the granularity of
-    //   * completed links (no partial link traversals here)
-    //   *
-    //   * @return experienced travel time at time of request
-    //   */
-    // def experiencedTravelTime: SimTime =
-    //   experiencedRoute.flatMap { _.estimatedTimeAtEdge } match {
-    //     case Nil   => SimTime.Zero
-    //     case times => SimTime(times.map { _.value }.sum)
-    //   }
+    def experiencedDistance: Meters = {
+      val experiencedDistance = experiencedRoute.foldLeft(0.0) { _ + _.linkDistance }
+      Meters(experiencedDistance)
+    }
+
+    def remainingDistance: Meters = {
+      val remainingDistance = remainingRoute.foldLeft(0.0) { _ + _.linkDistance }
+      Meters(remainingDistance)
+    }
+
+    def overallDistance: Meters = experiencedDistance + remainingDistance
 
     /**
       * combine observed travel times with the estimated travel time of the remaining route

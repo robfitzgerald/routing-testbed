@@ -44,6 +44,8 @@ object RepeaterApp
       case (configFile, startingNumber, seed) =>
         val random = new Random(seed)
 
+        println(s"if this dies, make sure you're not writing to an existing directory!!! :-O")
+
         createTemplateConfig(configFile.toFile).flatMap { config =>
           startingNumber.iterateForeverM { iteration =>
             val itConf = prepareRunConfig(config, iteration)

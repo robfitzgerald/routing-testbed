@@ -100,8 +100,8 @@ object KSPFilterFunctionConfig {
       */
     def build(): KSPFilterFunction =
       (history: AgentHistory, request: Request, alts: List[Path], random: Random) => {
-        val originalDistance: Meters   = history.originalRequest.remainingRouteDistance
-        val currentDistance: Meters    = history.currentRequest.remainingRouteDistance
+        val originalDistance: Meters   = history.originalRequest.remainingDistance
+        val currentDistance: Meters    = history.currentRequest.remainingDistance
         val proportion: Double         = math.min(1.0, math.max(0.0, currentDistance.value / originalDistance.value))
         val allowSOReplanning: Boolean = random.nextDouble() < proportion
         if (allowSOReplanning) Some { (request, alts) }
