@@ -4,16 +4,21 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData._
 
 /**
   * tracks the request data associated with an agent, noting which requests were served
-  * with a replanning route.
+  * with a replanning route. at the end of their trip, we retain knowledge of only their first and last
+  * request data and the metadata of their trip.
   *
   * @param first the first request we received
   * @param history all subsequent requests we have received, in reverse order for list prepend O(1) performance
+  * @param replanningEvents number of times agent route was replanned
+  * @param hasRlTrainingEpisodeStarted true if we have notified the RL server that this agent episode has begun
+  * @param finalized true when the agent finishes their trip
   */
 final case class AgentHistory(
   first: AgentHistory.Entry,
   history: List[AgentHistory.Entry],
   replanningEvents: Int = 0,
-  hasRlTrainingEpisodeStarted: Boolean = false
+  hasRlTrainingEpisodeStarted: Boolean = false,
+  finalized: Boolean = false
 ) {
 
   /**
@@ -41,10 +46,10 @@ final case class AgentHistory(
           replanned = true
         )
       )
-    case head :: _ =>
+    case head :: tail =>
       this.copy(
         replanningEvents = this.replanningEvents + 1,
-        history = head.copy(replanned = true) +: history.tail
+        history = head.copy(replanned = true) +: tail
       )
   }
 
@@ -121,6 +126,7 @@ final case class AgentHistory(
     if (this.first.replanned) this.first +: tail else tail
   }
 
+  def catalogHistory: AgentHistory = this.copy(finalized = true, history = this.history.take(1))
 }
 
 object AgentHistory {

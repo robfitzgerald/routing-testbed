@@ -13,23 +13,6 @@ final case class ActiveAgentHistory(
   observedRouteRequestData: Map[String, AgentHistory] = Map.empty
 ) {
 
-  // def setRlTrainingEpisodeStarted(agentId: String): Either[Error, ActiveAgentHistory] = {
-  //   this.observedRouteRequestData.get(agentId) match {
-  //     case None =>
-  //       val msg = s"attempting to set rl training start event for agent $agentId who is " +
-  //         "not found in the current active agent history"
-  //       Left(new Error(msg))
-  //     case Some(agentHistory) =>
-  //       val updated = this.copy(
-  //         observedRouteRequestData = this.observedRouteRequestData.updated(
-  //           agentId,
-  //           agentHistory.copy(hasRlTrainingEpisodeStarted = true)
-  //         )
-  //       )
-  //       Right(updated)
-  //   }
-  // }
-
   def incrementReplannings(agentId: String): Either[Error, ActiveAgentHistory] = {
     this.observedRouteRequestData.get(agentId) match {
       case None =>
@@ -58,26 +41,6 @@ final case class ActiveAgentHistory(
     costFunction: EdgeBPR => Cost
   ): IO[ActiveAgentHistory] = {
     val agentId: String = data.request.agent
-
-    // for remaining route (un-traversed), store travel times based on
-    // current network travel time estimates
-    // must be done NOW since these estimates will change as the sim progresses
-    // val updatedDataIO = data.remainingRoute
-    //   .traverse { e =>
-    //     roadNetwork
-    //       .edge(e.edgeId)
-    //       .map {
-    //         _.map { ea =>
-    //           val estCost = SimTime(costFunction(ea.attribute).value.toLong)
-    //           e.copy(estimatedTimeAtEdge = Some(estCost))
-    //         }
-    //       }
-    //   }
-    //   .map { withEstimates => data.copy(remainingRoute = withEstimates.flatten) }
-
-    // for {
-    //   updatedData <- updatedDataIO
-    // } yield {
 
     val result = observedRouteRequestData.get(agentId) match {
       case None =>
@@ -115,12 +78,19 @@ final case class ActiveAgentHistory(
     this.observedRouteRequestData.get(agentId).exists { _.replanningEvents == 0 }
 
   /**
-    * on arrival we can remove all data associated with an agent, as it is no longer active
+    * on arrival we can remove all unnecessary data associated with an agent, as it is no longer active
     * @param agentId the arriving agent
     * @return the updated history with this agent removed
     */
   def processArrivalFor(agentId: String): ActiveAgentHistory = {
-    this.copy(observedRouteRequestData = observedRouteRequestData - agentId)
+    this.observedRouteRequestData.get(agentId) match {
+      case None => this
+      case Some(agentHistory) =>
+        val updated = this.observedRouteRequestData.updated(agentId, agentHistory.catalogHistory)
+        this.copy(
+          observedRouteRequestData = updated
+        )
+    }
   }
 
   /**
