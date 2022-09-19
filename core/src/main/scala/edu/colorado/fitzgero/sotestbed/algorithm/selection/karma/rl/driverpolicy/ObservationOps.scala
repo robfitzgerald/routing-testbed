@@ -11,6 +11,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
+import scala.collection.immutable
 
 object ObservationOps {
 
@@ -41,27 +42,50 @@ object ObservationOps {
     }
   }
 
-  /**
-    *
-    *
-    * @param history history for the agent associated with this set
-    * of proposed paths
-    * @param proposedPaths paths proposed by the alt paths algorithm
-    * @return for each path (by index), the diff from the original path.
-    * computed as (originalEstimate - (experiencedTime + proposedAddedTime))
-    */
-  def travelTimeDiffFromAlternatives(
-    history: AgentHistory,
-    proposedPaths: List[Path]
-  ): IO[List[Double]] = {
-    val result = history.originalRequest.overallTravelTimeEstimate.map { o =>
-      val c     = history.currentRequest.experiencedTravelTime
-      val costs = proposedPaths.map(_.map { _.cost.value }.foldLeft(0.0) { _ + _ })
-      val diffs = costs.map { tailCost => o.value - (c.value + tailCost) }
-      diffs
-    }
+  // /**
+  //   * for the remaining trip, consider a set of alternatives, and compute the
+  //   * remaining distance for each, including any of the current path which
+  //   * must be traversed in order to reach the beginning of that alternative.
+  //   *
+  //   * @param history history for the agent associated with this set
+  //   * of proposed paths
+  //   * @param proposedPaths paths proposed by the alt paths algorithm
+  //   * @return for each path (by index), the distance for that alternative
+  //   */
+  // def distanceOfAlternatives(
+  //   history: AgentHistory,
+  //   proposedPaths: List[Path]
+  // ): List[Double] = {
+  //   val currentRemainingPath = history.currentRequest.remainingRoute
+  //   proposedPaths.map { alt =>
+  //     val thisRemainingTime = coalesceCostFor(currentRemainingPath, alt)
+  //     thisRemainingTime
+  //   }
+  // }
 
-    IO.fromEither(result)
+  /**
+    * traverses to find the jump-off point for a path alternative from the current remaining route
+    * and then composes the stub for the current route with that of the path alternative
+    *
+    * @param remainingCurrentRoute a route we may still travel on for a bit
+    * @param pathAlternative a branch from the remaining current route
+    * @return cost estimate for the stub + the alt
+    */
+  def coalesceCostFor(remainingCurrentRoute: List[EdgeData])(pathAlternative: Path): Double = {
+    if (pathAlternative.isEmpty) 0.0
+    else {
+      val pathAltCost = pathAlternative.map { _.cost.value }.foldLeft(0.0) { _ + _ }
+      remainingCurrentRoute.dropWhile(_.edgeId != pathAlternative.head.edgeId) match {
+        case Nil                                           => pathAltCost
+        case detached if detached == remainingCurrentRoute =>
+          // if it used the whole current route, we would reach our destination...
+          // so, these paths aren't connected, but let's at least include the alt's cost
+          pathAltCost
+        case stub =>
+          val stubCost = stub.flatMap { _.estimatedTimeAtEdge }.foldLeft(0.0) { _ + _.value.toDouble }
+          stubCost + pathAltCost
+      }
+    }
   }
 
   def currentPathCost(

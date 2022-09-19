@@ -62,6 +62,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
         obs <- space.encodeFinalObservation(
           originalTravelTimeEstimate = row.originalTravelTimeEstimate,
           finalTravelTime = row.finalTravelTime,
+          finalDistance = row.finalDistance,
           finalBankBalance = balance,
           networkPolicyConfig = networkPolicyConfig
         )

@@ -12,11 +12,18 @@ class DriverObsSpace(Enum):
     URGENCY = 1
     WORST_ALTERNATIVE = 2
     BATCH_SIZE = 3
-    THRESHOLD_NETWORK_SIGNAL = 4
+    REPLANNING_EVENTS = 4
+
+    ORIGINAL_DISTANCE = 10
+    EXPERIENCED_DISTANCE = 11
+    REMAINING_DISTANCE = 12
+
+    ORIGINAL_TRAVEL_TIME_ESTIMATE = 20
+    EXPERIENCED_TRAVEL_TIME = 21
+    REMAINING_TRAVEL_TIME_ESTIMATE = 22
+
     # maybe other network signals?
-    REMAINING_DISTANCE = 6
-    REMAINING_TRAVEL_TIME_ESTIMATE = 7
-    REPLANNING_EVENTS = 8
+    THRESHOLD_NETWORK_SIGNAL = 30
 
     def __str__(self):
         return self.name.lower()
@@ -42,10 +49,17 @@ class DriverObsSpace(Enum):
             DriverObsSpace.URGENCY: [np.NINF, np.Inf],
             DriverObsSpace.WORST_ALTERNATIVE: [np.NINF, np.Inf],
             DriverObsSpace.BATCH_SIZE: [0, np.Inf],
-            DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
+            DriverObsSpace.REPLANNING_EVENTS: [0, np.Inf],
+
+            DriverObsSpace.ORIGINAL_DISTANCE: [0, np.Inf],
+            DriverObsSpace.EXPERIENCED_DISTANCE: [0, np.Inf],
             DriverObsSpace.REMAINING_DISTANCE: [0, np.Inf],
+
+            DriverObsSpace.ORIGINAL_TRAVEL_TIME_ESTIMATE: [0, np.Inf],
+            DriverObsSpace.EXPERIENCED_TRAVEL_TIME: [0, np.Inf],
             DriverObsSpace.REMAINING_TRAVEL_TIME_ESTIMATE: [0, np.Inf],
-            DriverObsSpace.REPLANNING_EVENTS: [0, np.Inf]
+
+            DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
         }
         return _OBSERVATION_SPACE_MAPPING.get(driver_obs_space)
 

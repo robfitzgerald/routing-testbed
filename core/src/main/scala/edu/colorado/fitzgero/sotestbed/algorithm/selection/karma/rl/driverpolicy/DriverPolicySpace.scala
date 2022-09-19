@@ -21,6 +21,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.RandomPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionProportionalThreshold
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 
 sealed trait DriverPolicySpace
 
@@ -55,9 +56,29 @@ object DriverPolicySpace {
   case object NetworkSignal extends DriverPolicySpace
 
   /**
+    * while observing other values, keep in perspective the original travel time estimate
+    */
+  case object OriginalTravelTimeEstimate extends DriverPolicySpace
+
+  /**
+    * while observing other values, keep in perspective the original trip distance
+    */
+  case object OriginalDistance extends DriverPolicySpace
+
+  /**
     * remaining travel distance along the current path
     */
   case object RemainingDistance extends DriverPolicySpace
+
+  /**
+    * experienced distance for the currently-assigned route
+    */
+  case object ExperiencedDistance extends DriverPolicySpace
+
+  /**
+    * experienced travel time for the currently-assigned route
+    */
+  case object ExperiencedTravelTime extends DriverPolicySpace
 
   /**
     * the travel time estimated for the currently-assigned route
@@ -105,9 +126,9 @@ object DriverPolicySpace {
         case Urgency =>
           ObservationOps.travelTimeDiffFromInitialTrip(history).map { u => List(u) }
         case WorstAlternative =>
-          ObservationOps
-            .travelTimeDiffFromAlternatives(history, proposedPaths)
-            .map { v => List(v.max) }
+          val coalesceFn: Path => Double = ObservationOps.coalesceCostFor(history.currentRequest.remainingRoute)
+          val costs                      = proposedPaths.map { coalesceFn }
+          IO.pure(List(costs.max))
         case BatchSize =>
           IO.pure(List(batch.size))
         case NetworkSignal =>
@@ -122,14 +143,26 @@ object DriverPolicySpace {
               val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
               IO.raiseError(new Error(msg))
           }
-        case RemainingDistance =>
-          val dist = history.currentRequest.remainingRoute.foldLeft(0.0) { _ + _.linkDistance }
+        case OriginalDistance =>
+          val dist = history.first.data.overallDistance.value
           IO.pure(List(dist))
+        case ExperiencedDistance =>
+          val dist = history.currentRequest.experiencedDistance.value
+          IO.pure(List(dist))
+        case RemainingDistance =>
+          val dist = history.currentRequest.remainingDistance.value
+          IO.pure(List(dist))
+        case OriginalTravelTimeEstimate =>
+          for {
+            ttEst <- IO.fromEither(history.first.data.overallTravelTimeEstimate)
+          } yield List(ttEst.value.toDouble)
+        case ExperiencedTravelTime =>
+          val expTT = history.currentRequest.experiencedTravelTime
+          IO.pure(List(expTT.value.toDouble))
         case RemainingTravelTimeEstimate =>
-          val ttEstimate = history.currentRequest.remainingRoute.foldLeft(0.0) {
-            _ + _.estimatedTimeAtEdge.getOrElse(SimTime.Zero).value.toDouble
-          }
-          IO.pure(List(ttEstimate))
+          for {
+            ttEst <- IO.fromEither(history.currentRequest.remainingTravelTimeEstimate)
+          } yield List(ttEst.value.toDouble)
         case ReplanningEvents =>
           IO.pure(List(history.replanningEvents))
         case Combined(features) =>
@@ -140,6 +173,7 @@ object DriverPolicySpace {
     def encodeFinalObservation(
       originalTravelTimeEstimate: SimTime,
       finalTravelTime: SimTime,
+      finalDistance: Meters,
       finalBankBalance: Karma,
       networkPolicyConfig: NetworkPolicyConfig
     ): IO[List[Double]] = dps match {
@@ -157,17 +191,29 @@ object DriverPolicySpace {
         // would be encoded into each observation throughout the day; it should clearly be
         // a network signal that requests zero % SO routing.
         IO.pure(List(0.0))
+      case OriginalDistance =>
+        // not correct, but maybe not important? HMM, it actually is
+        // IO.pure(List(0.0))
+        IO.raiseError(new NotImplementedError)
+      case ExperiencedDistance =>
+        IO.pure(List(finalDistance.value))
       case RemainingDistance =>
         IO.pure(List(0.0))
+      case OriginalTravelTimeEstimate =>
+        IO.pure(List(originalTravelTimeEstimate.value.toDouble))
+      case ExperiencedTravelTime =>
+        IO.pure(List(finalTravelTime.value.toDouble))
       case RemainingTravelTimeEstimate =>
         IO.pure(List(0.0))
       case ReplanningEvents =>
-        IO.pure(List(0.0)) // would it be better if we stored the final count instead?
+        IO.raiseError(new NotImplementedError)
+      // IO.pure(List(0.0)) // would it be better if we stored the final count instead YES
       case Combined(features) =>
         features.flatTraverse(
           _.encodeFinalObservation(
             originalTravelTimeEstimate,
             finalTravelTime,
+            finalDistance,
             finalBankBalance,
             networkPolicyConfig
           )

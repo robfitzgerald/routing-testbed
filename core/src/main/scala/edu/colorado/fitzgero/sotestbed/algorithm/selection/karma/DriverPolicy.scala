@@ -22,10 +22,20 @@ import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.PathSegment
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure._
+import scala.util.Random
+import com.typesafe.scalalogging.LazyLogging
 
 sealed trait DriverPolicy
 
-object DriverPolicy {
+object DriverPolicy extends LazyLogging {
+
+  /**
+    * a random bidding policy for a baseline or testing
+    * @param rng random bid generator
+    * @param maxBid maximum allowed bid value. always superseded by the remaining
+    *               agent balance
+    */
+  case class RandomPolicy(rng: Random, maxBid: Option[Karma]) extends DriverPolicy
 
   /**
     * always bid this exact value
@@ -110,6 +120,7 @@ object DriverPolicy {
   implicit class DriverPolicyExtensionMethods(policy: DriverPolicy) {
 
     def header: String = policy match {
+      case _: RandomPolicy          => "bid"
       case _: Fixed                 => "bid"
       case _: DelayWithKarmaMapping => "bid"
       case _: DelayProportional     => "bid"
@@ -129,6 +140,24 @@ object DriverPolicy {
       logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
     ): IO[List[Bid]] =
       policy match {
+
+        case rp: RandomPolicy =>
+          val result: IO[List[Bid]] = alts.keys.toList.traverse { req =>
+            val inner: Either[Error, Bid] = bank
+              .get(req.agent)
+              .toRight(new Error(s"agent ${req.agent} not found in bank"))
+              .map { karmaBalance =>
+                // rng.nextLong uses exclusive upper bound [0, k) but we want to include it
+                val maxBidValueExclusive: Long = rp.maxBid match {
+                  case None      => karmaBalance.value + 1
+                  case Some(max) => math.min(karmaBalance.value, max.value) + 1
+                }
+                val bid = Karma(rp.rng.nextLong(maxBidValueExclusive))
+                Bid(req, bid)
+              }
+            IO.fromEither(inner)
+          }
+          result
 
         case fixed: Fixed =>
           val result: IO[List[Bid]] = alts.keys.toList.traverse { req =>
