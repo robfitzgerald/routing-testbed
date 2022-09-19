@@ -25,6 +25,7 @@ You may connect more than one policy client to any open listen port.
 
 import json
 import os
+import time
 
 import ray
 from ray import air, tune
@@ -203,7 +204,7 @@ def run():
         # Note that for Ape-X metrics are already only reported for the lowest
         # epsilon workers (least random workers).
         # Set to None (or 0) for no evaluation.
-        "evaluation_interval": 10,
+        # "evaluation_interval": 10,
         # Duration for which to run evaluation each `evaluation_interval`.
         # The unit for the duration can be set via `evaluation_duration_unit` to
         # either "episodes" (default) or "timesteps".
@@ -213,25 +214,25 @@ def run():
         # - For `evaluation_parallel_to_training=True`: Will run as many
         #   episodes/timesteps that fit into the (parallel) training step.
         # - For `evaluation_parallel_to_training=False`: Error.
-        "evaluation_duration": 1,
+        # "evaluation_duration": 1,
         # The unit, with which to count the evaluation duration. Either "episodes"
         # (default) or "timesteps".
-        "evaluation_duration_unit": "episodes",
-        "evaluation_config": {
-            "input": _eval_input,
-            "observation_space": obs_space,
-            "action_space": act_space,
-            "multiagent": multiagent
-        },
+        # "evaluation_duration_unit": "episodes",
+        # "evaluation_config": {
+        #     "input": _eval_input,
+        #     "observation_space": obs_space,
+        #     "action_space": act_space,
+        #     "multiagent": multiagent
+        # },
         "multiagent": multiagent
     }
 
-    # DQN.
-    if args.run == "DQN":
+    # DQN settings if we are training
+    if args.run == "DQN" and not args.as_test:
         # Example of using DQN (supports off-policy actions).
         config.update(
             {
-                "explore": True,
+                "explore": not args.as_test,
                 "exploration_config": {
                     # Exploration sub-class by name or full path to module+class
                     # (e.g. “ray.rllib.utils.exploration.epsilon_greedy.EpsilonGreedy”)
@@ -257,25 +258,6 @@ def run():
         if args.run == "R2D2":
             config["model"]["use_lstm"] = args.use_lstm
 
-    elif args.run == "IMPALA":
-        config.update(
-            {
-                "num_gpus": 0,
-                "model": {"use_lstm": args.use_lstm},
-            }
-        )
-
-    # PPO.
-    else:
-        # Example of using PPO (does NOT support off-policy actions).
-        config.update(
-            {
-                "rollout_fragment_length": 1000,
-                "train_batch_size": 4000,
-                "model": {"use_lstm": args.use_lstm},
-            }
-        )
-
     # Manual training loop (no Ray tune), allows for using checkpoint
     if args.no_tune:
         algo = get_algorithm_class(args.run)(config=config)
@@ -284,32 +266,39 @@ def run():
             print("Restoring from checkpoint path", args.checkpoint_path)
             algo.restore(args.checkpoint_path)
 
-        # Serving and training loop.
-        ts = 0
-        for i in range(algo.iteration, args.stop_iters):
+        if args.as_test:
+            # run until user terminates process
+            while True:
+                time.sleep(0.2)
+                pass
+        else:
+            # Serving and training loop.
+            ts = 0
+            for i in range(algo.iteration, args.stop_iters):
 
-            print(f"begin training iteration #{i}")
-            results = algo.train()
+                print(f"begin training iteration #{i}")
+                results = algo.train()
 
-            print(f'results for training iteration #{i}')
-            print(pretty_print(results))
+                print(f'results for training iteration #{i}')
+                print(pretty_print(results))
 
-            print(f"saving checkingpoint for iteration #{i}")
-            checkpoint = algo.save()
-            print("Last checkpoint", checkpoint)
+                print(f"saving checkingpoint for iteration #{i}")
+                checkpoint = algo.save()
+                print("Last checkpoint", checkpoint)
 
-            ts += results["timesteps_total"]
-            met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
-            met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
-            print(f"met reward stopping condition? {met_reward_condition}")
-            if args.stop_timesteps is not None:
-                print(f"met timestep stopping condition? {met_ts_condition}")
+                ts += results["timesteps_total"]
+                met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
+                met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
+                print(f"met reward stopping condition? {met_reward_condition}")
+                if args.stop_timesteps is not None:
+                    print(
+                        f"met timestep stopping condition? {met_ts_condition}")
 
-            print(f"end of training iteration #{i}")
-            if met_reward_condition or met_ts_condition:
-                break
+                print(f"end of training iteration #{i}")
+                if met_reward_condition or met_ts_condition:
+                    break
 
-        print('finished training, terminating server.')
+            print('finished training, terminating server.')
 
     # Run with Tune for auto env and trainer creation and TensorBoard.
     else:
