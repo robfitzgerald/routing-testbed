@@ -20,6 +20,10 @@ sealed trait NetworkPolicySpace
 
 object NetworkPolicySpace {
 
+  // maybe a future extension here...
+  // case object UseAgentLocations - only aggregate from Request.location edges
+  // case object UseCompleteZone - all values for a BatchId
+
   /**
     * encodes the network space so that, for each zone, we capture
     * a single value which is the difference in speed between freeflow
@@ -32,22 +36,24 @@ object NetworkPolicySpace {
     *
     * @param zones
     */
-  case class ZonalSpeedDelta(zones: List[NetworkZone], aggFn: ObservationAggregation) extends NetworkPolicySpace
+  case class ZonalSpeedDelta(aggregation: ObservationAggregation) extends NetworkPolicySpace
 
   implicit class NPSExtensions(nps: NetworkPolicySpace) {
 
     def encodeObservation(
-      network: RoadNetwork[IO, Coordinate, EdgeBPR]
+      network: RoadNetwork[IO, Coordinate, EdgeBPR],
+      batchZoneLookup: Map[String, List[EdgeId]]
     ): IO[Observation] = nps match {
-      case ZonalSpeedDelta(zones, aggFn) =>
-        val speedByZone = zones.traverse { zone =>
-          for {
-            edges <- network.edges(zone.edges)
-          } yield {
-            val speeds    = edges.map(ea => ea.attribute.freeFlowSpeed.value - ea.attribute.observedSpeed.value)
-            val aggSpeeds = aggFn.aggregate(speeds)
-            (AgentId(zone.zoneId), List(aggSpeeds))
-          }
+      case ZonalSpeedDelta(aggregation) =>
+        val speedByZone = batchZoneLookup.toList.traverse {
+          case (batchId, zoneEdges) =>
+            for {
+              eas <- network.edges(zoneEdges)
+            } yield {
+              val obs       = eas.map { _.attribute }
+              val aggSpeeds = aggregation.aggregate(obs)
+              (AgentId(batchId), List(aggSpeeds))
+            }
         }
         speedByZone.map { obs => Observation.MultiAgentObservation(obs.toMap) }
     }

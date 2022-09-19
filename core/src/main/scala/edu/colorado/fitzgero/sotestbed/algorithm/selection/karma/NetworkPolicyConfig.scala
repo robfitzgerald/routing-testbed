@@ -24,7 +24,7 @@ object NetworkPolicyConfig {
     *
     * @param seed starting seed value for random generation
     */
-  case class RandomPolicy(seed: Option[Long]) extends NetworkPolicyConfig
+  case class RandomPolicy(space: NetworkPolicySpace, seed: Option[Long]) extends NetworkPolicyConfig
 
   /**
     * generates a network signal that is a Bernoulli distribution, where
@@ -39,7 +39,7 @@ object NetworkPolicyConfig {
     *
     * @param seed random number generator seed value
     */
-  case class CongestionProportionalThreshold(seed: Option[Long]) extends NetworkPolicyConfig
+  case class CongestionProportionalThreshold(space: NetworkPolicySpace, seed: Option[Long]) extends NetworkPolicyConfig
 
   /**
     * generates a network signal that is a Bernoulli distribution, where
@@ -59,22 +59,31 @@ object NetworkPolicyConfig {
     *              before it is used as the Bernoulli "p" parameter.
     * @param seed random number generator seed value
     */
-  case class ScaledProportionalThreshold(scale: Double, seed: Option[Long]) extends NetworkPolicyConfig
+  case class ScaledProportionalThreshold(space: NetworkPolicySpace, scale: Double, seed: Option[Long])
+      extends NetworkPolicyConfig
 
   case class ExternalRLServer(underlying: NetworkPolicyConfig, space: NetworkPolicySpace, client: RayRLlibClient)
       extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
 
+    def space: Option[NetworkPolicySpace] = policy match {
+      case UserOptimal                                     => None
+      case RandomPolicy(space, seed)                       => Some(space)
+      case CongestionProportionalThreshold(space, seed)    => Some(space)
+      case ScaledProportionalThreshold(space, scale, seed) => Some(space)
+      case ExternalRLServer(underlying, space, client)     => Some(space)
+    }
+
     def buildGenerator: NetworkPolicySignalGenerator = policy match {
       case UserOptimal => NetworkPolicySignalGenerator.UserOptimalGenerator
-      case RandomPolicy(seed) =>
+      case RandomPolicy(space, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.RandomGenerator(rng)
-      case CongestionProportionalThreshold(seed) =>
+      case CongestionProportionalThreshold(space, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.ThresholdSamplingGenerator(rng)
-      case ScaledProportionalThreshold(scale, seed) =>
+      case ScaledProportionalThreshold(space, scale, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.ScaledThresholdSamplingGenerator(scale, rng)
       case ext: ExternalRLServer => ext.underlying.buildGenerator
@@ -89,11 +98,11 @@ object NetworkPolicyConfig {
     }
 
     def getLogData: String = policy match {
-      case UserOptimal                           => ""
-      case _: RandomPolicy                       => ""
-      case CongestionProportionalThreshold(_)    => ""
-      case ScaledProportionalThreshold(scale, _) => scale.toString
-      case ext: ExternalRLServer                 => ext.underlying.getLogData
+      case UserOptimal                              => ""
+      case _: RandomPolicy                          => ""
+      case CongestionProportionalThreshold(_, _)    => ""
+      case ScaledProportionalThreshold(_, scale, _) => scale.toString
+      case ext: ExternalRLServer                    => ext.underlying.getLogData
     }
   }
 }

@@ -12,6 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.{
   LocalAdjacencyGraphDualNetwork,
   LocalAdjacencyListFlowNetwork
 }
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 case class LBTCTrajectoryClusterBatching(
   omegaDelta: Double,
@@ -37,7 +38,7 @@ case class LBTCTrajectoryClusterBatching(
     roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     activeRouteRequests: List[AgentBatchData.RouteRequestData],
     currentTime: SimTime
-  ): IO[Option[List[(String, List[Request])]]] = {
+  ): IO[Option[BatchingFunction.BatchingResult]] = {
     roadNetwork match {
       case graph: LocalAdjacencyListFlowNetwork =>
         // find batching strategy using trajectory clustering algorithm
@@ -55,7 +56,7 @@ case class LBTCTrajectoryClusterBatching(
         } yield {
           (request, clusterId)
         }
-        val result = requestsByClusterId
+        val batches = requestsByClusterId
           .groupBy { case (_, clusterId) => clusterId }
           .map {
             case (clusterId, reqsAndClusterIds) =>
@@ -63,11 +64,25 @@ case class LBTCTrajectoryClusterBatching(
           }
           .toList
 
-        val avgClusterSize =
-          if (result.isEmpty) 0.0
-          else result.map { case (_, reqs) => reqs.size }.sum / result.size
-        logger.info(f"found ${result.size} request clusters with avg cluster size $avgClusterSize%.2f")
+        val edgesByClusterId = for {
+          edgeId    <- graph.edgeIds
+          clusterId <- clusterIdsByDualVertexId.get(VertexId(edgeId.value))
+        } yield (clusterId.toString, edgeId)
 
+        val edgeLookup = edgesByClusterId.foldLeft(Map.empty[String, List[EdgeId]]) {
+          case (acc, (batchId, edgeId)) =>
+            val prev = acc.getOrElse(batchId, List.empty)
+            val next = edgeId +: prev
+            acc.updated(batchId, next)
+        }
+
+        val avgClusterSize =
+          if (batches.isEmpty) 0.0
+          else batches.map { case (_, reqs) => reqs.size }.sum / batches.size
+        logger.info(f"found ${batches.size} request clusters with avg cluster size $avgClusterSize%.2f")
+
+        val lookup = (edgeId: EdgeId) => Option.empty
+        val result = BatchingFunction.BatchingResult(batches, edgeLookup)
         IO.pure(Some(result))
       case _ =>
         IO.raiseError(new NotImplementedError(s"can only run this on a LocalAdjacencyListFlowNetwork"))

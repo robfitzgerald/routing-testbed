@@ -10,11 +10,15 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import scala.util.Random
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 case class RandomBatching(
   batchWindow: SimTime,
   maxBatchSize: Int
 ) extends BatchingFunction {
+
+  val rng = new Random
 
   /**
     * takes the current batching strategy and any updates about replan-able agents, and spits out an
@@ -29,7 +33,7 @@ case class RandomBatching(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     activeRouteRequests: List[RouteRequestData],
     currentTime: SimTime
-  ): IO[Option[List[(String, List[Request])]]] = {
+  ): IO[Option[BatchingFunction.BatchingResult]] = {
     if (activeRouteRequests.isEmpty) IO.pure {
       None
     }
@@ -40,13 +44,14 @@ case class RandomBatching(
           case Nil         => None
           case newRequests =>
             // we have agents that we can replan to add to the nearest possible request time
-            Some {
-              val result: List[(String, List[Request])] = BatchSplittingFunction
-                .bySlidingWindow(newRequests, this.maxBatchSize)
-                .zipWithIndex
-                .map { case (reqs, id) => (id.toString, reqs.map { _.request }) }
-              result
-            }
+            val shuffled = rng.shuffle(newRequests)
+            val batches: List[(String, List[Request])] = BatchSplittingFunction
+              .bySlidingWindow(shuffled, this.maxBatchSize)
+              .zipWithIndex
+              .map { case (reqs, id) => (id.toString, reqs.map { _.request }) }
+            val table  = batches.map { case (batchId, reqs) => batchId -> reqs.map { _.location }.toList }.toMap
+            val result = BatchingFunction.BatchingResult(batches, table)
+            Some(result)
         }
       }
   }

@@ -12,6 +12,7 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 case class GreedyBatching(
   maxBatchSize: Int,
@@ -32,7 +33,7 @@ case class GreedyBatching(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     activeRouteRequests: List[AgentBatchData.RouteRequestData],
     currentTime: SimTime
-  ): IO[Option[List[(String, List[Request])]]] = {
+  ): IO[Option[BatchingFunction.BatchingResult]] = {
 
     val requestsWithCoordsIO = activeRouteRequests.traverse { d =>
       for {
@@ -63,7 +64,7 @@ case class GreedyBatching(
         }
     }
 
-    val resultIO: IO[Option[List[(String, List[Request])]]] = for {
+    val resultIO: IO[Option[BatchingFunction.BatchingResult]] = for {
       reqsWithCoords          <- requestsWithCoordsIO
       reqPairsSortedAscending <- reqPairsSortedAscendingIO
     } yield {
@@ -96,11 +97,17 @@ case class GreedyBatching(
         case _ => throw new IllegalStateException("prob time to refactor here")
       }
 
-      val result = clusters.clusters.map {
+      val batches = clusters.clusters.map {
         case (clusterId, cluster) =>
           (clusterId.toString, cluster.members.keys.toList)
       }.toList
 
+      val lookup = clusters.clusters.map {
+        case (cId, cluster) =>
+          val edgeIds = cluster.members.map { case (r, _) => r.location }
+          cId.toString -> edgeIds.toList
+      }
+      val result = BatchingFunction.BatchingResult(batches, lookup)
       Some(result)
     }
 

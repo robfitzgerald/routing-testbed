@@ -14,6 +14,8 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkZone
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 sealed trait BatchingFunctionConfig {
   def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction
@@ -21,7 +23,7 @@ sealed trait BatchingFunctionConfig {
 
 object BatchingFunctionConfig {
 
-  final case object NoBatching extends BatchingFunctionConfig {
+  case object NoBatching extends BatchingFunctionConfig {
 
     def build(coordinateGrid2: CoordinateGrid2): BatchingFunction =
       new BatchingFunction {
@@ -30,17 +32,18 @@ object BatchingFunctionConfig {
           roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
           activeRouteRequests: List[AgentBatchData.RouteRequestData],
           currentTime: SimTime
-        ): IO[Option[List[(String, List[Request])]]] = {
+        ): IO[Option[BatchingFunction.BatchingResult]] = {
           if (activeRouteRequests.isEmpty) IO(None)
           else {
             val singleBatch: List[(String, List[Request])] = List(("all", activeRouteRequests.map { _.request }))
-            IO(Some(singleBatch))
+            val dummyLookup                                = Map.empty[String, List[EdgeId]]
+            IO(Some(BatchingFunction.BatchingResult(singleBatch, dummyLookup)))
           }
         }
       }
   }
 
-  final case class Random(
+  case class Random(
     batchWindow: SimTime,
     maxBatchSize: Int
   ) extends BatchingFunctionConfig {
@@ -58,7 +61,7 @@ object BatchingFunctionConfig {
       batching.GreedyBatching(maxBatchSize, maxBatchRadius)
   }
 
-  final case class CoordinateGridGrouping(
+  case class CoordinateGridGrouping(
     maxBatchSize: Int,
     batchType: String // "o", "d", "od", "c", "cd"
   ) extends BatchingFunctionConfig {
@@ -76,7 +79,7 @@ object BatchingFunctionConfig {
       }
   }
 
-  final case class LabelBasedTrajectoryClustering(
+  case class LabelBasedTrajectoryClustering(
     omegaDelta: Double,
     omegaBeta: Double,
     omegaA: Double,
@@ -106,5 +109,17 @@ object BatchingFunctionConfig {
       maxRuntimeMilliseconds.getOrElse(DefaultMaxRuntimeMilliseconds),
       trajectoryTimeLimit
     )
+  }
+
+  case class NetworkZoneBatching(zones: Option[List[NetworkZone]]) extends BatchingFunctionConfig {
+
+    override def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction = {
+      zones match {
+        case Some(zs) => batching.NetworkZoneBatching(zs)
+        case None     => batching.NetworkZoneBatching(coordinateGrid2)
+      }
+
+    }
+
   }
 }

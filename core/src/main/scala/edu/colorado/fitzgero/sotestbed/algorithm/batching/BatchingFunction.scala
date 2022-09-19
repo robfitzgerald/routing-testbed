@@ -10,6 +10,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 trait BatchingFunction {
 
@@ -26,6 +27,15 @@ trait BatchingFunction {
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     activeRouteRequests: List[RouteRequestData],
     currentTime: SimTime
-  ): IO[Option[List[(String, List[Request])]]]
+  ): IO[Option[BatchingFunction.BatchingResult]]
+
+}
+
+object BatchingFunction {
+
+  final case class BatchingResult(
+    batches: List[(String, List[Request])],
+    zones: Map[String, List[EdgeId]]
+  )
 
 }

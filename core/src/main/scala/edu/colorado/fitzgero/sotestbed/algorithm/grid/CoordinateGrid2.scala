@@ -5,6 +5,13 @@ import scala.util.Try
 
 import org.locationtech.jts.geom.{Coordinate, GeometryFactory, Polygon, PrecisionModel}
 import org.locationtech.jts.index.strtree.STRtree
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import cats.implicits._
+import cats.effect.IO
+import cats.effect.unsafe.implicits.global
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 
 /**
   * revised coordinate grid which uses JTS polygons + spatial tree search
@@ -16,23 +23,15 @@ final class CoordinateGrid2(
   val xSteps: Int,
   val ySteps: Int,
   geometryFactory: GeometryFactory,
-  private val lookup: STRtree
+  private val lookup: STRtree,
+  val edgeLookup: Map[String, List[EdgeId]]
 ) {
 
   // return a coordinate grid which wraps the STRTree and
   // also makes it easy to print the grid as a CSV
 
-  def getGridId(x: Double, y: Double): Either[Error, String] = {
-    val result: Try[String] = for {
-      queryPoint  <- Try { this.geometryFactory.createPoint(new Coordinate(x, y)) }
-      queryResult <- Try { this.lookup.query(queryPoint.getEnvelopeInternal).asScala.head }
-      gridId      <- Try { queryResult.asInstanceOf[Polygon].getUserData.asInstanceOf[String] }
-    } yield {
-      gridId
-    }
-
-    result.toEither.left.map { t => new Error(s"failure getting grid idea for point ($x, $y)", t) }
-  }
+  def getGridId(x: Double, y: Double): Either[Error, String] =
+    CoordinateGrid2.getGridId(this.lookup, this.geometryFactory)(x, y)
 
   /**
     * pretty prints the batch information in a grid
@@ -79,7 +78,8 @@ object CoordinateGrid2 {
     minY: Double,
     maxY: Double,
     gridCellSideLength: Double,
-    srid: Int
+    srid: Int,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
   ): Either[Error, CoordinateGrid2] = {
     if (minX >= maxX) {
       Left(new Error(s"invalid min, max x values: $minX $maxX"))
@@ -87,7 +87,7 @@ object CoordinateGrid2 {
       Left(new Error(s"invalid min, max y values: $minY $maxY"))
     } else {
 
-      Try {
+      val initialGrid = Try {
         val gf = new GeometryFactory(new PrecisionModel(), srid)
 
         // steps between cells in the underlying coordinate system
@@ -116,9 +116,32 @@ object CoordinateGrid2 {
         }
         val gridCellsLookup: Map[String, GridCell] = gridCells.toMap
 
-        new CoordinateGrid2(gridCellsLookup, xSteps, ySteps, gf, strTree)
+        val lookupQueries = for {
+          edgeTriplet <- rn.edgeTriplets.unsafeRunSync
+          src         <- rn.vertex(edgeTriplet.src).unsafeRunSync
+          dst         <- rn.vertex(edgeTriplet.dst).unsafeRunSync
+          midpoint = LocalAdjacencyListFlowNetwork.midpoint(src.attribute, dst.attribute)
+        } yield (edgeTriplet.edgeId, midpoint)
 
+        val gridIdFn: (Double, Double) => Either[Error, String] = CoordinateGrid2.getGridId(strTree, gf)
+        val lookupResult = lookupQueries
+          .traverse {
+            case (edgeId, midpoint) =>
+              gridIdFn(midpoint.x, midpoint.y).map { batchId => (batchId, edgeId) }
+          }
+          .map {
+            _.groupBy { case (batchId, _) => batchId }
+              .map {
+                case (batchId, grouped) =>
+                  val (_, edgeIds) = grouped.unzip
+                  batchId -> edgeIds
+              }
+          }
+
+        lookupResult.map { edgeLookup => new CoordinateGrid2(gridCellsLookup, xSteps, ySteps, gf, strTree, edgeLookup) }
       }.toEither.left.map { t => new Error("failed building coordinate grid", t) }
+
+      initialGrid.flatten
     }
   }
 
@@ -129,6 +152,18 @@ object CoordinateGrid2 {
     * @return a grid cell id
     */
   def createGridId(x: Int, y: Int): String = s"$x#$y"
+
+  def getGridId(tree: STRtree, gf: GeometryFactory)(x: Double, y: Double): Either[Error, String] = {
+    val result: Try[String] = for {
+      queryPoint  <- Try { gf.createPoint(new Coordinate(x, y)) }
+      queryResult <- Try { tree.query(queryPoint.getEnvelopeInternal).asScala.head }
+      gridId      <- Try { queryResult.asInstanceOf[Polygon].getUserData.asInstanceOf[String] }
+    } yield {
+      gridId
+    }
+
+    result.toEither.left.map { t => new Error(s"failure getting grid idea for point ($x, $y)", t) }
+  }
 
   /**
     * inner data structure holding info about a grid cell

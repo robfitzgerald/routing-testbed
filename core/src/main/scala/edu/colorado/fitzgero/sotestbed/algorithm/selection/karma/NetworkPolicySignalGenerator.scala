@@ -6,6 +6,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.CongestionObser
 import edu.colorado.fitzgero.sotestbed.rllib.Action
 import cats.effect.IO
 import edu.colorado.fitzgero.sotestbed.rllib.AgentId
+import edu.colorado.fitzgero.sotestbed.rllib.Observation
 
 sealed trait NetworkPolicySignalGenerator
 
@@ -26,6 +27,7 @@ object NetworkPolicySignalGenerator {
         actions.map { case (agentId, action) => agentId.value -> generateSignal(action) }
       }
 
+    // todo: generalize to observations that have multiple features
     def generateSignal(sig: Double): NetworkPolicySignal =
       gen match {
         case UserOptimalGenerator =>
