@@ -5,10 +5,19 @@ import java.io.File
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy._
+import scala.util.Random
 
 sealed trait DriverPolicyConfig
 
 object DriverPolicyConfig {
+
+  /**
+    * a random bidding policy for a baseline or testing
+    * @param seed random seed value
+    * @param maxBid maximum allowed bid value. always superseded by the remaining
+    *               agent balance
+    */
+  case class RandomPolicy(seed: Option[Long], maxBid: Option[Karma]) extends DriverPolicyConfig
 
   /**
     * always bid this exact value
@@ -68,6 +77,12 @@ object DriverPolicyConfig {
 
     def buildDriverPolicy: Either[Error, DriverPolicy] = {
       driverPolicyConfig match {
+        case RandomPolicy(seed, maxBid) =>
+          val rng = seed match {
+            case None       => new Random()
+            case Some(seed) => new Random(seed)
+          }
+          Right(DriverPolicy.RandomPolicy(rng, maxBid))
         case Fixed(bid)               => Right(DriverPolicy.Fixed(bid))
         case p: DelayWithKarmaMapping => Right(DriverPolicy.DelayWithKarmaMapping(p.unit, p.maxBid))
         case p: DelayProportional     => Right(DriverPolicy.DelayProportional(p.maxBid))
