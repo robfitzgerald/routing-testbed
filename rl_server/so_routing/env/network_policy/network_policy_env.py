@@ -7,7 +7,9 @@ from gym.spaces import Tuple
 from ray.rllib import MultiAgentEnv
 from ray.rllib.env import GroupAgentsWrapper
 from ray.rllib.env.external_multi_agent_env import ExternalMultiAgentEnv
-from rllib.env import space_v1
+from rl_server.so_routing.env import space_v1
+
+# deprecated
 
 
 def load_grouping(grouping_path):
@@ -53,7 +55,8 @@ def create_so_routing_env(clients: int,
 
     # construct as an ExternalMultiAgentEnv
     env = ExternalMultiAgentEnv(act_space, obs_space, clients)
-    env = GroupAgentsWrapper(env, groups=grouping, obs_space=obs_space, act_space=act_space)
+    env = GroupAgentsWrapper(env, groups=grouping,
+                             obs_space=obs_space, act_space=act_space)
 
     # env.groups  # defined, comes from GroupAgentsWrapper
 
