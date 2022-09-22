@@ -45,6 +45,7 @@ object NetworkPolicySpace {
       batchZoneLookup: Map[String, List[EdgeId]]
     ): IO[Observation] = nps match {
       case ZonalSpeedDelta(aggregation) =>
+        // for each zone, collect the network edge attributes and apply the chosen aggregation function
         val speedByZone = batchZoneLookup.toList.traverse {
           case (batchId, zoneEdges) =>
             for {

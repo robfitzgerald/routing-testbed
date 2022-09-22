@@ -64,6 +64,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
           finalTravelTime = row.finalTravelTime,
           finalDistance = row.finalDistance,
           finalBankBalance = balance,
+          finalReplannings = row.replannings,
           networkPolicyConfig = networkPolicyConfig
         )
       } yield (row.agentId, obs)

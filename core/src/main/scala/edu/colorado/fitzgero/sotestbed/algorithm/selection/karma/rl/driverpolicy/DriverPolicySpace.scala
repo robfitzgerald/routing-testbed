@@ -13,13 +13,10 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
 import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.BernoulliDistributionSampling
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.BetaDistributionSampling
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.ThresholdSampling
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal.UserOptimal
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.RandomPolicy
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionThreshold
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 
@@ -133,13 +130,15 @@ object DriverPolicySpace {
           IO.pure(List(batch.size))
         case NetworkSignal =>
           networkSignal match {
-            case BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
+            case NetworkPolicySignal.BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
               IO.pure(List(thresholdPercent, bernoulliPercent))
-            case BetaDistributionSampling(dist) =>
+            case NetworkPolicySignal.BetaDistributionSampling(dist) =>
               IO.pure(List(dist.getAlpha, dist.getBeta))
-            case ThresholdSampling(thresholdPercent, random) =>
+            case NetworkPolicySignal.ThresholdSampling(thresholdPercent, random) =>
               IO.pure(List(thresholdPercent))
-            case UserOptimal =>
+            case NetworkPolicySignal.WeightedSampleWithoutReplacement(thresholdPercent, random) =>
+              IO.pure(List(thresholdPercent))
+            case NetworkPolicySignal.UserOptimal =>
               val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
               IO.raiseError(new Error(msg))
           }
@@ -175,6 +174,7 @@ object DriverPolicySpace {
       finalTravelTime: SimTime,
       finalDistance: Meters,
       finalBankBalance: Karma,
+      finalReplannings: Int,
       networkPolicyConfig: NetworkPolicyConfig
     ): IO[List[Double]] = dps match {
       case Balance =>
@@ -206,8 +206,7 @@ object DriverPolicySpace {
       case RemainingTravelTimeEstimate =>
         IO.pure(List(0.0))
       case ReplanningEvents =>
-        IO.raiseError(new NotImplementedError)
-      // IO.pure(List(0.0)) // would it be better if we stored the final count instead YES
+        IO.pure(List(finalReplannings.toDouble))
       case Combined(features) =>
         features.flatTraverse(
           _.encodeFinalObservation(
@@ -215,6 +214,7 @@ object DriverPolicySpace {
             finalTravelTime,
             finalDistance,
             finalBankBalance,
+            finalReplannings,
             networkPolicyConfig
           )
         )

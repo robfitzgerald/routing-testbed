@@ -27,10 +27,10 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
 import scala.collection.mutable
 import scala.util.Random
-import scala.reflect.macros.NonemptyAttachments
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse.StartEpisodeResponse
 
 import cats.effect.unsafe.implicits.global
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ExternalRLServer
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -68,7 +68,7 @@ case class KarmaSelectionAlgorithm(
 
   // in the case of a MultiAgentPolicy, we create exactly one episode per experiment
   // and start the episode now
-  val multiAgentEpisodeId: Option[EpisodeId] = driverPolicy match {
+  val multiAgentDriverPolicyEpisodeId: Option[EpisodeId] = driverPolicy match {
     case RLBasedDriverPolicy(structure, client) =>
       structure match {
         case _: MultiAgentPolicy =>
@@ -77,6 +77,15 @@ case class KarmaSelectionAlgorithm(
           Some(episodeId)
         case _: SingleAgentPolicy => None
       }
+    case _ => None
+  }
+
+  val multiAgentNetworkPolicyEpisodeId: Option[EpisodeId] = networkPolicy match {
+    case ExternalRLServer(underlying, space, client) =>
+      // only multi-agent
+      val episodeId = EpisodeId()
+      KarmaSelectionRlOps.startMultiAgentEpisode(client, Some(episodeId)).unsafeRunSync()
+      Some(episodeId)
     case _ => None
   }
 
@@ -105,7 +114,8 @@ case class KarmaSelectionAlgorithm(
         logger.info(s"sending final messages to RL server")
         structure match {
           case multiAgentPolicy: MultiAgentPolicy =>
-            val epId = IO.fromOption(this.multiAgentEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
+            val epId =
+              IO.fromOption(this.multiAgentDriverPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
             for {
               episodeId <- epId
               _ <- KarmaSelectionRlOps.endMultiAgentEpisode(
@@ -275,9 +285,8 @@ case class KarmaSelectionAlgorithm(
               bank,
               activeAgentHistory,
               roadNetwork,
-              costFunction,
               episodePrefix,
-              multiAgentEpisodeId,
+              multiAgentDriverPolicyEpisodeId,
               Some((req, res) =>
                 IO {
                   clientPw.write(req.asJson.noSpaces.toString + "\n")

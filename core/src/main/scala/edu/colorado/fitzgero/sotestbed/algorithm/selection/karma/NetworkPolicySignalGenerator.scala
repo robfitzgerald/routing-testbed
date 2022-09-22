@@ -16,6 +16,8 @@ object NetworkPolicySignalGenerator {
 
   case class RandomGenerator(rng: Random) extends NetworkPolicySignalGenerator
 
+  case class WeightedSamplingGenerator(rng: Random) extends NetworkPolicySignalGenerator
+
   case class ThresholdSamplingGenerator(rng: Random) extends NetworkPolicySignalGenerator
 
   case class ScaledThresholdSamplingGenerator(scale: Double, rng: Random) extends NetworkPolicySignalGenerator
@@ -36,6 +38,10 @@ object NetworkPolicySignalGenerator {
           val pct    = rng.nextDouble
           val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
           signal
+        case WeightedSamplingGenerator(rng) =>
+          val pct    = math.min(1.0, math.max(0.0, sig))
+          val signal = NetworkPolicySignal.WeightedSampleWithoutReplacement(pct, rng)
+          signal
         case ThresholdSamplingGenerator(rng) =>
           val pct    = math.min(1.0, math.max(0.0, sig))
           val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
@@ -53,6 +59,10 @@ object NetworkPolicySignalGenerator {
         case RandomGenerator(rng) =>
           val pct    = rng.nextDouble
           val signal = NetworkPolicySignal.ThresholdSampling(pct, rng)
+          signal
+        case WeightedSamplingGenerator(rng) =>
+          val pct    = math.min(1.0, math.max(0.0, obs.increaseAccumulated))
+          val signal = NetworkPolicySignal.WeightedSampleWithoutReplacement(pct, rng)
           signal
         case ThresholdSamplingGenerator(rng) =>
           val pct    = math.min(1.0, math.max(0.0, obs.increaseAccumulated))

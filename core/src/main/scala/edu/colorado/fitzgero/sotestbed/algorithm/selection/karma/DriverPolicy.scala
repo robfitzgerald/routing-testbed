@@ -134,7 +134,6 @@ object DriverPolicy extends LazyLogging {
       bank: Map[String, Karma],
       activeAgentHistory: ActiveAgentHistory,
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
-      costFunction: EdgeBPR => Cost,
       episodePrefix: String,
       episodeId: Option[EpisodeId],
       logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None

@@ -3,16 +3,20 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 import scala.math.Numeric.Implicits.infixNumericOps
 import scala.util.Random
 
+import edu.colorado.fitzgero.sotestbed.util.ReservoirSampling
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
 import org.apache.commons.math.distribution.{BetaDistribution, BetaDistributionImpl}
 import com.typesafe.scalalogging.LazyLogging
+import scala.annotation.tailrec
 
 sealed trait NetworkPolicySignal
 
 object NetworkPolicySignal extends LazyLogging {
 
   case object UserOptimal extends NetworkPolicySignal
+
+  case class WeightedSampleWithoutReplacement(thresholdPercent: Double, random: Random) extends NetworkPolicySignal
 
   /**
     * a system-optimal policy instance where a random system-optimal strategy is
@@ -86,11 +90,12 @@ object NetworkPolicySignal extends LazyLogging {
     * @return
     */
   def getLogHeader(networkPolicy: NetworkPolicyConfig): String = networkPolicy match {
-    case NetworkPolicyConfig.UserOptimal                        => ""
-    case _: NetworkPolicyConfig.RandomPolicy                    => "p"
-    case _: NetworkPolicyConfig.CongestionProportionalThreshold => "p"
-    case _: NetworkPolicyConfig.ScaledProportionalThreshold     => "p"
-    case ext: NetworkPolicyConfig.ExternalRLServer              => getLogHeader(ext.underlying)
+    case NetworkPolicyConfig.UserOptimal                    => ""
+    case _: NetworkPolicyConfig.RandomPolicy                => "p"
+    case _: NetworkPolicyConfig.CongestionWeightedSampling  => "p"
+    case _: NetworkPolicyConfig.CongestionThreshold         => "p"
+    case _: NetworkPolicyConfig.ScaledProportionalThreshold => "p"
+    case ext: NetworkPolicyConfig.ExternalRLServer          => getLogHeader(ext.underlying)
   }
 
   implicit class NetworkPolicySignalOps(sig: NetworkPolicySignal) {
@@ -100,8 +105,9 @@ object NetworkPolicySignal extends LazyLogging {
       * @return
       */
     def getLogData: String = sig match {
-      case NetworkPolicySignal.UserOptimal => ""
-      case bernie: ThresholdSampling       => s"${bernie.thresholdPercent}"
+      case NetworkPolicySignal.UserOptimal                         => ""
+      case w: NetworkPolicySignal.WeightedSampleWithoutReplacement => s"${w.thresholdPercent}"
+      case bernie: ThresholdSampling                               => s"${bernie.thresholdPercent}"
       // not yet implemented as [[NetworkPolicyConfig]] types:
       case bernie: BernoulliDistributionSampling => s"${bernie.thresholdPercent},${bernie.bernoulliPercent}"
       case beta: BetaDistributionSampling        => s"${beta.dist.getAlpha},${beta.dist.getBeta}"
@@ -116,37 +122,22 @@ object NetworkPolicySignal extends LazyLogging {
           case UserOptimal =>
             pickPaths(bids, alts, uoPathSelection)
 
-//            def weighted_sample_without_replacement(population, weights, k, rng=random):
-          //    v = [rng.random() ** (1 / w) for w in weights]
-          //    order = sorted(range(len(population)), key=lambda i: v[i])
-          //    return [population[i] for i in order[-k:]]
+          case WeightedSampleWithoutReplacement(thresh, rng) =>
+            val numAgentsSo = percentToDiscreteRange(thresh, alts.size)
+            val bidsWithBidValue = for {
+              bid <- bids
+            } yield (bid, bid.value.value.toDouble)
+            val (winners, losers) = ReservoirSampling.aExpJ(rng, bidsWithBidValue, numAgentsSo)
+            val (winBids, _)      = winners.unzip
+            val (loseBids, _)     = losers.unzip
+            pickPathsForWinnersAndLosers(winBids, loseBids, alts, rng)
 
           case sop: ThresholdSampling =>
             val bidsLowestToHighest = bids.sortBy { _.value }
             val numAgentsSo         = percentToDiscreteRange(sop.thresholdPercent, alts.size)
             val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
             val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
-
-            // pick a random path for the redirected agents from range [1, n)
-            // as path 0 is the true shortest path
-            val routesRedirected = pickPaths(
-              bidsSo,
-              alts,
-              (bid, paths) => {
-                if (paths.length == 1) {
-                  logger.warn(s"bid only has 1 path, must choose it: $bid")
-                  (bid, 0, paths.head)
-                } else {
-                  val selectedPathIdx = sop.random.nextInt(paths.length - 1) + 1
-                  val path            = paths(selectedPathIdx)
-                  (bid, selectedPathIdx, path)
-
-                }
-              }
-            )
-            val routesShortestPath = pickPaths(bidsUo, alts, uoPathSelection)
-            val result             = routesRedirected ++ routesShortestPath
-            result
+            pickPathsForWinnersAndLosers(bidsUo, bidsSo, alts, sop.random)
 
           case sopad: BernoulliDistributionSampling =>
             val bidsLowestToHighest = bids.sortBy { _.value }
@@ -218,6 +209,45 @@ object NetworkPolicySignal extends LazyLogging {
       bid   <- bids
       paths <- alts.get(bid.request)
     } yield fn(bid, paths)
+    result
+  }
+
+  /**
+    * resolves the final path selection for bids which are winners and losers of the auction
+    *
+    * @param winners agents who will be given user-optimal routes
+    * @param bidsSo agents who will be given system-optimizing routes
+    * @param alts alt paths to select from
+    * @param random random generator
+    * @return path selection by bid as (Bid, path index, path) tuples
+    */
+  def pickPathsForWinnersAndLosers(
+    winners: List[Bid],
+    losers: List[Bid],
+    alts: Map[Request, List[Path]],
+    random: Random
+  ): List[(Bid, Int, Path)] = {
+    // pick a random path for the redirected agents from range [1, n)
+    // as path 0 is the true shortest path
+    val routesRedirected = pickPaths(
+      losers,
+      alts,
+      (bid, paths) => {
+        if (paths.length == 1) {
+          logger.warn(s"bid only has 1 path, must choose it: $bid")
+          (bid, 0, paths.head)
+        } else {
+          // todo: inject a function here to select _which_ idx for
+          // sampling methods that impact the "degree" of SO for the agents
+          val selectedPathIdx = random.nextInt(paths.length - 1) + 1
+          val path            = paths(selectedPathIdx)
+          (bid, selectedPathIdx, path)
+
+        }
+      }
+    )
+    val routesShortestPath = pickPaths(winners, alts, uoPathSelection)
+    val result             = routesRedirected ++ routesShortestPath
     result
   }
 

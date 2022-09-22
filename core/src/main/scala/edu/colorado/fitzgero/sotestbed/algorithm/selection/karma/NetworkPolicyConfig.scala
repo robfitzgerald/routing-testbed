@@ -27,6 +27,14 @@ object NetworkPolicyConfig {
   case class RandomPolicy(space: NetworkPolicySpace, seed: Option[Long]) extends NetworkPolicyConfig
 
   /**
+    * use a weighted sampling without replacement method for assignment
+    *
+    * @param space environment for the controller to control
+    * @param seed optional starting seed value
+    */
+  case class CongestionWeightedSampling(space: NetworkPolicySpace, seed: Option[Long]) extends NetworkPolicyConfig
+
+  /**
     * generates a network signal that is a Bernoulli distribution, where
     * p is the proportional increase in travel times due to current
     * congestion effects, as measured by the chosen cost/flow function
@@ -39,7 +47,7 @@ object NetworkPolicyConfig {
     *
     * @param seed random number generator seed value
     */
-  case class CongestionProportionalThreshold(space: NetworkPolicySpace, seed: Option[Long]) extends NetworkPolicyConfig
+  case class CongestionThreshold(space: NetworkPolicySpace, seed: Option[Long]) extends NetworkPolicyConfig
 
   /**
     * generates a network signal that is a Bernoulli distribution, where
@@ -70,7 +78,8 @@ object NetworkPolicyConfig {
     def space: Option[NetworkPolicySpace] = policy match {
       case UserOptimal                                     => None
       case RandomPolicy(space, seed)                       => Some(space)
-      case CongestionProportionalThreshold(space, seed)    => Some(space)
+      case CongestionWeightedSampling(space, seed)         => Some(space)
+      case CongestionThreshold(space, seed)                => Some(space)
       case ScaledProportionalThreshold(space, scale, seed) => Some(space)
       case ExternalRLServer(underlying, space, client)     => Some(space)
     }
@@ -80,7 +89,10 @@ object NetworkPolicyConfig {
       case RandomPolicy(space, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.RandomGenerator(rng)
-      case CongestionProportionalThreshold(space, seed) =>
+      case CongestionWeightedSampling(space, seed) =>
+        val rng = new Random(seed.getOrElse(System.currentTimeMillis))
+        NetworkPolicySignalGenerator.WeightedSamplingGenerator(rng)
+      case CongestionThreshold(space, seed) =>
         val rng = new Random(seed.getOrElse(System.currentTimeMillis))
         NetworkPolicySignalGenerator.ThresholdSamplingGenerator(rng)
       case ScaledProportionalThreshold(space, scale, seed) =>
@@ -90,17 +102,19 @@ object NetworkPolicyConfig {
     }
 
     def logHeader: String = policy match {
-      case UserOptimal                        => ""
-      case _: RandomPolicy                    => ""
-      case _: CongestionProportionalThreshold => ""
-      case _: ScaledProportionalThreshold     => "scale"
-      case ext: ExternalRLServer              => ext.underlying.logHeader
+      case UserOptimal                    => ""
+      case _: RandomPolicy                => ""
+      case _: CongestionWeightedSampling  => ""
+      case _: CongestionThreshold         => ""
+      case _: ScaledProportionalThreshold => "scale"
+      case ext: ExternalRLServer          => ext.underlying.logHeader
     }
 
     def getLogData: String = policy match {
       case UserOptimal                              => ""
       case _: RandomPolicy                          => ""
-      case CongestionProportionalThreshold(_, _)    => ""
+      case _: CongestionWeightedSampling            => ""
+      case CongestionThreshold(_, _)                => ""
       case ScaledProportionalThreshold(_, scale, _) => scale.toString
       case ext: ExternalRLServer                    => ext.underlying.getLogData
     }
