@@ -13,16 +13,16 @@ object ReservoirSampling extends LazyLogging {
     * [[see https://en.wikipedia.org/wiki/Reservoir_sampling#Algorithm_A-ExpJ]]
     *
     * @param rng random generator
-    * @param populationWithWeights items with their non-negative numeric weight values
+    * @param population items with their non-negative numeric weight values
     * @param k number of items to sample
     * @return the population partitioned into a sample population and the remaining un-sampled population
     */
   def aExpJ[T](
     rng: Random,
-    populationWithWeights: List[(T, Double)],
+    population: List[(T, Double)],
     k: Int
   ): (List[(T, Double)], List[(T, Double)]) = {
-    if (populationWithWeights.lengthCompare(k) <= 0) (populationWithWeights, List.empty)
+    if (population.lengthCompare(k) <= 0) (population, List.empty)
     else {
       // create a min priority queue over the weighted population
       implicit val ord: Ordering[(T, Double)] = Ordering.by { case (_, w) => -w }
@@ -49,7 +49,7 @@ object ReservoirSampling extends LazyLogging {
       }
 
       // fill the reservoir with an initial solution
-      val initialSolutionEntries = populationWithWeights.take(k).map { case (t, w) => (t, computeKey(w)) }
+      val initialSolutionEntries = population.take(k).map { case (t, w) => (t, computeKey(w)) }
       reservoir.addAll(initialSolutionEntries)
 
       // step through the remaining population and make updates to the solution queue, keeping
@@ -78,7 +78,7 @@ object ReservoirSampling extends LazyLogging {
         }
       }
 
-      val notSampled = _solve(recomputeX(), populationWithWeights.drop(k))
+      val notSampled = _solve(recomputeX(), population.drop(k))
       (reservoir.toList, notSampled)
     }
 
