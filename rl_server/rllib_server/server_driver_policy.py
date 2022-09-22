@@ -228,7 +228,7 @@ def run():
     }
 
     # DQN settings if we are training
-    if args.run == "DQN" and not args.as_test:
+    if not args.as_test:
         # Example of using DQN (supports off-policy actions).
         config.update(
             {
