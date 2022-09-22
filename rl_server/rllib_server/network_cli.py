@@ -44,6 +44,13 @@ parser.add_argument(
     help="The RLlib-registered algorithm to use.",
 )
 parser.add_argument(
+    "--mixer",
+    type=str,
+    default="qmix",
+    choices=["qmix", "vdn", "none"],
+    help="The mixer model to use.",
+)
+parser.add_argument(
     "--framework",
     choices=["tf", "tf2", "tfe", "torch"],
     default="torch",

@@ -24,11 +24,13 @@ You may connect more than one policy client to any open listen port.
 
 
 import json
+import os
 import time
 
 import ray
 from ray import air, tune
 from ray.rllib.algorithms.registry import get_algorithm_class
+from ray.rllib.algorithms.qmix import QMixConfig
 from rl_server.rllib_server.driver_cli import parser
 from rl_server.so_routing.env.network_policy.network_obs_space import NetworkObsSpace, build_observation_space
 
@@ -106,8 +108,7 @@ def run():
         print(
             f'grouping enumeration with {len(agents_list)} agents in {len(grouping)} groups')
     else:
-        raise KeyError(
-            'must include either --grouping-file or --n-agents argument')
+        print('no grouping provided, expecting single agent queries')
 
     obs_space = build_observation_space(o_names, agents_list)
     act_space = args.action_space.action_space(agents_list)
@@ -235,34 +236,56 @@ def run():
         "multiagent": multiagent
     }
 
-    # DQN settings if we are training
-    if not args.as_test:
-        # Example of using DQN (supports off-policy actions).
-        config.update(
-            {
-                "explore": not args.as_test,
-                "exploration_config": {
-                    # Exploration sub-class by name or full path to module+class
-                    # (e.g. “ray.rllib.utils.exploration.epsilon_greedy.EpsilonGreedy”)
-                    "type": "EpsilonGreedy",
-                    # Parameters for the Exploration class' constructor:
-                    "initial_epsilon": 1.0,
-                    "final_epsilon": 0.02,
-                    "warmup_timesteps": 1200,  # approx. 2 days
-                    # Timesteps over which to anneal epsilon.
-                    "epsilon_timesteps": 12000,  # approx. 20 days
-                },
-                # "learning_starts": 0,
-                # "timesteps_per_iteration": 200,
-                # "n_step": 3,
-                # "rollout_fragment_length": 200,
-                # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
-            }
+    if args.run == "QMIX":
+        alg_config = (
+            QMixConfig()
+            .training(mixer=args.mixer, train_batch_size=32)
+            .rollouts(num_rollout_workers=0, rollout_fragment_length=4)
+            .exploration(
+                exploration_config={
+                    "final_epsilon": 0.0,
+                }
+            )
+            # .environment(
+            #     env="grouped_twostep",
+            #     env_config={
+            #         "separate_state_space": True,
+            #         "one_hot_state_encoding": True,
+            #     },
+            # )
+            .resources(num_gpus=int(os.environ.get("RLLIB_NUM_GPUS", "0")))
         )
-        # config["model"] = {
-        #     "fcnet_hiddens": [64],
-        #     "fcnet_activation": "linear",
-        # }
+        alg_config = alg_config.to_dict()
+        config.update(alg_config)
+
+    # PPO settings if we are training
+    # if not args.as_test:
+    #     # Example of using DQN (supports off-policy actions).
+    #     config.update(
+    #         {
+    #             # "explore": not args.as_test,
+    #             # "exploration_config": {
+    #             #     # Exploration sub-class by name or full path to module+class
+    #             #     # (e.g. “ray.rllib.utils.exploration.epsilon_greedy.EpsilonGreedy”)
+    #             #     "type": "EpsilonGreedy",
+    #             #     # Parameters for the Exploration class' constructor:
+    #             #     "initial_epsilon": 1.0,
+    #             #     "final_epsilon": 0.02,
+    #             #     "warmup_timesteps": 1200,  # approx. 2 days
+    #             #     # Timesteps over which to anneal epsilon.
+    #             #     "epsilon_timesteps": 12000,  # approx. 20 days
+    #             # },
+    #             # "learning_starts": 0,
+    #             # "timesteps_per_iteration": 200,
+    #             # "n_step": 3,
+    #             # "rollout_fragment_length": 200,
+    #             # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
+    #         }
+    #     )
+    #     # config["model"] = {
+    #     #     "fcnet_hiddens": [64],
+    #     #     "fcnet_activation": "linear",
+    #     # }
 
     # Manual training loop (no Ray tune), allows for using checkpoint
     if args.no_tune:
