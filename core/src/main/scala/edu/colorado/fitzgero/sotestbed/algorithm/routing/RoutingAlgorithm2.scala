@@ -24,7 +24,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionThreshold
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ExternalRLServer
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.RandomPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.UserOptimal
@@ -37,6 +37,7 @@ import edu.colorado.fitzgero.sotestbed.rllib.Observation
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
 import edu.colorado.fitzgero.sotestbed.rllib.Observation.MultiAgentObservation
 import edu.colorado.fitzgero.sotestbed.rllib.Observation.SingleAgentObservation
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicySpace
 
 /**
   *
@@ -247,6 +248,7 @@ object RoutingAlgorithm2 {
       case k: KarmaSelectionAlgorithm =>
         // generate a signal for each batch
         val batchesWithSignals: IO[Map[String, NetworkPolicySignal]] = k.networkPolicy match {
+          case UserOptimal                                 => IO.pure(Map.empty)
           case ExternalRLServer(underlying, space, client) =>
             // v2: special handling for Karma-based selection
             // that integrates with an external control module when generating
@@ -255,18 +257,19 @@ object RoutingAlgorithm2 {
             // we assume here that everything is correctly configured so that batching
             // was informed by the NetworkPolicySpace and therefore ZoneIds match.
             for {
-              epId <- IO.fromOption(k.multiAgentEpisodeId)(new Error("missing episode id"))
+              epId <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
               obs  <- space.encodeObservation(roadNetwork, zoneLookup)
               res  <- client.sendOne(PolicyClientRequest.GetActionRequest(epId, obs))
               act  <- res.getAction
-              sigs <- k.gen.generateSignalsForZones(act)
+              sigs <- space.decodeAction(act, k.gen)
             } yield sigs
 
-          case UserOptimal => IO.pure(Map.empty)
-
           case otherPolicy =>
-            val spaceResult =
-              IO.fromOption(otherPolicy.space)(new Error(s"policy $otherPolicy expected to have a NetworkPolicySpace"))
+            val spaceResult: IO[NetworkPolicySpace] =
+              IO.fromOption(otherPolicy.space) {
+                val msg = s"internal error: policy $otherPolicy expected to have a NetworkPolicySpace"
+                new Error(msg)
+              }
 
             for {
               space <- spaceResult

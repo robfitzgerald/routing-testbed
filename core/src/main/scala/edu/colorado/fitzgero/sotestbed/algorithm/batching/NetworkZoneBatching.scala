@@ -60,8 +60,7 @@ final case class NetworkZoneBatching[T](
               batchId -> requests
           }
           .toList
-        val lookup = batches.map { case (b, rs) => b -> rs.map { _.location } }.toMap
-        val result = BatchingFunction.BatchingResult(batches, lookup)
+        val result = BatchingFunction.BatchingResult(batches, zones)
         IO.pure(Some(result))
     }
   }

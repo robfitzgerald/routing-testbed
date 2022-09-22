@@ -55,7 +55,7 @@ final case class BatchingManager(
             }
           case data: SOAgentArrivalData =>
             // log this data and stop tracking this trip
-            storedHistory.getOldestRequest(data.agentId) match {
+            storedHistory.observedRouteRequestData.get(data.agentId) match {
               case None =>
                 // agent hasn't been in the system long enough to have been
                 // replanned at all
@@ -66,9 +66,9 @@ final case class BatchingManager(
                   logger.info(msg)
                   b
                 }
-              case Some(oldestData) =>
+              case Some(agentData) =>
                 for {
-                  originalTT <- IO.fromEither(oldestData.overallTravelTimeEstimate)
+                  originalTT <- IO.fromEither(agentData.first.data.overallTravelTimeEstimate)
                   _ = IO.pure {
                     if (originalTT > SimTime(3600)) {
                       storedHistory.observedRouteRequestData.get(data.agentId).foreach { stored =>
@@ -105,7 +105,8 @@ final case class BatchingManager(
                     }
                   }
                   _ <- IO.fromTry(Try {
-                    val row = TripLogRow(data, originalTT)
+                    val replannings = agentData.replanningEvents
+                    val row         = TripLogRow(data, originalTT, replannings)
                     this.tripLog.write(row.toString + "\n")
                     this.tripLog.flush()
                   })

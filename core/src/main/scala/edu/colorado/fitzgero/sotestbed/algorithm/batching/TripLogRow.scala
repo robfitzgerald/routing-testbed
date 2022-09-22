@@ -11,8 +11,8 @@ final case class TripLogRow(
   arrivalTime: SimTime,
   originalTravelTimeEstimate: SimTime,
   finalTravelTime: SimTime,
-  // originalDistanceEstimate: Meters,
-  finalDistance: Meters
+  finalDistance: Meters,
+  replannings: Int
 ) {
 
   def travelTimeDiff: SimTime = this.originalTravelTimeEstimate - this.finalTravelTime
@@ -26,14 +26,15 @@ final case class TripLogRow(
     */
   override def toString =
     f"$agentId,$departureTime,$arrivalTime,$originalTravelTimeEstimate," +
-      s"$finalTravelTime,$finalDistance"
+      s"$finalTravelTime,$finalDistance,$replannings"
 }
 
 object TripLogRow {
 
   def apply(
     row: AgentBatchData.SOAgentArrivalData,
-    originalTravelTimeEstimate: SimTime
+    originalTravelTimeEstimate: SimTime,
+    replannings: Int
     // originalDistanceEstimate: Meters
   ): TripLogRow =
     TripLogRow(
@@ -42,7 +43,8 @@ object TripLogRow {
       arrivalTime = row.arrivalTime,
       originalTravelTimeEstimate = originalTravelTimeEstimate,
       finalTravelTime = row.finalTravelTime,
-      finalDistance = row.finalDistance
+      finalDistance = row.finalDistance,
+      replannings = replannings
     )
 
   val Columns = List(
@@ -51,7 +53,8 @@ object TripLogRow {
     "arrivalTime",
     "originalTravelTimeEstimate",
     "finalTravelTime",
-    "finalDistance"
+    "finalDistance",
+    "replannings"
   )
   def Header = Columns.toList.mkString(",")
 
@@ -62,7 +65,8 @@ object TripLogRow {
       "arrivalTime",
       "originalTravelTimeEstimate",
       "finalTravelTime",
-      "finalDistance"
+      "finalDistance",
+      "replannings"
     ) { TripLogRow.apply }
 
   def enc: HeaderEncoder[TripLogRow] =
@@ -72,7 +76,8 @@ object TripLogRow {
       "arrivalTime",
       "originalTravelTimeEstimate",
       "finalTravelTime",
-      "finalDistance"
+      "finalDistance",
+      "replannings"
     ) { row =>
       (
         row.agentId,
@@ -80,7 +85,8 @@ object TripLogRow {
         row.arrivalTime.toString,
         row.originalTravelTimeEstimate.toString,
         row.finalTravelTime.toString,
-        row.finalDistance.value.toString
+        row.finalDistance.value.toString,
+        row.replannings.toString
       )
     }
 
