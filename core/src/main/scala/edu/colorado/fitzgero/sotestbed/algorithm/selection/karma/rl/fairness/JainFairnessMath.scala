@@ -15,6 +15,8 @@ object JainFairnessMath {
     case object Unbiased extends CovType
   }
 
+  val StepOverZero: Double = 0.0000000001
+
   /**
     * formula 1: compute the global fairness for a sequence of allocations
     * (the original Jain Fairness Index)
@@ -23,11 +25,9 @@ object JainFairnessMath {
     * @return the fairness of the allocations
     */
   def fairness(xs: Seq[Double], covType: CovType = CovType.Biased): Option[Double] = {
-    cov(xs, covType).flatMap {
-      case c if c == -1.0 => None
-      case c =>
-        val fairness = 1.0 / (1.0 + math.pow(c, 2.0))
-        Some(fairness)
+    cov(xs, covType).map { c =>
+      val fairness = 1.0 / (1.0 + math.pow(c, 2.0))
+      fairness
     }
   }
 
@@ -39,11 +39,13 @@ object JainFairnessMath {
     * @return the fairness perceived by each allocation
     */
   def userFairness(xs: Seq[Double]): Option[Seq[Double]] =
-    fairAllocationMark(xs).flatMap {
-      case fam if fam == 0.0 => Some(xs.map { _ => 1.0 })
+    fairAllocationMark(xs).map {
+      case fam if fam == 0.0 =>
+        // if this is zero, then the sum of all allocations was 0
+        // so this is a trivial edge case
+        xs.map { _ => 1.0 }
       case fam =>
-        val userFairness = xs.map { _ / fam }
-        Some(userFairness)
+        xs.map { _ / fam }
     }
 
   /**
@@ -64,10 +66,10 @@ object JainFairnessMath {
     }
 
   def variance(xs: Seq[Double]): Option[Double] =
-    mean(xs).flatMap(m => mean(xs.map(x => Math.pow(x - m, 2))))
+    mean(xs).flatMap(m => mean(xs.map(x => math.pow(x - m, 2))))
 
   def variance(xs: Seq[Double], µ: Double): Option[Double] = {
-    val vars = xs.map(x => Math.pow(x - µ, 2))
+    val vars = xs.map(x => math.pow(x - µ, 2))
     mean(vars)
   }
 
@@ -97,7 +99,7 @@ object JainFairnessMath {
     val c_v_hat = for {
       µ <- mean(xs)
       o <- stdev(xs, µ)
-    } yield if (µ > 0.0) o / µ else 0.0
+    } yield if (µ == 0.0) o / StepOverZero else o / µ
     covType match {
       case Biased =>
         c_v_hat

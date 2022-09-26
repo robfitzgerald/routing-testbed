@@ -43,7 +43,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     */
   def endOfEpisodeRewardByTripComparison(
     tripLogs: List[TripLogRow],
-    allocationTransform: AllocationTransform = AllocationTransform.default()
+    allocationTransform: AllocationTransform
   ): IO[List[(String, Double)]] = {
     val diffs  = tripLogs.map { r => (r.agentId, r.travelTimeDiff.value.toDouble) }
     val result = generateSingleAgentRewardValues(diffs, allocationTransform)
@@ -120,7 +120,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     */
   def generateSingleAgentRewardValues[T](
     diffs: List[(T, Double)],
-    transform: AllocationTransform = AllocationTransform.default()
+    transform: AllocationTransform
   ): Either[Error, List[(T, Double)]] = {
 
     val (agentData, agentDiffs) = diffs.unzip

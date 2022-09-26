@@ -4,6 +4,8 @@ sealed trait AllocationTransform
 
 object AllocationTransform {
 
+  case object NoTransform extends AllocationTransform
+
   /**
     * use the default builder (See below)
     */
@@ -49,18 +51,19 @@ object AllocationTransform {
   case class Combined(head: AllocationTransform, tail: AllocationTransform) extends AllocationTransform
 
   /**
-    * default transform
+    * original default transform
     * 1. removes all "travel time improvement" above the $limit,
     * 2. shifts those values to positive numbers
     *
     * @param limit ignore travel time improvement above this value
     */
-  def default(limit: Double = 0.0): AllocationTransform = Combined(
-    TruncateLessThanOrEqual(0.0),
-    ShiftPositive
-  )
+  def v1Transform(limit: Double = 0.0): AllocationTransform =
+    Combined(
+      TruncateLessThanOrEqual(0.0),
+      ShiftPositive
+    )
 
-  val DefaultTransform = default()
+  val DefaultTransform = NoTransform
 
   implicit class AllocationTransformOps(t: AllocationTransform) {
 
@@ -75,10 +78,11 @@ object AllocationTransform {
       if (xs.isEmpty) xs
       else
         t match {
+          case NoTransform => xs
           case Default =>
             DefaultTransform.applyTransform(xs)
           case DefaultWithLimit(limit) =>
-            default(limit).applyTransform(xs)
+            v1Transform(limit).applyTransform(xs)
           case Shift(mag) =>
             xs.map { _ + mag }
           case ShiftPositive =>

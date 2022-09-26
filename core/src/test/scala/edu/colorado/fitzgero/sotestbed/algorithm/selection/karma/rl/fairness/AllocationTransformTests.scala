@@ -33,20 +33,19 @@ class AllocationTransformTests extends SoTestBedBaseTest {
   "Default transform" when {
     "called with an empty sequence" should {
       "return an empty sequence" in {
-        AllocationTransform.default().applyTransform(List.empty) shouldBe empty
+        AllocationTransform.Default.applyTransform(List.empty) shouldBe empty
       }
     }
     "called with only zeroes" should {
       "return a sequence of zeroes" in {
         val zeroes = List(0.0, 0.0, 0.0, 0.0, 0.0)
-        AllocationTransform.default().applyTransform(zeroes) should equal(zeroes)
+        AllocationTransform.Default.applyTransform(zeroes) should equal(zeroes)
       }
     }
     "called with a sequence of the same negative value" should {
-      "return the absolute values of the input" in {
+      "return the same sequence" in {
         val negSeq = List(-5.142, -5.142, -5.142, -5.142, -5.142, -5.142, -5.142)
-        val zeroes = negSeq.map { _ => 0.0 }
-        AllocationTransform.default().applyTransform(negSeq) should equal(zeroes)
+        AllocationTransform.Default.applyTransform(negSeq) should equal(negSeq)
       }
     }
   }

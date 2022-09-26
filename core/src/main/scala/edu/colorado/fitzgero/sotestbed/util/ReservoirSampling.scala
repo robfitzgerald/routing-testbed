@@ -2,9 +2,8 @@ package edu.colorado.fitzgero.sotestbed.util
 
 import scala.util.Random
 import scala.annotation.tailrec
-import com.typesafe.scalalogging.LazyLogging
 
-object ReservoirSampling extends LazyLogging {
+object ReservoirSampling {
 
   /**
     * Use Efraimidis and Spirakis' "Algorithm A-ExpJ" for weighted reservoir sampling

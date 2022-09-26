@@ -8,7 +8,7 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
     "allocations are empty" should {
       "return an empty list" in {
         RLDriverPolicyEpisodeOps
-          .generateSingleAgentRewardValues(List.empty) match {
+          .generateSingleAgentRewardValues(List.empty, AllocationTransform.NoTransform) match {
           case Left(value)  => fail("should not fail", value)
           case Right(value) => value.isEmpty should be(true)
         }
@@ -28,7 +28,7 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
         )
 
         RLDriverPolicyEpisodeOps
-          .generateSingleAgentRewardValues(xs)
+          .generateSingleAgentRewardValues(xs, AllocationTransform.NoTransform)
           .foreach {
             _.unzip._2.foreach {
               _ should equal(1.0)
@@ -47,7 +47,7 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
         )
 
         RLDriverPolicyEpisodeOps
-          .generateSingleAgentRewardValues(xs)
+          .generateSingleAgentRewardValues(xs, AllocationTransform.NoTransform)
           .foreach {
             _.unzip._2.foreach { println }
           }
@@ -63,13 +63,13 @@ class RLDriverPolicyEpisodeOpsTest extends SoTestBedBaseTest {
           )
         )
 
-        RLDriverPolicyEpisodeOps.generateSingleAgentRewardValues(xs).foreach(println)
+        RLDriverPolicyEpisodeOps.generateSingleAgentRewardValues(xs, AllocationTransform.NoTransform).foreach(println)
       }
     }
     "called on a distribution that sums to zero" should {
       "not be affected (when using the default allocation transform)" in {
         val xs     = List("a", "b", "c").zip(List(-60.0, 0.0, 60.0))
-        val result = RLDriverPolicyEpisodeOps.generateSingleAgentRewardValues(xs)
+        val result = RLDriverPolicyEpisodeOps.generateSingleAgentRewardValues(xs, AllocationTransform.v1Transform())
         result match {
           case Left(value) => fail("should not have failed", value)
           case Right(rewards) =>
