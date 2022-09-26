@@ -15,6 +15,12 @@ final case class TripLogRow(
   replannings: Int
 ) {
 
+  /**
+    * difference in travel time from the original estimate and the final (experienced)
+    * travel time. also referred to as the inverse delay, this is computed as o - f,
+    * where the resulting value is negative if there is delay, positive if they arrive
+    * ahead of the estimate.
+    */
   def travelTimeDiff: SimTime = this.originalTravelTimeEstimate - this.finalTravelTime
 
   /**

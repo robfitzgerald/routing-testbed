@@ -271,6 +271,21 @@ case class KarmaSelectionAlgorithm(
               combineFlowsFunction,
               marginalCostFunction
             )
+        val bidFn: NetworkPolicySignal => IO[List[Bid]] = driverPolicy
+          .applyDriverPolicy(
+            alts,
+            bank,
+            activeAgentHistory,
+            roadNetwork,
+            episodePrefix,
+            multiAgentDriverPolicyEpisodeId,
+            Some((req, res) =>
+              IO {
+                clientPw.write(req.asJson.noSpaces.toString + "\n")
+                clientPw.write(res.asJson.noSpaces.toString + "\n")
+              }
+            )
+          )
 
         // run the driver policy and network policy, and use the result to select
         // a path for each driver agent
@@ -278,28 +293,13 @@ case class KarmaSelectionAlgorithm(
         val result = for {
           _      <- updateRlClientServerResult
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
-          bids <- driverPolicy
-            .applyDriverPolicy(
-              signal,
-              alts,
-              bank,
-              activeAgentHistory,
-              roadNetwork,
-              episodePrefix,
-              multiAgentDriverPolicyEpisodeId,
-              Some((req, res) =>
-                IO {
-                  clientPw.write(req.asJson.noSpaces.toString + "\n")
-                  clientPw.write(res.asJson.noSpaces.toString + "\n")
-                }
-              )
-            )
+          bids   <- bidFn(signal)
           selections = signal.assign(bids, alts)
-          paths      = selections.map { case (_, _, path) => path }
-          routesUo   = alts.values.flatMap(_.headOption).toList
-          costsUo     <- collabCostFn(routesUo)
-          costsSo     <- collabCostFn(paths)
           updatedBank <- IO.fromEither(auctionPolicy.resolveAuction(selections, bank, bankConfig.max))
+          paths    = selections.map { case (_, _, path) => path }
+          routesUo = alts.values.flatMap(_.headOption).toList
+          costsUo <- collabCostFn(routesUo)
+          costsSo <- collabCostFn(paths)
         } yield {
           // construct the responses
           val responses = selections.zip(costsSo.agentPathCosts).map {

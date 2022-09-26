@@ -129,7 +129,6 @@ object DriverPolicy extends LazyLogging {
     }
 
     def applyDriverPolicy(
-      signal: NetworkPolicySignal,
       alts: Map[Request, List[Path]],
       bank: Map[String, Karma],
       activeAgentHistory: ActiveAgentHistory,
@@ -137,7 +136,7 @@ object DriverPolicy extends LazyLogging {
       episodePrefix: String,
       episodeId: Option[EpisodeId],
       logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
-    ): IO[List[Bid]] =
+    )(signal: NetworkPolicySignal): IO[List[Bid]] =
       policy match {
 
         case rp: RandomPolicy =>
