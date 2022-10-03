@@ -21,7 +21,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric._
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator.SimulatorState
-import edu.colorado.fitzgero.sotestbed.matsim.simulator.GenerateRouteRequest
+import edu.colorado.fitzgero.sotestbed.matsim.simulator.GenerateAgentData
 import org.apache.log4j.{Level, Logger}
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.events.handler.{
@@ -87,13 +87,13 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   val departureTimeStore: collection.mutable.Map[Id[Person], DepartureTime]   = collection.mutable.Map.empty
   val markForSOPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
   val markForUEPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
-  var newSORouteRequests: Option[RouteRequests]                               = None
-  val newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]       = collection.mutable.ListBuffer.empty
-  val newSOAgentBatchData: collection.mutable.ListBuffer[AgentBatchData]      = collection.mutable.ListBuffer.empty
-  val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]        = collection.mutable.Set.empty
+  // var newSORouteRequests: Option[RouteRequests]                               = None
+  val newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]  = collection.mutable.ListBuffer.empty
+  val newSOAgentBatchData: collection.mutable.ListBuffer[AgentBatchData] = collection.mutable.ListBuffer.empty
+  val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]   = collection.mutable.Set.empty
 
-  var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData] =
-    collection.mutable.ListBuffer.empty
+  // var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData] =
+  // collection.mutable.ListBuffer.empty
   var runStatsPrintWriter: PrintWriter        = _
   var agentExperiencePrintWriter: PrintWriter = _
   var agentPathPrintWriter: PrintWriter       = _
@@ -316,11 +316,18 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                         self.completePathStore.remove(personId)
 
                         // let the routing algorithm know this agent has entered the system
-                        val entersMessage = AgentBatchData.EnterSimulation(personId.toString, simTime)
-                        self.newSOAgentBatchData.prepend(entersMessage)
+                        GenerateAgentData.generateEnterSimulation(
+                          self.qSim,
+                          self.travelTimeCalculator.getLinkTravelTimes,
+                          personId,
+                          vehicleId,
+                          simTime
+                        ) match {
+                          case Left(error) => throw error
+                          case Right(entersMessage) =>
+                            self.newSOAgentBatchData.prepend(entersMessage)
 
-                        logger
-                          .debug(s"agent $personId removing stored route in prep for so replanning iteration")
+                        }
 
                       } else {
 
@@ -358,7 +365,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                           personId <- self.markForUEPathOverwrite
                             .get(event.getVehicleId)
                             .toRight(new Error("inconsistent result between map.isDefinedAt and map.get"))
-                          request <- GenerateRouteRequest(
+                          request <- GenerateAgentData.generateRouteRequest(
                             qSim = qSim,
                             personId = personId,
                             vehicleId = event.getVehicleId,
@@ -434,6 +441,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                         leg         <- MATSimRouteOps.getCurrentLegFromPlan(mobsimAgent)
                         agentExperiencedRoute = MATSimRouteOps.convertToCompleteRoute(leg)
                         distance <- MATSimRouteOps.distanceOfMATSimPath(agentExperiencedRoute, qSim)
+                        ffTravelTimes = MATSimRouteOps.freeFlowTravelTime(agentExperiencedRoute, qSim)
                       } {
 
                         val departureTime: DepartureTime =
@@ -446,6 +454,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
                         // record the agent experience
                         val travelTimeSeconds: Int = event.getTime.toInt - departureTime.value
+                        val freeFlowTravelTime     = ffTravelTimes.foldLeft(0.0) { case (acc, (_, t)) => acc + t }
                         val requestClass: RequestClass =
                           if (self.soAgentReplanningHandler.isUnderControl(agentId)) RequestClass.SO()
                           else RequestClass.UE
@@ -476,9 +485,11 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                             departureTime = SimTime(departureTime.value),
                             arrivalTime = SimTime(event.getTime.toInt),
                             finalTravelTime = SimTime(travelTimeSeconds),
-                            finalDistance = distance
+                            finalDistance = distance,
+                            finalFreeFlowTravelTime = SimTime(freeFlowTravelTime)
                           )
-                          self.agentLeftSimulationRequests += arrivalData
+                          self.newSOAgentBatchData.prepend(arrivalData)
+                          // self.agentLeftSimulationRequests += arrivalData
 
                           // FINALIZE THIS AGENT'S ROUTE FOR NON-PLANNING ITERATIONS
                           logger.debug(s"triggered for so agent $agentId")
@@ -559,7 +570,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                         soAgentReplanningHandler
                                           .getMostRecentTimePlannedForAgent(agentData.personId)
 
-                                      val result = GenerateRouteRequest(
+                                      val result = GenerateAgentData.generateRouteRequest(
                                         qSim = qSim,
                                         personId = agentData.personId,
                                         vehicleId = agentData.vehicleId,
@@ -596,11 +607,12 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                             } else {
 
                               // construct the payload for this routing request, replacing whatever route request is currently stored
-                              val payload = RouteRequests(e.getSimulationTime, agentReplanningRequests)
-                              self.newSORouteRequests = Some { payload }
+                              // val payload = RouteRequests(e.getSimulationTime, agentReplanningRequests)
+                              // self.newSORouteRequests = Some { payload }
+                              self.newSOAgentBatchData.prependAll(agentReplanningRequests)
                               routingRequestsUpdatedToTimeStep = SimTime(e.getSimulationTime)
                               logger.debug(
-                                s"at time ${SimTime(e.getSimulationTime)} storing ${payload.requests.length} requests for batch route module"
+                                s"at time ${SimTime(e.getSimulationTime)} storing ${agentReplanningRequests.length} new requests for batch route module"
                               )
                             }
                           }
@@ -972,22 +984,32 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       val soBatchData: List[AgentBatchData] = self.newSOAgentBatchData.toList
       self.newSOAgentBatchData.clear()
 
-      val agentsLeftSimulationRequests: List[SOAgentArrivalData] = self.agentLeftSimulationRequests.toList
-      self.agentLeftSimulationRequests.clear()
+      val preparedSOMessages =
+        soBatchData
+          .groupBy(_.agent)
+          .flatMap { case (_, msgs) => AgentBatchData.prepareMessagesForRoutingServer(msgs) }
+          .toList
 
-      self.newSORouteRequests match {
-        case None =>
-          logger.debug(s"returning empty list (no requests)")
-          ueRequests ::: soBatchData ::: agentsLeftSimulationRequests
-        case Some(rr) =>
-          logger.debug(
-            s"sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests"
-          )
-          val outgoingRequests: List[AgentBatchData] =
-            soBatchData ::: rr.requests ::: ueRequests ::: agentsLeftSimulationRequests
-          self.newSORouteRequests = None
-          outgoingRequests
-      }
+      logger.debug(s"sending ${preparedSOMessages.size} SO, ${ueRequests.size} UE messages to routing server")
+
+      ueRequests ::: preparedSOMessages
+
+      // val agentsLeftSimulationRequests: List[SOAgentArrivalData] = self.agentLeftSimulationRequests.toList
+      // self.agentLeftSimulationRequests.clear()
+
+      // self.newSORouteRequests match {
+      //   case None =>
+      //     logger.debug(s"returning empty list (no requests)")
+      //     ueRequests ::: soBatchData ::: agentsLeftSimulationRequests
+      //   case Some(rr) =>
+      //     logger.debug(
+      //       s"sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests"
+      //     )
+      //     val outgoingRequests: List[AgentBatchData] =
+      //       soBatchData ::: rr.requests ::: ueRequests ::: agentsLeftSimulationRequests
+      //     self.newSORouteRequests = None
+      //     outgoingRequests
+      // }
     }
   }
 

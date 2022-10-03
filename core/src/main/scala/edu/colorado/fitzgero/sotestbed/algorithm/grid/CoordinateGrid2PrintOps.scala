@@ -54,12 +54,12 @@ object CoordinateGrid2PrintOps {
     */
   def writeGridToCsv(coordinateGrid2: CoordinateGrid2, file: File): Either[Error, Unit] = {
     val outputData = coordinateGrid2.gridCells.map {
-      case (gridCellId, gridCell) =>
-        (gridCellId, gridCell.polygon.toString, gridCell.xStep, gridCell.yStep)
+      case (gridCellId, polygon) =>
+        (gridCellId, polygon.toString)
     }
 
     Try {
-      file.writeCsv(outputData, rfc.withHeader("grid_id", "polygon", "xStep", "yStep"))
+      file.writeCsv(outputData, rfc.withHeader("grid_id", "polygon"))
     }.toEither.left.map { t => new Error(s"failed writing coordinate grid to CSV output", t) }
   }
 }

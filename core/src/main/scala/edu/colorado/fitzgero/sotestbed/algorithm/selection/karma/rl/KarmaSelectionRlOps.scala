@@ -26,6 +26,9 @@ import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentDiscreteAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Bid
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 
 object KarmaSelectionRlOps extends LazyLogging {
 
@@ -70,6 +73,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     alts: Map[Request, List[Path]],
     signal: NetworkPolicySignal,
     bank: Map[String, Karma],
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     activeAgentHistory: ActiveAgentHistory,
     logFn: Option[(List[PolicyClientRequest], List[PolicyClientResponse]) => IO[Unit]] = None
   ): IO[List[Bid]] = {
@@ -80,7 +84,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     val actionReqs: IO[List[PolicyClientRequest]] = alts.toList.traverse {
       case (req, paths) =>
         structure
-          .encodeObservation(activeAgentHistory, bank, req, paths, alts, signal)
+          .encodeObservation(roadNetwork, activeAgentHistory, bank, req, paths, alts, signal)
           .map { obs =>
             val episodeId = EpisodeId(req.agent, episodePrefix)
             GetActionRequest(episodeId, SingleAgentObservation(obs))
@@ -108,6 +112,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     alts: Map[Request, List[Path]],
     signal: NetworkPolicySignal,
     bank: Map[String, Karma],
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     activeAgentHistory: ActiveAgentHistory,
     logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
   ): IO[List[Bid]] = {
@@ -118,7 +123,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     val agentObsResult = alts.toList.traverse {
       case (req, paths) =>
         structure
-          .encodeObservation(activeAgentHistory, bank, req, paths, alts, signal)
+          .encodeObservation(roadNetwork, activeAgentHistory, bank, req, paths, alts, signal)
           .map { obs => (AgentId(req.agent), obs) }
     }
     for {
@@ -189,6 +194,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     networkPolicyConfig: NetworkPolicyConfig,
     experimentDirectory: JavaNioPath,
     allocationTransform: AllocationTransform,
+    allocationMetric: AllocationMetric,
     agentsWithEpisodes: Set[String],
     finalBank: Map[String, Karma],
     episodePrefix: String,
@@ -204,7 +210,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     // here, we filter the trip log to the agents with known RL episodes before sending requests to log + close
     // those episodes. we also log all of the final rewards and observations to a file.
     val result: IO[Unit] = for {
-      data <- collectFinalRewardsAndObservations(
+      data <- allocationMetric.collectFinalRewardsAndObservations(
         experimentDirectory = experimentDirectory,
         agentsWithEpisodes = agentsWithEpisodes,
         allocationTransform = allocationTransform,
@@ -242,6 +248,29 @@ object KarmaSelectionRlOps extends LazyLogging {
       tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
       tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
       rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(tripsWithEpisodes, allocationTransform)
+      observations <- RLDriverPolicyEpisodeOps.finalObservations(
+        tripsWithEpisodes,
+        driverPolicySpace,
+        networkPolicyConfig,
+        finalBank
+      )
+    } yield (rewards, observations)
+  }
+
+  def collectFinalRewardsAndObservationsAuctionDelayMetric(
+    experimentDirectory: JavaNioPath,
+    agentsWithEpisodes: Set[String],
+    allocationTransform: AllocationTransform,
+    driverPolicySpace: DriverPolicySpace,
+    networkPolicyConfig: NetworkPolicyConfig,
+    finalBank: Map[String, Karma]
+  ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
+    for {
+      tripLogs  <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+      karmaLogs <- RLDriverPolicyEpisodeOps.getKarmaLog(experimentDirectory)
+      tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+      karmaWithEpisodes = karmaLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+      rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByAuctionDelay(karmaWithEpisodes, tripsWithEpisodes)
       observations <- RLDriverPolicyEpisodeOps.finalObservations(
         tripsWithEpisodes,
         driverPolicySpace,

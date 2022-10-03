@@ -18,8 +18,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.TripLogRow
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpace
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 
 object RLDriverPolicyEpisodeOps extends LazyLogging {
 
@@ -38,6 +37,20 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
   }
 
   /**
+    * grab the [[KarmaSelectionLogRow]]s from the experiment logging directory
+    *
+      @param experimentDirectory the directory where the final trip log should be found
+    * @return the effect of reading the tripLog.csv file
+    */
+  def getKarmaLog(experimentDirectory: Path): IO[List[KarmaSelectionLogRow]] = {
+    val tripLogFile = KarmaSelectionLogRow.KarmaLogFilename
+    val uri         = experimentDirectory.resolve(tripLogFile).toFile
+    val rowsResult =
+      ReadResult.sequence(uri.asCsvReader[KarmaSelectionLogRow](rfc.withHeader).toList)
+    IO.fromEither(rowsResult)
+  }
+
+  /**
     * compares the original estimated trip travel time to the observed
     * trip travel time for all trips and
     */
@@ -48,6 +61,33 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     val diffs  = tripLogs.map { r => (r.agentId, r.travelTimeDiff.value.toDouble) }
     val result = generateSingleAgentRewardValues(diffs, allocationTransform)
     IO.fromEither(result)
+  }
+
+  def endOfEpisodeRewardByAuctionDelay(
+    karmaLogs: List[KarmaSelectionLogRow],
+    tripLogs: List[TripLogRow]
+  ): IO[List[(String, Double)]] = {
+    val tripLogLookup = tripLogs.map { r => (r.agentId, r) }.toMap
+    karmaLogs
+      .groupBy(_.agentId)
+      .toList
+      .traverse {
+        case (agentId, row) =>
+          tripLogLookup.get(agentId) match {
+            case None => IO.raiseError(new Error(s"trip log missing agent in karma log: $agentId"))
+            case Some(tripLogRow) =>
+              val obs = row
+                .sortBy(_.requestTime)
+                .map { r => (r.requestTimeEstimateSeconds.toDouble, r.afterSelectionEstimateSeconds.toDouble) }
+              val (estimatesBeforeSelection, estimatesAfterSelection) = obs.unzip
+              val result = AuctionDelayAllocationMetric.computeMetricValue(
+                estimatesBeforeSelection,
+                estimatesAfterSelection,
+                tripLogRow.finalTravelTime.value
+              )
+              IO.fromEither(result).map { metric => (agentId, metric) }
+          }
+      }
   }
 
   def finalObservations(
@@ -62,9 +102,11 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
         obs <- space.encodeFinalObservation(
           originalTravelTimeEstimate = row.originalTravelTimeEstimate,
           finalTravelTime = row.finalTravelTime,
+          freeFlowTravelTime = row.freeFlowTravelTime,
           finalDistance = row.finalDistance,
           finalBankBalance = balance,
           finalReplannings = row.replannings,
+          finalUoRoutesAssigned = row.uoRoutesAssigned,
           networkPolicyConfig = networkPolicyConfig
         )
       } yield (row.agentId, obs)

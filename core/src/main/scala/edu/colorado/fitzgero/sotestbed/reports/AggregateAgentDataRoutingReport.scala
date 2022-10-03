@@ -40,7 +40,7 @@ class AggregateAgentDataRoutingReport(routingResultFile: File, costFunction: Edg
         .get(request.agent)
         .map { _.orderedRequestHistory }
         .getOrElse(List.empty)
-      latestRouteRequestData <- routingResult.agentHistory.getNewestRequest(request.agent)
+      latestRouteRequestData <- routingResult.agentHistory.getNewestDataOrError(request.agent).toOption
       decisionNumber = observedRouteRequestData.length
       decisionTag    = DecisionTag(currentSimTime, resultIndex)
       Coordinate(lon, lat) <- edgeToCoord(request.location)

@@ -13,20 +13,53 @@ final case class ActiveAgentHistory(
   observedRouteRequestData: Map[String, AgentHistory] = Map.empty
 ) {
 
-  def incrementReplannings(agentId: String): Either[Error, ActiveAgentHistory] = {
+  def getAgentHistory(agentId: String): Option[AgentHistory] =
+    this.observedRouteRequestData.get(agentId)
+
+  def getAgentHistoryOrError(agentId: String): Either[Error, AgentHistory] =
+    getAgentHistory(agentId).toRight(new Error(s"expected agent history for agent $agentId doesn't exist"))
+
+  def hasHistoryForAgent(agentId: String): Boolean = getAgentHistory(agentId).isDefined
+
+  def incrementReplannings(agentId: String, assignedUoTrip: Boolean): Either[Error, ActiveAgentHistory] = {
     this.observedRouteRequestData.get(agentId) match {
       case None =>
         val msg = s"attempting to increment replannings for agent $agentId who is " +
           "not found in the current active agent history"
         Left(new Error(msg))
       case Some(agentHistory) =>
-        val updated = this.copy(
-          observedRouteRequestData = this.observedRouteRequestData.updated(
-            agentId,
-            agentHistory.assignReplanningToCurrentTrip
+        val updateResult = for {
+          h1 <- agentHistory.assignReplanningToCurrentTrip
+          h2 <- if (assignedUoTrip) h1.assignUoRouteToCurrentTrip else Right(h1)
+        } yield h2
+
+        updateResult.map { hist =>
+          this.copy(
+            observedRouteRequestData = this.observedRouteRequestData.updated(
+              agentId,
+              hist
+            )
           )
-        )
-        Right(updated)
+        }
+
+    }
+  }
+
+  def incrementUoAssignments(agentId: String): Either[Error, ActiveAgentHistory] = {
+    this.observedRouteRequestData.get(agentId) match {
+      case None =>
+        val msg = s"attempting to increment replannings for agent $agentId who is " +
+          "not found in the current active agent history"
+        Left(new Error(msg))
+      case Some(agentHistory) =>
+        agentHistory.assignReplanningToCurrentTrip.map { updatedHistory =>
+          this.copy(
+            observedRouteRequestData = this.observedRouteRequestData.updated(
+              agentId,
+              updatedHistory
+            )
+          )
+        }
     }
   }
 
@@ -36,23 +69,19 @@ final case class ActiveAgentHistory(
     * @return the updated history
     */
   def processRouteRequestData(
-    data: RouteRequestData,
-    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-    costFunction: EdgeBPR => Cost
-  ): IO[ActiveAgentHistory] = {
+    data: RouteRequestData
+  ): Either[Error, ActiveAgentHistory] = {
     val agentId: String = data.request.agent
 
-    val result = observedRouteRequestData.get(agentId) match {
+    observedRouteRequestData.get(agentId) match {
       case None =>
-        this.copy(observedRouteRequestData = observedRouteRequestData.updated(agentId, AgentHistory(data)))
+        Left(new Error("attempting to add route request data before agent history was intialized"))
       case Some(existingHistory) =>
-        this.copy(observedRouteRequestData =
+        val updated = this.copy(observedRouteRequestData =
           observedRouteRequestData.updated(agentId, existingHistory.addRouteRequestData(data))
         )
+        Right(updated)
     }
-    IO.pure(result)
-    // }
-
   }
 
   /**
@@ -77,6 +106,17 @@ final case class ActiveAgentHistory(
   def isNewArrival(agentId: String): Boolean =
     this.observedRouteRequestData.get(agentId).exists { _.replanningEvents == 0 }
 
+  def processDepartureFor(enterSim: AgentBatchData.EnterSimulation): Either[Error, ActiveAgentHistory] = {
+    if (this.observedRouteRequestData.isDefinedAt(enterSim.agent)) {
+      Left(new Error(s"agent ${enterSim.agent} departing but already in agent history"))
+    } else {
+      val updated = this.copy(
+        observedRouteRequestData = this.observedRouteRequestData.updated(enterSim.agent, AgentHistory(enterSim))
+      )
+      Right(updated)
+    }
+  }
+
   /**
     * on arrival we can remove all unnecessary data associated with an agent, as it is no longer active
     * @param agentId the arriving agent
@@ -98,16 +138,8 @@ final case class ActiveAgentHistory(
     * @param agentId the agent requested
     * @return the RouteRequestData if it exists
     */
-  def getOldestRequest(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map { _.originalRequest }
-
-  /**
-    * gets the most recent request we have received (as recent as the current time step)
-    * @param agentId the agent requested
-    * @return the latest RouteRequestData if we have any stored
-    */
-  def getNewestRequest(agentId: String): Option[RouteRequestData] =
-    this.observedRouteRequestData.get(agentId).map { _.currentRequest }
+  def getOldestData(agentId: String): Option[AgentBatchData.EnterSimulation] =
+    this.observedRouteRequestData.get(agentId).map { _.first }
 
   /**
     * gets the request before the current one
@@ -134,11 +166,15 @@ final case class ActiveAgentHistory(
   def getOrderedRouteRequestHistory(agentId: String): Option[List[RouteRequestData]] =
     this.observedRouteRequestData.get(agentId).map { _.orderedRequestHistory }
 
-  def getOldestRequestOrError(agentId: String): Either[Error, RouteRequestData] =
-    getOldestRequest(agentId).toRight(new Error(s"agent $agentId history not stored"))
+  def getOldestDataOrError(agentId: String): Either[Error, AgentBatchData.EnterSimulation] =
+    getOldestData(agentId).toRight(new Error(s"agent $agentId history not stored"))
 
-  def getNewestRequestOrError(agentId: String): Either[Error, RouteRequestData] =
-    getNewestRequest(agentId).toRight(new Error(s"agent $agentId history not stored"))
+  def getNewestRequest(agentId: String): Option[RouteRequestData] =
+    this.observedRouteRequestData.get(agentId).flatMap { _.mostRecentRequest }
+
+  def getNewestDataOrError(agentId: String): Either[Error, RouteRequestData] =
+    getNewestRequest(agentId)
+      .toRight(new Error(s"agent $agentId not found in history"))
 
   def getOrderedRouteRequestHistoryOrError(agentId: String): Either[Error, List[RouteRequestData]] =
     getOrderedRouteRequestHistory(agentId).toRight(new Error(s"agent $agentId history not stored"))

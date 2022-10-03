@@ -19,6 +19,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionThreshold
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
+import java.sql.Driver
 
 sealed trait DriverPolicySpace
 
@@ -30,32 +31,19 @@ object DriverPolicySpace {
   case object Balance extends DriverPolicySpace
 
   /**
-    * encode the agent's difference between their original travel time estimate
-    * and their current estimate as a feature
-    */
-  case object Urgency extends DriverPolicySpace
-
-  /**
-    * encode the travel time difference between an agent's original travel time
-    * estimate and the estimate for the worst alternative path the agent is
-    * offered by the routing system
-    */
-  case object WorstAlternative extends DriverPolicySpace
-
-  /**
     * encode the number of agents in this batch as a feature
     */
   case object BatchSize extends DriverPolicySpace
 
   /**
-    * pass along the network signal so we understand better what we are fighting for
+    * count of replanning events already experienced
     */
-  case object NetworkSignal extends DriverPolicySpace
+  case object ReplanningEvents extends DriverPolicySpace
 
   /**
-    * while observing other values, keep in perspective the original travel time estimate
+    * percent of auctions this agent has won, default 0% if no auctions have been experienced
     */
-  case object OriginalTravelTimeEstimate extends DriverPolicySpace
+  case object AuctionWinRate extends DriverPolicySpace
 
   /**
     * while observing other values, keep in perspective the original trip distance
@@ -73,6 +61,23 @@ object DriverPolicySpace {
   case object ExperiencedDistance extends DriverPolicySpace
 
   /**
+    * at a replanning event, captures the marginal change in
+    * distance due to selecting the UO route (aka winning)
+    */
+  case object MarginalUODistance extends DriverPolicySpace
+
+  /**
+    * at a replanning event, captures the marginal change in
+    * distance due to selecting the worst SO route (aka losing)
+    */
+  case object MarginalWorstSODistance extends DriverPolicySpace
+
+  /**
+    * while observing other values, keep in perspective the original travel time estimate
+    */
+  case object OriginalTravelTimeEstimate extends DriverPolicySpace
+
+  /**
     * experienced travel time for the currently-assigned route
     */
   case object ExperiencedTravelTime extends DriverPolicySpace
@@ -83,9 +88,46 @@ object DriverPolicySpace {
   case object RemainingTravelTimeEstimate extends DriverPolicySpace
 
   /**
-    * count of replanning events already experienced
+    * at a replanning event, captures the marginal change in
+    * distance due to selecting the UO route (aka winning)
     */
-  case object ReplanningEvents extends DriverPolicySpace
+  case object MarginalUOTravelTime extends DriverPolicySpace
+
+  /**
+    * at a replanning event, captures the marginal change in
+    * distance due to selecting the worst SO route (aka losing)
+    */
+  case object MarginalWorstSOTravelTime extends DriverPolicySpace
+
+  /**
+    * at a replanning event, captures the diff from free flow
+    * travel time due to selecting the user-optimal route (aka winning)
+    */
+  case object FreeFlowDiffUOTravelTime extends DriverPolicySpace
+
+  /**
+    * at a replanning event, captures the diff from free flow
+    * travel time due to selecting the worst SO route (aka losing)
+    */
+  case object FreeFlowDiffWorstSOTravelTime extends DriverPolicySpace
+
+  /**
+    * encode the travel time difference between an agent's original travel time
+    * estimate and the estimate for the worst alternative path the agent is
+    * offered by the routing system
+    */
+  case object WorstAlternative extends DriverPolicySpace
+
+  /**
+    * encode the agent's difference between their original travel time estimate
+    * and their current estimate as a feature
+    */
+  case object OriginalTravelTimeDiff extends DriverPolicySpace
+
+  /**
+    * pass along the network signal so we understand better what we are fighting for
+    */
+  case object NetworkSignal extends DriverPolicySpace
 
   /**
     * use some combination of features
@@ -112,22 +154,105 @@ object DriverPolicySpace {
     def encodeObservation(
       request: Request,
       balance: Karma,
+      roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
       history: AgentHistory,
       proposedPaths: List[Path],
       batch: Map[Request, List[Path]],
       networkSignal: NetworkPolicySignal
     ): IO[List[Double]] = {
       dps match {
+        ////////////////////////////////// AGENT STATE FEATURES
         case Balance =>
           IO.pure(List(balance.value))
-        case Urgency =>
-          ObservationOps.travelTimeDiffFromInitialTrip(history).map { u => List(u) }
-        case WorstAlternative =>
-          val coalesceFn: Path => Double = ObservationOps.coalesceCostFor(history.currentRequest.remainingRoute)
-          val costs                      = proposedPaths.map { coalesceFn }
-          IO.pure(List(costs.max))
         case BatchSize =>
           IO.pure(List(batch.size))
+        case ReplanningEvents =>
+          IO.pure(List(history.replanningEvents))
+        case AuctionWinRate =>
+          IO.pure(List(history.uoAssignmentRate))
+        ////////////////////////////////// DISTANCE FEATURES
+        case OriginalDistance =>
+          val dist = history.first.tripDistance.value
+          IO.pure(List(dist))
+        case ExperiencedDistance =>
+          for {
+            current <- IO.fromEither(history.currentRequest)
+          } yield List(current.experiencedDistance.value)
+        case RemainingDistance =>
+          for {
+            current <- IO.fromEither(history.currentRequest)
+          } yield List(current.remainingDistance.value)
+        case MarginalUODistance =>
+          for {
+            currentRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
+            currentDist = currentRoute.foldLeft(0.0) { _ + _.linkDistance }
+            coalesceFn  = ObservationOps.distanceCostOfRootAndSpur(roadNetwork, currentRoute)
+            uoRoute     <- IO.fromOption(proposedPaths.headOption)(new Error(s"request $request missing alt paths"))
+            uoRouteDist <- coalesceFn(uoRoute)
+          } yield List(currentDist - uoRouteDist)
+        case MarginalWorstSODistance =>
+          for {
+            currentRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
+            currentDist = currentRoute.foldLeft(0.0) { _ + _.linkDistance }
+            coalesceFn  = ObservationOps.distanceCostOfRootAndSpur(roadNetwork, currentRoute)
+            maxSoRouteDist <- proposedPaths.traverse { coalesceFn }.map { _.max }
+          } yield List(currentDist - maxSoRouteDist)
+        ////////////////////////////////// TIME FEATURES
+        case OriginalTravelTimeEstimate =>
+          for {
+            ttEst <- IO.fromEither(history.first.tripTravelTimeEstimate)
+          } yield List(ttEst.value.toDouble)
+        case ExperiencedTravelTime =>
+          for {
+            current <- IO.fromEither(history.currentRequest)
+          } yield List(current.experiencedTravelTime.value)
+        case RemainingTravelTimeEstimate =>
+          for {
+            current   <- IO.fromEither(history.currentRequest)
+            remaining <- IO.fromEither(current.remainingTravelTimeEstimate)
+          } yield List(remaining.value)
+        case MarginalUOTravelTime =>
+          for {
+            currentRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
+            currentTimeEsts <- currentRoute.traverse { e =>
+              IO.fromOption(e.estimatedTimeAtEdge)(new Error(s"edge ${e.edgeId} missing time estimate"))
+            }
+            currentTime = currentTimeEsts.foldLeft(0.0) { _ + _.value }
+            coalesceFn  = ObservationOps.timeCostOfRootAndSpur(roadNetwork, currentRoute)
+            uoRoute     <- IO.fromOption(proposedPaths.headOption)(new Error(s"request $request missing alt paths"))
+            uoRouteTime <- coalesceFn(uoRoute)
+          } yield List(currentTime - uoRouteTime)
+        case MarginalWorstSOTravelTime =>
+          for {
+            currentRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
+            currentTimeEsts <- currentRoute.traverse { e =>
+              IO.fromOption(e.estimatedTimeAtEdge)(new Error(s"edge ${e.edgeId} missing time estimate"))
+            }
+            currentTime = currentTimeEsts.foldLeft(0.0) { _ + _.value }
+            coalesceFn  = ObservationOps.timeCostOfRootAndSpur(roadNetwork, currentRoute)
+            maxSoRouteTime <- proposedPaths.traverse { coalesceFn }.map { _.max }
+          } yield List(currentTime - maxSoRouteTime)
+        case FreeFlowDiffUOTravelTime =>
+          for {
+            req     <- IO.fromEither(history.currentRequest)
+            uoRoute <- IO.fromOption(proposedPaths.headOption)(new Error(s"request $request missing alt paths"))
+            diffFn = ObservationOps.compareRouteToFreeFlow(roadNetwork, req.experiencedRoute, req.remainingRoute) _
+            freeFlowDiffUoTravelTime <- diffFn(uoRoute)
+          } yield List(freeFlowDiffUoTravelTime)
+        case FreeFlowDiffWorstSOTravelTime =>
+          for {
+            req <- IO.fromEither(history.currentRequest)
+            diffFn = ObservationOps.compareRouteToFreeFlow(roadNetwork, req.experiencedRoute, req.remainingRoute) _
+            maxFreeFlowDiffSoTravelTime <- proposedPaths.traverse { diffFn }.map { _.max }
+          } yield List(maxFreeFlowDiffSoTravelTime)
+        case OriginalTravelTimeDiff =>
+          ObservationOps.travelTimeDiffFromInitialTrip(history).map { u => List(u) }
+        case WorstAlternative =>
+          for {
+            remainingRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
+            coalesceFn = ObservationOps.coalesceCostFor(remainingRoute) _
+            maxCost    = proposedPaths.map { coalesceFn }.max
+          } yield List(maxCost)
         case NetworkSignal =>
           networkSignal match {
             case NetworkPolicySignal.BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
@@ -142,55 +267,34 @@ object DriverPolicySpace {
               val msg = "cannot use UserOptimal network policy with DriverPolicySpace.NetworkPolicy"
               IO.raiseError(new Error(msg))
           }
-        case OriginalDistance =>
-          val dist = history.first.data.overallDistance.value
-          IO.pure(List(dist))
-        case ExperiencedDistance =>
-          val dist = history.currentRequest.experiencedDistance.value
-          IO.pure(List(dist))
-        case RemainingDistance =>
-          val dist = history.currentRequest.remainingDistance.value
-          IO.pure(List(dist))
-        case OriginalTravelTimeEstimate =>
-          for {
-            ttEst <- IO.fromEither(history.first.data.overallTravelTimeEstimate)
-          } yield List(ttEst.value.toDouble)
-        case ExperiencedTravelTime =>
-          val expTT = history.currentRequest.experiencedTravelTime
-          IO.pure(List(expTT.value.toDouble))
-        case RemainingTravelTimeEstimate =>
-          for {
-            ttEst <- IO.fromEither(history.currentRequest.remainingTravelTimeEstimate)
-          } yield List(ttEst.value.toDouble)
-        case ReplanningEvents =>
-          IO.pure(List(history.replanningEvents))
         case Combined(features) =>
-          features.flatTraverse { _.encodeObservation(request, balance, history, proposedPaths, batch, networkSignal) }
+          features.flatTraverse {
+            _.encodeObservation(request, balance, roadNetwork, history, proposedPaths, batch, networkSignal)
+          }
       }
     }
 
     def encodeFinalObservation(
       originalTravelTimeEstimate: SimTime,
       finalTravelTime: SimTime,
+      freeFlowTravelTime: SimTime,
       finalDistance: Meters,
       finalBankBalance: Karma,
       finalReplannings: Int,
+      finalUoRoutesAssigned: Int,
       networkPolicyConfig: NetworkPolicyConfig
     ): IO[List[Double]] = dps match {
+      ////////////////////////////////// AGENT STATE FEATURES
       case Balance =>
         IO.pure(List(finalBankBalance.value.toDouble))
-      case Urgency =>
-        val urgency = (finalTravelTime - originalTravelTimeEstimate).value.toDouble
-        IO.pure(List(urgency))
-      case WorstAlternative =>
-        IO.pure(List(0.0))
       case BatchSize =>
         IO.pure(List(0.0))
-      case NetworkSignal =>
-        // generally here, we just want to make sure that the number of feature matches what
-        // would be encoded into each observation throughout the day; it should clearly be
-        // a network signal that requests zero % SO routing.
-        IO.pure(List(0.0))
+      case ReplanningEvents =>
+        IO.pure(List(finalReplannings.toDouble))
+      case AuctionWinRate =>
+        val rate = if (finalReplannings > 0) finalUoRoutesAssigned.toDouble / finalReplannings.toDouble else 0.0
+        IO.pure(List(rate))
+      ////////////////////////////////// DISTANCE FEATURES
       case OriginalDistance =>
         // not correct, but maybe not important? HMM, it actually is
         // IO.pure(List(0.0))
@@ -199,22 +303,48 @@ object DriverPolicySpace {
         IO.pure(List(finalDistance.value))
       case RemainingDistance =>
         IO.pure(List(0.0))
+      case MarginalUODistance =>
+        IO.pure(List(0.0))
+      case MarginalWorstSODistance =>
+        IO.pure(List(0.0))
+      ////////////////////////////////// TIME FEATURES
       case OriginalTravelTimeEstimate =>
         IO.pure(List(originalTravelTimeEstimate.value.toDouble))
       case ExperiencedTravelTime =>
         IO.pure(List(finalTravelTime.value.toDouble))
       case RemainingTravelTimeEstimate =>
         IO.pure(List(0.0))
-      case ReplanningEvents =>
-        IO.pure(List(finalReplannings.toDouble))
+      case MarginalUOTravelTime =>
+        IO.pure(List(0.0))
+      case MarginalWorstSOTravelTime =>
+        IO.pure(List(0.0))
+      case FreeFlowDiffUOTravelTime =>
+        val diff = (finalTravelTime - freeFlowTravelTime).value.toDouble
+        IO.pure(List(diff))
+      case FreeFlowDiffWorstSOTravelTime =>
+        val diff = (finalTravelTime - freeFlowTravelTime).value.toDouble
+        IO.pure(List(diff))
+      case OriginalTravelTimeDiff =>
+        val diff = (finalTravelTime - originalTravelTimeEstimate).value.toDouble
+        IO.pure(List(diff))
+      case WorstAlternative =>
+        IO.pure(List(0.0))
+      case NetworkSignal =>
+        // generally here, we just want to make sure that the number of feature matches what
+        // would be encoded into each observation throughout the day; it should clearly be
+        // a network signal that requests zero % SO routing.
+        IO.pure(List(0.0))
+
       case Combined(features) =>
         features.flatTraverse(
           _.encodeFinalObservation(
             originalTravelTimeEstimate,
             finalTravelTime,
+            freeFlowTravelTime,
             finalDistance,
             finalBankBalance,
             finalReplannings,
+            finalUoRoutesAssigned,
             networkPolicyConfig
           )
         )

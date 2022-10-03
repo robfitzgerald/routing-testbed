@@ -413,22 +413,15 @@ object RoutingAlgorithm2 {
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     costFunction: EdgeBPR => Cost
   )(agentId: String): IO[List[PathSegment]] = {
-    val result = for {
-      mostRecentOption <- IO.pure(batchingManager.storedHistory.getNewestRequest(agentId))
-    } yield {
-      mostRecentOption match {
-        case None =>
-          IO.pure(List.empty[PathSegment])
-        case Some(mostRecent) =>
-          val inner = for {
-            edges <- roadNetwork.edges(mostRecent.remainingRoute.map(_.edgeId))
-          } yield {
-            edges.map(e => PathSegment(e.edgeId, costFunction(e.attribute)))
-          }
-          inner
+    IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(agentId))
+      .flatMap { mostRecent =>
+        val inner = for {
+          edges <- roadNetwork.edges(mostRecent.remainingRoute.map(_.edgeId))
+        } yield {
+          edges.map(e => PathSegment(e.edgeId, costFunction(e.attribute)))
+        }
+        inner
       }
-    }
-    result.flatten
   }
 
   /**

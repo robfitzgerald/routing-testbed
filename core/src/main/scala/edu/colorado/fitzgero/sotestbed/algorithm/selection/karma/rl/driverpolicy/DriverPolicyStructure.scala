@@ -18,6 +18,8 @@ import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentDiscreteAction
 import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
 import java.io.File
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 
 sealed trait DriverPolicyStructure
 
@@ -49,6 +51,7 @@ object DriverPolicyStructure extends BankOps {
       * @return the effect of creating this observation
       */
     def encodeObservation(
+      rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
       hist: ActiveAgentHistory,
       bank: Map[String, Karma],
       req: Request,
@@ -59,7 +62,7 @@ object DriverPolicyStructure extends BankOps {
       for {
         balance  <- IO.fromEither(bank.getOrError(req.agent))
         thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
-        features <- dp.space.encodeObservation(req, balance, thisHist, paths, batch, signal)
+        features <- dp.space.encodeObservation(req, balance, rn, thisHist, paths, batch, signal)
       } yield features
 
     /**

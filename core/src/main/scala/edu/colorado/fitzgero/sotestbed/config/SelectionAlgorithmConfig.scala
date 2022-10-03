@@ -35,7 +35,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.rllib.{Grouping, PolicyClientOps}
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness.AllocationTransform
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness._
 
 sealed trait SelectionAlgorithmConfig {
   def build(outDir: Path): selection.SelectionAlgorithm
@@ -150,6 +150,7 @@ object SelectionAlgorithmConfig {
     freeFlowCostFunction: FreeFlowCostFunctionConfig,
     marginalCostFunction: MarginalCostFunctionConfig,
     bankConfig: BankConfig,
+    allocationMetric: AllocationMetric,
     allocationTransform: AllocationTransform,
     seed: Option[Long]
   ) extends SelectionAlgorithmConfig {
@@ -169,6 +170,7 @@ object SelectionAlgorithmConfig {
             mcf,
             seed,
             outDir,
+            allocationMetric,
             allocationTransform
           )
       }

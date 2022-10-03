@@ -176,9 +176,9 @@ object DriverPolicy extends LazyLogging {
               karmaBalance <- IO.fromEither(
                 bank.get(req.agent).toRight(new Error(s"agent ${req.agent} not found in bank"))
               )
-              oldest     <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
-              latest     <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
-              oldestTime <- IO.fromEither(oldest.overallTravelTimeEstimate)
+              oldest     <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
+              latest     <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
+              oldestTime <- IO.fromEither(oldest.tripTravelTimeEstimate)
               latestTime <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
               // as proportional increase, lower bounded by zero
@@ -207,9 +207,9 @@ object DriverPolicy extends LazyLogging {
               karmaBalance <- IO.fromEither(
                 bank.get(req.agent).toRight(new Error(s"agent ${req.agent} not found in bank"))
               )
-              oldest     <- IO.fromEither(activeAgentHistory.getOldestRequestOrError(req.agent))
-              latest     <- IO.fromEither(activeAgentHistory.getNewestRequestOrError(req.agent))
-              oldestTime <- IO.fromEither(oldest.overallTravelTimeEstimate)
+              oldest     <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
+              latest     <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
+              oldestTime <- IO.fromEither(oldest.tripTravelTimeEstimate)
               latestTime <- IO.fromEither(latest.overallTravelTimeEstimate)
             } yield {
               // as proportional increase, lower bounded by zero
@@ -243,6 +243,7 @@ object DriverPolicy extends LazyLogging {
                     episodeId = epId,
                     alts = alts,
                     signal = signal,
+                    roadNetwork = roadNetwork,
                     bank = bank,
                     activeAgentHistory = activeAgentHistory,
                     logFn = logFn
@@ -256,6 +257,7 @@ object DriverPolicy extends LazyLogging {
                 episodePrefix = episodePrefix,
                 alts = alts,
                 signal = signal,
+                roadNetwork = roadNetwork,
                 bank = bank,
                 activeAgentHistory = activeAgentHistory
               )

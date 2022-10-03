@@ -11,7 +11,6 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, TrueShortestSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.CongestionObservationType.CongestionObservationResult
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.KarmaSelectionAlgorithm.karmaLogHeader
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.config.{BankConfig, FreeFlowCostFunctionConfig}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
@@ -27,10 +26,13 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.KarmaSelectionRlOps
 import scala.collection.mutable
 import scala.util.Random
+import scala.util.Try
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse.StartEpisodeResponse
 
 import cats.effect.unsafe.implicits.global
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ExternalRLServer
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.model.numeric.TravelTimeSeconds
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -42,13 +44,14 @@ case class KarmaSelectionAlgorithm(
   marginalCostFunction: EdgeBPR => Flow => Cost,
   seed: Option[Long],
   experimentDirectory: java.nio.file.Path,
+  allocationMetric: AllocationMetric,
   allocationTransform: AllocationTransform
 ) extends SelectionAlgorithm
     with LazyLogging {
 
   import KarmaSelectionAlgorithm._
 
-  val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve(KarmaLogFilename)
+  val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve(KarmaSelectionLogRow.KarmaLogFilename)
   val networkLogFile: java.nio.file.Path   = experimentDirectory.resolve(KarmaNetworkLogFilename)
   val rlClientLogFile: java.nio.file.Path  = experimentDirectory.resolve(ClientLogFilename)
   val selectionPw: PrintWriter             = new PrintWriter(selectionLogFile.toFile)
@@ -95,7 +98,7 @@ case class KarmaSelectionAlgorithm(
     NetworkPolicySignal.getLogHeader(networkPolicy)
   ).mkString(",")
 
-  selectionPw.write(karmaLogHeader + "\n")
+  selectionPw.write(KarmaSelectionLogRow.KarmaLogHeader + "\n")
   networkPw.write(networkLogHeader + "\n")
 
   val gen: NetworkPolicySignalGenerator = networkPolicy.buildGenerator
@@ -104,7 +107,7 @@ case class KarmaSelectionAlgorithm(
     * this close method is used as it is called in RoutingExperiment2's .close() method
     */
   def close(finalBank: Map[String, Karma]): IO[Unit] = {
-    logger.info(s"closing $KarmaLogFilename")
+    logger.info(s"closing ${KarmaSelectionLogRow.KarmaLogFilename}")
     selectionPw.close()
     logger.info(s"closing $KarmaNetworkLogFilename")
     networkPw.close()
@@ -143,6 +146,7 @@ case class KarmaSelectionAlgorithm(
               networkPolicy,
               experimentDirectory,
               allocationTransform,
+              allocationMetric,
               agentsWithEpisodes.toSet,
               finalBank,
               episodePrefix,
@@ -345,39 +349,48 @@ case class KarmaSelectionAlgorithm(
           val loggingOrError = responses.traverse { response =>
             val agent = response.request.agent
             for {
-              bid          <- bidLookup.getOrError(agent)
-              startBalance <- bank.getOrError(agent)
-              endBalance   <- updatedBank.getOrError(agent)
+              bid            <- IO.fromEither(bidLookup.getOrError(agent))
+              startBalance   <- IO.fromEither(bank.getOrError(agent))
+              endBalance     <- IO.fromEither(updatedBank.getOrError(agent))
+              currentReqData <- IO.fromEither(activeAgentHistory.getNewestDataOrError(response.request.agent))
+              currentTime = currentReqData.timeOfRequest
+              selectionLogTimes <- findSelectionLogTimes(response, activeAgentHistory, alts, roadNetwork)
             } yield {
               val selectionRow = KarmaSelectionLogRow(
                 batchId = batchId,
                 agentId = agent,
+                requestTime = currentTime.value,
                 startBalance = startBalance,
                 endBalance = endBalance,
                 bidValue = bid.value,
-                route = response.pathIndex
+                route = response.pathIndex,
+                requestTimeEstimateSeconds = selectionLogTimes.currentEst.value,
+                afterSelectionEstimateSeconds = selectionLogTimes.revisedEst.value
               )
 
               selectionRow
             }
           }
 
-          val innerResult = loggingOrError.map { logDataList =>
-            // log karma data for each agent
-            logDataList.foreach { selectionRow => selectionLog.write(selectionRow.toLogRow + "\n") }
+          val loggingResult = loggingOrError.flatMap { logDataList =>
+            IO.fromTry(Try {
 
-            // log the network policy for this batch
-            val networkRow = List(batchId, networkPolicy.getLogData, signal.getLogData).mkString(",")
-            networkLog.write(networkRow + "\n")
+              // log karma data for each agent
+              logDataList.foreach { selectionRow => selectionLog.write(selectionRow.toLogRow + "\n") }
 
-            selectionLog.flush()
-            networkLog.flush()
-            clientLog.flush()
+              // log the network policy for this batch
+              val networkRow = List(batchId, networkPolicy.getLogData, signal.getLogData).mkString(",")
+              networkLog.write(networkRow + "\n")
 
-            selectionAlgorithmResult
+              selectionLog.flush()
+              networkLog.flush()
+              clientLog.flush()
+
+              selectionAlgorithmResult
+            })
           }
 
-          IO.fromEither(innerResult)
+          loggingResult
         }
 
         result.flatten
@@ -388,23 +401,34 @@ case class KarmaSelectionAlgorithm(
 
 object KarmaSelectionAlgorithm {
 
-  val karmaLogHeader: String  = "batchId,agentId,startKarma,endKarma,bidValue,selectedRoute"
-  val KarmaLogFilename        = "karma_log.csv"
   val KarmaNetworkLogFilename = "karma_network_log.csv"
   val ClientLogFilename       = "client_log.json"
 
   final case class KarmaBatchData(batchId: String, obs: CongestionObservationResult, signal: NetworkPolicySignal)
 
-  case class KarmaSelectionLogRow(
-    batchId: String,
-    agentId: String,
-    startBalance: Karma,
-    endBalance: Karma,
-    bidValue: Karma,
-    route: Int
-  ) {
+  final case class SelectionLogTimes(currentEst: SimTime, revisedEst: SimTime)
 
-    def toLogRow: String =
-      s"$batchId,$agentId,$startBalance,$endBalance,$bidValue,$route"
+  def findSelectionLogTimes(
+    response: Response,
+    activeAgentHistory: ActiveAgentHistory,
+    alts: Map[Request, List[Path]],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[SelectionLogTimes] = {
+    val ttFn: EdgeId => IO[TravelTimeSeconds] = getCurrentTravelTime(roadNetwork)
+    for {
+      current    <- IO.fromEither(activeAgentHistory.getNewestDataOrError(response.request.agent))
+      currentEst <- IO.fromEither(current.overallTravelTimeEstimate)
+      paths      <- IO.fromOption(alts.get(response.request))(new Error(s"alts missing request"))
+      path       <- IO.fromTry(Try { paths(response.pathIndex) })
+      pathTT     <- path.traverse { seg => ttFn(seg.edgeId) }
+      revisedEst = pathTT.foldLeft(SimTime.Zero) { (acc, t) => acc + SimTime(t.value) }
+    } yield SelectionLogTimes(currentEst, revisedEst)
+  }
+
+  def getCurrentTravelTime(roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR])(edgeId: EdgeId): IO[TravelTimeSeconds] = {
+    for {
+      eaOpt <- roadNetwork.edge(edgeId)
+      ea    <- IO.fromOption(eaOpt)(new Error(s"network missing edge $edgeId"))
+    } yield ea.attribute.observedTravelTime
   }
 }

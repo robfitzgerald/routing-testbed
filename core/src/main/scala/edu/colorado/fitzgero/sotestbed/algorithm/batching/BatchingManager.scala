@@ -18,6 +18,7 @@ import java.nio.file.Path
 import scala.util.Failure
 import scala.util.Success
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.EnterSimulation
+import scala.annotation.tailrec
 
 final case class BatchingManager(
   batchWindow: SimTime,
@@ -30,124 +31,32 @@ final case class BatchingManager(
 ) extends LazyLogging {
 
   /**
-    * reads through the latest set of requests, and updates the collection of AgentBatchData
-    * so that it is current. if any agent instructions stored are stale, we remove it.
-    *
-    * invariant: if an agent's data is stored in the manager but does not come via the updates,
-    * then it is stale and removed.
+    * reads through the latest set of messages, and updates the ActiveAgentHistory
+    * so that it is current.
     *
     * @param updates the updated AgentBatchData
-    * @return the manager with all AgentBatchData updated, and stale instructions removed
+    * @return the manager with all AgentBatchData updated
     */
   def updateAgentBatchData(
     updates: List[AgentBatchData],
     roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
   ): IO[BatchingManager] = {
-
-    updates.foldLeft(IO.pure(this)) { (ioB, data) =>
-      ioB.flatMap { b =>
-        data match {
-
-          case EnterSimulation(agent, departureTime) =>
-            IO {
-              logger.info(s"recognizing agent $agent entered simulation at $departureTime")
-              b
-            }
-          case data: SOAgentArrivalData =>
-            // log this data and stop tracking this trip
-            storedHistory.observedRouteRequestData.get(data.agentId) match {
-              case None =>
-                // agent hasn't been in the system long enough to have been
-                // replanned at all
-                IO {
-                  val tt = data.finalTravelTime
-                  val msg = f"agent ${data.agentId} arriving before receiving any plans with " +
-                    f"overall travel time of $tt"
-                  logger.info(msg)
-                  b
-                }
-              case Some(agentData) =>
-                for {
-                  originalTT <- IO.fromEither(agentData.first.data.overallTravelTimeEstimate)
-                  _ = IO.pure {
-                    if (originalTT > SimTime(3600)) {
-                      storedHistory.observedRouteRequestData.get(data.agentId).foreach { stored =>
-                        val replCnt = stored.replanningEvents
-                        val rows = stored.orderedEntryHistory.map {
-                          case AgentHistory.Entry(h, replan) =>
-                            val auditExp =
-                              if (h.experiencedRoute.isEmpty) SimTime.Zero
-                              else SimTime(h.experiencedRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }.sum)
-                            val auditRem =
-                              if (h.remainingRoute.isEmpty) SimTime.Zero
-                              else SimTime(h.remainingRoute.flatMap { _.estimatedTimeAtEdge.map { _.value } }.sum)
-                            val time        = h.timeOfRequest
-                            val experienced = h.experiencedTravelTime
-                            val remaining = h.remainingTravelTimeEstimate match {
-                              case Left(value) =>
-                                "<NA>"
-                              case Right(rem) =>
-                                rem.toString
-                            }
-                            f"$time: $experienced $remaining $replan $replCnt $auditExp $auditRem"
-                        }
-                        val detail = rows.mkString("\n")
-                        logger.info {
-                          f"""
-                             |reporting outlier trip log output for agent ${data.agentId} who finished their
-                             |trip at time ${data.arrivalTime}. original travel time estimate was quoted at
-                             |$originalTT which is greater than 1 hour. 
-                             |$$timeOfRequest: $$experiencedTravelTime $$remainingTravelTime $$replanned $$replanningCount $$auditExperienced $$auditRemaining
-                             |$detail""".stripMargin
-                        }
-                      }
-
-                    }
-                  }
-                  _ <- IO.fromTry(Try {
-                    val replannings = agentData.replanningEvents
-                    val row         = TripLogRow(data, originalTT, replannings)
-                    this.tripLog.write(row.toString + "\n")
-                    this.tripLog.flush()
-                  })
-                } yield {
-                  b.copy(
-                    batchData = b.batchData - data.agentId,
-                    storedHistory = b.storedHistory.processArrivalFor(data.agentId)
-                  )
-                }
-            }
-
-          case data: RouteRequestData =>
-            val canUpdateRequest =
-              b.storedHistory.getNewestRequest(data.request.agent) match {
-                case None =>
-                  true
-                case Some(mostRecent) =>
-                  // guard against the requestUpdateCycle
-                  data.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
-              }
-
-            if (canUpdateRequest) {
-
-              for {
-                processed <- b.storedHistory.processRouteRequestData(data, roadNetwork, costFunction)
-              } yield this.copy(
-                batchData = b.batchData.updated(data.request.agent, data),
-                storedHistory = processed
-              )
-            } else IO.pure(b)
-
-        }
-      }
-    }
+    IO.fromEither(BatchingManager.updateBatchingManager(this, updates, minRequestUpdateThreshold))
   }
 
+  /**
+    * update the history to show that these requests were assigned replanning routes
+    * and tag which ones were UO assignments
+    *
+    * @param responses responses sent to simulation
+    * @return either updated BM or error
+    */
   def incrementReplannings(responses: List[Response]): Either[Error, BatchingManager] = {
     val initial: Either[Error, ActiveAgentHistory] = Right(this.storedHistory)
     val updated = responses.foldLeft(initial) {
       case (acc, res) =>
-        acc.flatMap { _.incrementReplannings(res.request.agent) }
+        val uoPathAssigned = res.pathIndex == 0
+        acc.flatMap { _.incrementReplannings(res.request.agent, uoPathAssigned) }
     }
     updated.map { updatedHist => this.copy(storedHistory = updatedHist) }
   }
@@ -191,7 +100,7 @@ final case class BatchingManager(
   }
 }
 
-object BatchingManager {
+object BatchingManager extends LazyLogging {
 
   val TripLogFilename = "tripLog.csv"
 
@@ -312,5 +221,124 @@ object BatchingManager {
   ): Map[SimTime, List[List[AgentBatchData]]] = {
     val nearestBatchTime: SimTime = nextValidBatchingTime(batchWindow, currentTime)
     oldStrat.filter { case (simTime, _) => simTime == nearestBatchTime }
+  }
+
+  /**
+    * updates the state of the batching manager based on the incoming messages from
+    * the simulation.
+    *
+    * @param batchingManager current batching manager state to update
+    * @param updates the updates to apply, a series of messages for possibly many agents.
+    *                these should have already been filtered to remove invalid state, such
+    *                as submitting route requests after the agent has reached their destination.
+    * @param minRequestUpdateThreshold a threshold to prevent too-frequent updates
+    * @return the effect of updating the state of the BatchingManager
+    */
+  def updateBatchingManager(
+    batchingManager: BatchingManager,
+    updates: List[AgentBatchData],
+    minRequestUpdateThreshold: SimTime
+  ): Either[Error, BatchingManager] = {
+
+    @tailrec
+    def _update(remaining: List[AgentBatchData], b: BatchingManager): Either[Error, BatchingManager] = {
+      remaining match {
+        case Nil => Right(b)
+        case head :: tail =>
+          head match {
+
+            case data: EnterSimulation =>
+              // agent has departed, start storing their history
+              b.storedHistory
+                .processDepartureFor(data) match {
+                case Left(err) => Left(err)
+                case Right(updatedHist) =>
+                  val updated = b.copy(storedHistory = updatedHist)
+                  _update(tail, updated)
+              }
+
+            case data: SOAgentArrivalData =>
+              // agent has arrived, log this data and stop tracking this trip
+
+              val result = for {
+                agentHistory <- b.storedHistory.getAgentHistoryOrError(data.agentId)
+                originalTT   <- agentHistory.first.tripTravelTimeEstimate
+                _ <- Try {
+                  val replannings      = agentHistory.replanningEvents
+                  val uoRoutesAssigned = agentHistory.uoPathsAssigned
+                  val freeFlowTT       = data.finalFreeFlowTravelTime
+                  val row              = TripLogRow(data, originalTT, freeFlowTT, replannings, uoRoutesAssigned)
+                  b.tripLog.write(row.toString + "\n")
+                  b.tripLog.flush()
+                }.toEither.left.map { t => new Error(t) }
+              } yield b.copy(
+                batchData = b.batchData - data.agentId,
+                storedHistory = b.storedHistory.processArrivalFor(data.agentId)
+              )
+
+              result match {
+                case Left(error)    => Left(error)
+                case Right(updated) => _update(tail, updated)
+              }
+
+            case data: RouteRequestData =>
+              // make sure we aren't updating their history "too frequently" (inclusive inequality)
+              // and also make sure we aren't beginning to store RouteRequestData before observing
+              // an EnterSimulation message for this agent
+              val enterSimulationMessageNotObserved = !b.storedHistory.hasHistoryForAgent(data.agent)
+              val canUpdate =
+                if (enterSimulationMessageNotObserved) false
+                else {
+                  val optionalNewestRequest = b.storedHistory.getNewestRequest(data.request.agent)
+                  optionalNewestRequest match {
+                    case None => true
+                    case Some(lastData) =>
+                      val withinUpdateThreshold =
+                        data.timeOfRequest - lastData.timeOfRequest >= minRequestUpdateThreshold
+                      withinUpdateThreshold
+                  }
+                }
+              val updateResult =
+                if (!canUpdate) Right(b)
+                else
+                  b.storedHistory.processRouteRequestData(data).map { processed =>
+                    b.copy(
+                      batchData = b.batchData.updated(data.request.agent, data),
+                      storedHistory = processed
+                    )
+                  }
+
+              // val result = for {
+              //   mostRecent <- b.storedHistory.getNewestDataOrError(data.request.agent)
+              //   canUpdate = data.timeOfRequest - mostRecent.timeOfRequest >= minRequestUpdateThreshold
+              // } yield {
+              //   if (!canUpdate) Right(b)
+              //   else
+              //     b.storedHistory.processRouteRequestData(data).map { processed =>
+              //       b.copy(
+              //         batchData = b.batchData.updated(data.request.agent, data),
+              //         storedHistory = processed
+              //       )
+              //     }
+              // }
+              updateResult match {
+                case Left(error) =>
+                  logger.error("updates:")
+                  updates.foreach { u => logger.error(s"${u.getClass.getSimpleName} - ${u.agent}") }
+                  logger.error("updates sorted:")
+                  updates.sorted.foreach { u => logger.error(s"${u.getClass.getSimpleName} - ${u.agent}") }
+                  val agentStateOrEmpty =
+                    b.storedHistory.observedRouteRequestData.get(data.agent).map(_.toString).getOrElse("<empty>")
+                  logger.error(s"batching manager state for agent ${data.agent}: $agentStateOrEmpty")
+                  Left(error)
+                case Right(updated) => _update(tail, updated)
+              }
+
+          }
+
+      }
+    }
+
+    _update(updates.sorted, batchingManager)
   }
 }

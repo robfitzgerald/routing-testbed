@@ -14,12 +14,16 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData._
   * @param finalized true when the agent finishes their trip
   */
 final case class AgentHistory(
-  first: AgentHistory.Entry,
-  history: List[AgentHistory.Entry],
+  first: AgentBatchData.EnterSimulation,
+  history: List[AgentHistory.Entry] = List.empty,
   replanningEvents: Int = 0,
+  uoPathsAssigned: Int = 0,
   hasRlTrainingEpisodeStarted: Boolean = false,
   finalized: Boolean = false
 ) {
+
+  def uoAssignmentRate: Double =
+    if (replanningEvents == 0) 0.0 else uoPathsAssigned.toDouble / replanningEvents.toDouble
 
   /**
     * adds another route request to this history
@@ -38,27 +42,32 @@ final case class AgentHistory(
     *
     * @return updated history
     */
-  def assignReplanningToCurrentTrip: AgentHistory = history match {
+  def assignReplanningToCurrentTrip: Either[Error, AgentHistory] = history match {
     case Nil =>
-      this.copy(
-        replanningEvents = this.replanningEvents + 1,
-        first = this.first.copy(
-          replanned = true
-        )
-      )
+      Left(new Error("no trip to assign replanning to"))
     case head :: tail =>
-      this.copy(
+      val updated = this.copy(
         replanningEvents = this.replanningEvents + 1,
         history = head.copy(replanned = true) +: tail
       )
+      Right(updated)
   }
 
   /**
-    * gets the original request from the history
+    * modifies this history, noting that the current trip was provided
+    * a replanning route
     *
-    * @return the first request submitted for this agent
+    * @return updated history
     */
-  def originalRequest: RouteRequestData = this.first.data
+  def assignUoRouteToCurrentTrip: Either[Error, AgentHistory] = history match {
+    case Nil =>
+      Left(new Error("no trip to assign replanning to"))
+    case head :: tail =>
+      val updated = this.copy(
+        uoPathsAssigned = this.uoPathsAssigned + 1
+      )
+      Right(updated)
+  }
 
   /**
     * gets the earliest request which was also assigned a
@@ -68,8 +77,9 @@ final case class AgentHistory(
     * if no requests have been served a route
     */
   def originalReplanning: Option[RouteRequestData] =
-    if (this.first.replanned) Some(this.first.data)
-    else this.history.reverse.find(_.replanned).map { _.data }
+    this.history.reverse.find(_.replanned).map { _.data }
+
+  def mostRecentRequest: Option[RouteRequestData] = history.headOption.map { _.data }
 
   /**
     * the current request is the most-recently added to the AgentHistory. if the
@@ -78,21 +88,15 @@ final case class AgentHistory(
     *
     * @return the current trip
     */
-  def currentRequest: RouteRequestData = history match {
-    case Nil       => this.first.data
-    case head :: _ => head.data
-  }
+  def currentRequest: Either[Error, RouteRequestData] =
+    mostRecentRequest.toRight(new Error("no current request stored"))
 
   /**
     * the request before the current one, if it exists
     *
     * @return the previous request or None if there has only been one request
     */
-  def previousRequest: Option[RouteRequestData] = history match {
-    case Nil               => None
-    case head :: Nil       => Some(this.first.data)
-    case head :: prev :: _ => Some(prev.data)
-  }
+  def previousRequest: Option[RouteRequestData] = history.tail.headOption.map { _.data }
 
   /**
     * finds the most recent replanning event that has happened
@@ -100,11 +104,7 @@ final case class AgentHistory(
     * @return the most recent request that was served a replanning route,
     * or None if no requests were served routes
     */
-  def mostRecentReplanning: Option[RouteRequestData] =
-    this.history.find(_.replanned) match {
-      case None             => if (this.first.replanned) Some(this.first.data) else None
-      case Some(mostRecent) => Some(mostRecent.data)
-    }
+  def mostRecentReplanning: Option[RouteRequestData] = this.history.find(_.replanned).map { _.data }
 
   /**
     * all requests for this agent, in the order they arrived
@@ -121,10 +121,7 @@ final case class AgentHistory(
     */
   def orderedReplanHistory: List[RouteRequestData] = orderedEntryHistory.filter(_.replanned).map(_.data)
 
-  def orderedEntryHistory: List[AgentHistory.Entry] = {
-    val tail = this.history.reverse.filter(_.replanned)
-    if (this.first.replanned) this.first +: tail else tail
-  }
+  def orderedEntryHistory: List[AgentHistory.Entry] = this.history.reverse
 
   def catalogHistory: AgentHistory = this.copy(finalized = true, history = this.history.take(1))
 }
@@ -146,5 +143,6 @@ object AgentHistory {
     * @param first the first request seen for some agent
     * @return the initial state of an AgentHistory
     */
-  def apply(first: RouteRequestData): AgentHistory = AgentHistory(Entry(first), List.empty)
+  def apply(enterSimulationMessage: AgentBatchData.EnterSimulation): AgentHistory =
+    AgentHistory(enterSimulationMessage, List.empty)
 }

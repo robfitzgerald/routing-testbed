@@ -11,8 +11,10 @@ final case class TripLogRow(
   arrivalTime: SimTime,
   originalTravelTimeEstimate: SimTime,
   finalTravelTime: SimTime,
+  freeFlowTravelTime: SimTime,
   finalDistance: Meters,
-  replannings: Int
+  replannings: Int,
+  uoRoutesAssigned: Int
 ) {
 
   /**
@@ -32,7 +34,7 @@ final case class TripLogRow(
     */
   override def toString =
     f"$agentId,$departureTime,$arrivalTime,$originalTravelTimeEstimate," +
-      s"$finalTravelTime,$finalDistance,$replannings"
+      s"$finalTravelTime,$freeFlowTravelTime,$finalDistance,$replannings,$uoRoutesAssigned"
 }
 
 object TripLogRow {
@@ -40,7 +42,9 @@ object TripLogRow {
   def apply(
     row: AgentBatchData.SOAgentArrivalData,
     originalTravelTimeEstimate: SimTime,
-    replannings: Int
+    freeFlowTravelTime: SimTime,
+    replannings: Int,
+    uoRoutesAssigned: Int
     // originalDistanceEstimate: Meters
   ): TripLogRow =
     TripLogRow(
@@ -49,8 +53,10 @@ object TripLogRow {
       arrivalTime = row.arrivalTime,
       originalTravelTimeEstimate = originalTravelTimeEstimate,
       finalTravelTime = row.finalTravelTime,
+      freeFlowTravelTime = freeFlowTravelTime,
       finalDistance = row.finalDistance,
-      replannings = replannings
+      replannings = replannings,
+      uoRoutesAssigned = uoRoutesAssigned
     )
 
   val Columns = List(
@@ -59,8 +65,10 @@ object TripLogRow {
     "arrivalTime",
     "originalTravelTimeEstimate",
     "finalTravelTime",
+    "freeFlowTravelTime",
     "finalDistance",
-    "replannings"
+    "replannings",
+    "uoRoutesAssigned"
   )
   def Header = Columns.toList.mkString(",")
 
@@ -71,8 +79,10 @@ object TripLogRow {
       "arrivalTime",
       "originalTravelTimeEstimate",
       "finalTravelTime",
+      "freeFlowTravelTime",
       "finalDistance",
-      "replannings"
+      "replannings",
+      "uoRoutesAssigned"
     ) { TripLogRow.apply }
 
   def enc: HeaderEncoder[TripLogRow] =
@@ -82,8 +92,10 @@ object TripLogRow {
       "arrivalTime",
       "originalTravelTimeEstimate",
       "finalTravelTime",
+      "freeFlowTravelTime",
       "finalDistance",
-      "replannings"
+      "replannings",
+      "uoRoutesAssigned"
     ) { row =>
       (
         row.agentId,
@@ -91,8 +103,10 @@ object TripLogRow {
         row.arrivalTime.toString,
         row.originalTravelTimeEstimate.toString,
         row.finalTravelTime.toString,
+        row.freeFlowTravelTime.toString,
         row.finalDistance.value.toString,
-        row.replannings.toString
+        row.replannings.toString,
+        row.uoRoutesAssigned.toString
       )
     }
 

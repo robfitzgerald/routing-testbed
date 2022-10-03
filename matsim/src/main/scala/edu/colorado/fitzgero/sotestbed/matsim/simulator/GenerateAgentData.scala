@@ -19,7 +19,46 @@ import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass.SO
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass.UE
 import cats.implicits._
 
-object GenerateRouteRequest {
+object GenerateAgentData {
+
+  /**
+    * generates an EnterSimulation message
+    *
+    * @param qSim current sim state
+    * @param travelTime travel time calculator
+    * @param personId person entering
+    * @param vehicleId vehicle entering
+    * @param currentTime time agent enters sim
+    */
+  def generateEnterSimulation(
+    qSim: QSim,
+    travelTime: TravelTime,
+    personId: Id[Person],
+    vehicleId: Id[Vehicle],
+    currentTime: SimTime
+  ): Either[Error, AgentBatchData.EnterSimulation] = {
+    val agentStateOrErr = AgentState.forAgent(qSim, personId, vehicleId)
+    val agentData       = AgentData(personId, vehicleId, DepartureTime(currentTime.value.toInt))
+    val agentTripDataOrError = for {
+      as  <- agentStateOrErr
+      leg <- as.getModifiableLeg
+    } yield AgentTripData.collectSOAgentTripData(
+      agentState = as,
+      agentData = agentData,
+      leg = leg,
+      currentTime = currentTime.value,
+      travelTime = travelTime,
+      qSim = qSim
+    )
+
+    agentTripDataOrError.map { atd =>
+      AgentBatchData.EnterSimulation(
+        agent = personId.toString,
+        departureTime = currentTime,
+        initialRoute = atd.remaining
+      )
+    }
+  }
 
   /**
     * translates the state for some agent from MATSim to a request to our routing service
@@ -36,7 +75,7 @@ object GenerateRouteRequest {
     *                                               of travel time left on this trip
     * @return either some optional request (None if not within thresholds) or an error
     */
-  def apply(
+  def generateRouteRequest(
     qSim: QSim,
     personId: Id[Person],
     vehicleId: Id[Vehicle],

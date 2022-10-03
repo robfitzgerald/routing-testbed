@@ -222,6 +222,18 @@ object MATSimRouteOps extends LazyLogging {
     }
   }
 
+  def freeFlowTravelTime(
+    path: List[Id[Link]],
+    qSim: QSim
+  ): List[(Id[Link], Double)] = {
+
+    path.map { linkId =>
+      val link               = qSim.getNetsimNetwork.getNetsimLink(linkId).getLink
+      val freeFlowTravelTime = link.getLength / link.getFreespeed
+      linkId -> freeFlowTravelTime
+    }
+  }
+
   /**
     * takes a planned remaining path and adds Coordinates to each link
     * @param path the route

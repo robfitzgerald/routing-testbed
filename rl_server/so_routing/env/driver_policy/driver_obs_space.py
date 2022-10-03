@@ -9,18 +9,25 @@ from json import JSONEncoder
 
 class DriverObsSpace(Enum):
     BALANCE = 0
-    URGENCY = 1
-    WORST_ALTERNATIVE = 2
-    BATCH_SIZE = 3
-    REPLANNING_EVENTS = 4
+    BATCH_SIZE = 1
+    REPLANNING_EVENTS = 2
+    AUCTION_WIN_RATE = 3
 
     ORIGINAL_DISTANCE = 10
     EXPERIENCED_DISTANCE = 11
     REMAINING_DISTANCE = 12
+    MARGINAL_UO_DISTANCE = 13
+    MARGINAL_WORST_SO_DISTANCE = 14
 
     ORIGINAL_TRAVEL_TIME_ESTIMATE = 20
     EXPERIENCED_TRAVEL_TIME = 21
     REMAINING_TRAVEL_TIME_ESTIMATE = 22
+    MARGINAL_UO_TRAVEL_TIME = 23
+    MARGINAL_WORST_SO_TRAVEL_TIME = 24
+    FREE_FLOW_DIFF_UO_TRAVEL_TIME = 25
+    FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME = 26
+    ORIGINAL_TRAVEL_TIME_DIFF = 27
+    WORST_ALTERNATIVE = 28
 
     # maybe other network signals?
     THRESHOLD_NETWORK_SIGNAL = 30
@@ -46,18 +53,25 @@ class DriverObsSpace(Enum):
         """
         _OBSERVATION_SPACE_MAPPING = {
             DriverObsSpace.BALANCE: [0, max_karma],
-            DriverObsSpace.URGENCY: [np.NINF, np.Inf],
-            DriverObsSpace.WORST_ALTERNATIVE: [np.NINF, np.Inf],
             DriverObsSpace.BATCH_SIZE: [0, np.Inf],
             DriverObsSpace.REPLANNING_EVENTS: [0, np.Inf],
+            DriverObsSpace.AUCTION_WIN_RATE: [0, 1],
 
             DriverObsSpace.ORIGINAL_DISTANCE: [0, np.Inf],
             DriverObsSpace.EXPERIENCED_DISTANCE: [0, np.Inf],
             DriverObsSpace.REMAINING_DISTANCE: [0, np.Inf],
+            DriverObsSpace.MARGINAL_UO_DISTANCE: [np.NINF, np.Inf],
+            DriverObsSpace.MARGINAL_WORST_SO_DISTANCE: [np.NINF, np.Inf],
 
             DriverObsSpace.ORIGINAL_TRAVEL_TIME_ESTIMATE: [0, np.Inf],
             DriverObsSpace.EXPERIENCED_TRAVEL_TIME: [0, np.Inf],
             DriverObsSpace.REMAINING_TRAVEL_TIME_ESTIMATE: [0, np.Inf],
+            DriverObsSpace.MARGINAL_UO_TRAVEL_TIME: [np.NINF, np.Inf],
+            DriverObsSpace.MARGINAL_WORST_SO_TRAVEL_TIME: [np.NINF, np.Inf],
+            DriverObsSpace.FREE_FLOW_DIFF_UO_TRAVEL_TIME: [0, np.Inf],
+            DriverObsSpace.FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME: [0, np.Inf],
+            DriverObsSpace.ORIGINAL_TRAVEL_TIME_DIFF: [np.NINF, np.Inf],
+            DriverObsSpace.WORST_ALTERNATIVE: [np.NINF, np.Inf],
 
             DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
         }

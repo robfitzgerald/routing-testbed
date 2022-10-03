@@ -19,7 +19,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
   * so we can overlay the grid on top of the road network for visualizations
   */
 final class CoordinateGrid2(
-  val gridCells: Map[String, CoordinateGrid2.GridCell],
+  val gridCells: Map[String, Polygon],
   val xSteps: Int,
   val ySteps: Int,
   geometryFactory: GeometryFactory,
@@ -111,10 +111,10 @@ object CoordinateGrid2 {
           val gridId = createGridId(x, y)
           polygon.setUserData(gridId)
           strTree.insert(polygon.getEnvelopeInternal, polygon) // side-effect
-          val gridCell = GridCell(polygon, x, y)
-          gridId -> gridCell
+          gridId -> polygon
         }
-        val gridCellsLookup: Map[String, GridCell] = gridCells.toMap
+
+        val gridCellsLookup: Map[String, Polygon] = gridCells.toMap
 
         val lookupQueries = for {
           edgeTriplet <- rn.edgeTriplets.unsafeRunSync
