@@ -101,6 +101,12 @@ object DriverPolicySpace {
 
   /**
     * at a replanning event, captures the diff from free flow
+    * for the
+    */
+  case object FreeFlowDiffExperiencedTravelTime extends DriverPolicySpace
+
+  /**
+    * at a replanning event, captures the diff from free flow
     * travel time due to selecting the user-optimal route (aka winning)
     */
   case object FreeFlowDiffUOTravelTime extends DriverPolicySpace
@@ -123,6 +129,11 @@ object DriverPolicySpace {
     * and their current estimate as a feature
     */
   case object OriginalTravelTimeDiff extends DriverPolicySpace
+
+  /**
+    * offset as ((so-ff) - (uo-ff)) / (uo-ff)
+    */
+  case object MarginalFreeFlowUOToSOOffset extends DriverPolicySpace
 
   /**
     * pass along the network signal so we understand better what we are fighting for
@@ -232,6 +243,12 @@ object DriverPolicySpace {
             coalesceFn  = ObservationOps.timeCostOfRootAndSpur(roadNetwork, currentRoute)
             maxSoRouteTime <- proposedPaths.traverse { coalesceFn }.map { _.max }
           } yield List(currentTime - maxSoRouteTime)
+        case FreeFlowDiffExperiencedTravelTime =>
+          for {
+            req <- IO.fromEither(history.currentRequest)
+            experiencedRoute = req.experiencedRoute.map { _.toPathSegment }
+            experiencedDiffTravelTime <- ObservationOps.compareRouteToFreeFlow(roadNetwork, req.experiencedRoute)
+          } yield List(experiencedDiffTravelTime)
         case FreeFlowDiffUOTravelTime =>
           for {
             req     <- IO.fromEither(history.currentRequest)
@@ -253,6 +270,30 @@ object DriverPolicySpace {
             coalesceFn = ObservationOps.coalesceCostFor(remainingRoute) _
             maxCost    = proposedPaths.map { coalesceFn }.max
           } yield List(maxCost)
+        case MarginalFreeFlowUOToSOOffset =>
+          for {
+            soList <- FreeFlowDiffWorstSOTravelTime.encodeObservation(
+              request,
+              balance,
+              roadNetwork,
+              history,
+              proposedPaths,
+              batch,
+              networkSignal
+            )
+            uoList <- FreeFlowDiffUOTravelTime.encodeObservation(
+              request,
+              balance,
+              roadNetwork,
+              history,
+              proposedPaths,
+              batch,
+              networkSignal
+            )
+            so <- IO.fromOption(soList.headOption)(new Error(s"missing obs value"))
+            uo <- IO.fromOption(uoList.headOption)(new Error(s"missing obs value"))
+            observation = (so - uo) / uo
+          } yield List(observation)
         case NetworkSignal =>
           networkSignal match {
             case NetworkPolicySignal.BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
@@ -318,7 +359,11 @@ object DriverPolicySpace {
         IO.pure(List(0.0))
       case MarginalWorstSOTravelTime =>
         IO.pure(List(0.0))
+      case FreeFlowDiffExperiencedTravelTime =>
+        val diff = (finalTravelTime - freeFlowTravelTime).value.toDouble
+        IO.pure(List(diff))
       case FreeFlowDiffUOTravelTime =>
+        // drivers can get there faster than free flow, btw
         val diff = (finalTravelTime - freeFlowTravelTime).value.toDouble
         IO.pure(List(diff))
       case FreeFlowDiffWorstSOTravelTime =>
@@ -328,6 +373,8 @@ object DriverPolicySpace {
         val diff = (finalTravelTime - originalTravelTimeEstimate).value.toDouble
         IO.pure(List(diff))
       case WorstAlternative =>
+        IO.pure(List(0.0))
+      case MarginalFreeFlowUOToSOOffset =>
         IO.pure(List(0.0))
       case NetworkSignal =>
         // generally here, we just want to make sure that the number of feature matches what

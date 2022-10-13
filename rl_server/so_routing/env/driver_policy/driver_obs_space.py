@@ -24,13 +24,15 @@ class DriverObsSpace(Enum):
     REMAINING_TRAVEL_TIME_ESTIMATE = 22
     MARGINAL_UO_TRAVEL_TIME = 23
     MARGINAL_WORST_SO_TRAVEL_TIME = 24
-    FREE_FLOW_DIFF_UO_TRAVEL_TIME = 25
-    FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME = 26
-    ORIGINAL_TRAVEL_TIME_DIFF = 27
-    WORST_ALTERNATIVE = 28
+    FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME = 25
+    FREE_FLOW_DIFF_UO_TRAVEL_TIME = 26
+    FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME = 27
+    ORIGINAL_TRAVEL_TIME_DIFF = 28
+    WORST_ALTERNATIVE = 29
+    MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO = 30
 
     # maybe other network signals?
-    THRESHOLD_NETWORK_SIGNAL = 30
+    THRESHOLD_NETWORK_SIGNAL = 40
 
     def __str__(self):
         return self.name.lower()
@@ -68,10 +70,12 @@ class DriverObsSpace(Enum):
             DriverObsSpace.REMAINING_TRAVEL_TIME_ESTIMATE: [0, np.Inf],
             DriverObsSpace.MARGINAL_UO_TRAVEL_TIME: [np.NINF, np.Inf],
             DriverObsSpace.MARGINAL_WORST_SO_TRAVEL_TIME: [np.NINF, np.Inf],
-            DriverObsSpace.FREE_FLOW_DIFF_UO_TRAVEL_TIME: [0, np.Inf],
-            DriverObsSpace.FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME: [0, np.Inf],
+            DriverObsSpace.FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME: [np.NINF, np.Inf],
+            DriverObsSpace.FREE_FLOW_DIFF_UO_TRAVEL_TIME: [np.NINF, np.Inf],
+            DriverObsSpace.FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME: [np.NINF, np.Inf],
             DriverObsSpace.ORIGINAL_TRAVEL_TIME_DIFF: [np.NINF, np.Inf],
             DriverObsSpace.WORST_ALTERNATIVE: [np.NINF, np.Inf],
+            DriverObsSpace.MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO: [np.NINF, np.Inf],
 
             DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
         }

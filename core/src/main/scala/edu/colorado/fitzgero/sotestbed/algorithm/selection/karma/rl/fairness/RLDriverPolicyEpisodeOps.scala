@@ -68,7 +68,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     tripLogs: List[TripLogRow]
   ): IO[List[(String, Double)]] = {
     val tripLogLookup = tripLogs.map { r => (r.agentId, r) }.toMap
-    karmaLogs
+    val allocationsOrError = karmaLogs
       .groupBy(_.agentId)
       .toList
       .traverse {
@@ -88,6 +88,30 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
               IO.fromEither(result).map { metric => (agentId, metric) }
           }
       }
+    allocationsOrError.flatMap { allocationByAgent =>
+      val (agentIds, allocations) = allocationByAgent.unzip
+      IO.fromOption(JainFairnessMath.userFairness(allocations))(new Error(s"should not be called on empty logs"))
+        .map { rewards => agentIds.zip(rewards) }
+    }
+  }
+
+  def endOfEpisodeRewardByFreeFlowDiff(
+    tripLogs: List[TripLogRow]
+  ): IO[List[(String, Double)]] = {
+    val AlmostZero = 0.000000001
+    val result = tripLogs.map { row =>
+      val t    = row.finalTravelTime.value.toDouble
+      val ff   = row.freeFlowTravelTime.value.toDouble
+      val dist = row.finalDistance.value
+      // this may be a bit too careful
+      val speed   = if (t == 0.0) dist / AlmostZero else dist / t
+      val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
+      val pDiff   = speedFF / math.min(speedFF, speed)
+      (row.agentId, pDiff)
+    }
+    val (agentIds, allocations) = result.unzip
+    IO.fromOption(JainFairnessMath.userFairness(allocations))(new Error(s"should not be called on empty logs"))
+      .map { rewards => agentIds.zip(rewards) }
   }
 
   def finalObservations(

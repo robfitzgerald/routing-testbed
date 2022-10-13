@@ -18,8 +18,29 @@ sealed trait AllocationMetric
 
 object AllocationMetric extends LazyLogging {
 
-  case object TripComparison          extends AllocationMetric
+  /**
+    * use difference between a separate "selfish-only" trial and the
+    * current one to compute diffs. uses the AllocationTransform argument
+    * to reshape the distribution before computing the fairness.
+    */
+  case object SelfishTripDiff extends AllocationMetric
+
+  /**
+    * observes the marginal change in delay between each auction for each
+    * agent in order to more closely track what the agent believes they
+    * are choosing between when computing the reward.
+    */
   case object AccumulatedAuctionDelay extends AllocationMetric
+
+  /**
+    * observes the final difference between experienced and free flow
+    * travel speed for a route. this is transformed into a percentage range
+    * where 100% means the agent experienced no delay from free flow, and
+    * 0% means the agent experienced an infinite delay, by using the travel
+    * distance to transpose travel times to speeds, and then dividing the
+    * free flow speed by the experienced speed.
+    */
+  case object FreeFlowDiffProportion extends AllocationMetric
 
   implicit class AllocationMetricExtension(am: AllocationMetric) {
 
@@ -33,7 +54,7 @@ object AllocationMetric extends LazyLogging {
     ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
 
       am match {
-        case TripComparison =>
+        case SelfishTripDiff =>
           for {
             tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
             tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
@@ -55,6 +76,18 @@ object AllocationMetric extends LazyLogging {
             tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
             karmaWithEpisodes = karmaLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
             rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByAuctionDelay(karmaWithEpisodes, tripsWithEpisodes)
+            observations <- RLDriverPolicyEpisodeOps.finalObservations(
+              tripsWithEpisodes,
+              driverPolicySpace,
+              networkPolicyConfig,
+              finalBank
+            )
+          } yield (rewards, observations)
+        case FreeFlowDiffProportion =>
+          for {
+            tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+            tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+            rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByFreeFlowDiff(tripsWithEpisodes)
             observations <- RLDriverPolicyEpisodeOps.finalObservations(
               tripsWithEpisodes,
               driverPolicySpace,

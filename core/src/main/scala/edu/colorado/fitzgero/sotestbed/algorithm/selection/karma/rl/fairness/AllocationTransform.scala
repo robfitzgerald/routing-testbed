@@ -1,5 +1,10 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness
 
+/**
+  * @deprecated this implies configurable distribution transforms. i've moved
+  * away from this to instead specifying unique AllocationMetric instances with
+  * each their own interpretation of how we handle the allocation distribution.
+  */
 sealed trait AllocationTransform
 
 object AllocationTransform {

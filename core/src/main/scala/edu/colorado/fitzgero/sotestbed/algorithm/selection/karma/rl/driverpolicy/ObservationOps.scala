@@ -52,8 +52,44 @@ object ObservationOps {
     *
     * @param rn road network state
     * @param experiencedRoute list of edges we have traversed with their travel time
+    * @return the diff from free flow for this coalesced route with spur
+    */
+  def compareRouteToFreeFlow(
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    experiencedRoute: List[EdgeData]
+  ): IO[Double] = {
+    // get experienced route (EdgeData), remaining route (EdgeData), spur route (PathSegment)
+    // build complete alt path from start of trip via spur to destination
+    // for each edge, lookup free flow speed, compute diff
+    val experiencedIO = experiencedRoute.traverse { e =>
+      IO.fromOption(e.estimatedTimeAtEdge)(new Error(s"edge ${e.edgeId} missing time estimate"))
+        .map { est => (e.edgeId, est.value.toDouble) }
+    }
+
+    val diffIO = for {
+      experienced <- experiencedIO
+      diffs <- experienced.traverse {
+        case (edgeId, obsTime) =>
+          rn.edge(edgeId).flatMap { eaOpt =>
+            IO.fromOption(eaOpt)(new Error(s"edge $edgeId missing attribute"))
+              .map { ea => obsTime - ea.attribute.freeFlowTravelTime.value }
+          }
+      }
+    } yield diffs.sum
+
+    diffIO
+  }
+
+  /**
+    * given an experienced route and a spur made from coalescing the remaining
+    * route with an alt path, find the diffs by edge between observed/estimated
+    * travel time and the free flow travel time.
+    *
+    * @param rn road network state
+    * @param experiencedRoute list of edges we have traversed with their travel time
     * @param remainingRoute list of edges remaining on the current route plan (including current edge)
-    *                       along with travel time estimates
+    *                       along with travel time estimates. if not provided, the diff will only
+    *                       be calculated wrt the experienced route
     * @param altPath a spur that starts along our remaining route but has the same destination
     * @return the diff from free flow for this coalesced route with spur
     */
