@@ -26,15 +26,14 @@ object KSPTerminationFunctionConfig {
 
     def build(): AltPathsState => Boolean = {
       val bounds: Int = k * scalar
-      state: AltPathsState =>
-        state.alts.length >= bounds
+      state: AltPathsState => state.alts.length >= bounds
     }
   }
 
   /**
     * runs until entire search frontier has been explored
     */
-  final case object UntilKFoundOrEmptyFrontier extends KSPTerminationFunctionConfig {
+  final case object NoFilter extends KSPTerminationFunctionConfig {
 
     def build(): AltPathsState => Boolean = (_: AltPathsState) => false
   }
