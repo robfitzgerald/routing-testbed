@@ -27,19 +27,24 @@ object MATSimRouteToLineString {
     val uniqueNodes = allNodes.flatten.distinctBy(_.getId)
 
     // map the coordinates into Lat/Lon (WGS84)
-    val crs       = new CRSFactory()
-    val transform = new BasicCoordinateTransform(crs.createFromName("EPSG:3857"), crs.createFromName("EPSG:4326"))
-    val uniqueCoordsLatLon = uniqueNodes.map { n =>
-      val mercator = new ProjCoordinate(n.getCoord.getX, n.getCoord.getY)
-      transform.transform(mercator, new ProjCoordinate())
+    Try {
+      // 2022-10-09 - transform from 3857 -> 4326 can fail
+      val crs       = new CRSFactory()
+      val transform = new BasicCoordinateTransform(crs.createFromName("EPSG:3857"), crs.createFromName("EPSG:4326"))
+      val uniqueCoordsLatLon = uniqueNodes.map { n =>
+        val mercator = new ProjCoordinate(n.getCoord.getX, n.getCoord.getY)
+        transform.transform(mercator, new ProjCoordinate())
+      }
+      uniqueCoordsLatLon
+    }.toOption.flatMap { uniqueCoordsLatLon =>
+      if (uniqueCoordsLatLon.isEmpty) None
+      else {
+        val result: String = uniqueCoordsLatLon
+          .map { coord => f"${coord.x} ${coord.y}" }
+          .mkString("\"LINESTRING (", ", ", ")\"")
+        Some(result)
+      }
     }
 
-    if (uniqueCoordsLatLon.isEmpty) None
-    else {
-      val result: String = uniqueCoordsLatLon
-        .map { coord => f"${coord.x} ${coord.y}" }
-        .mkString("\"LINESTRING (", ", ", ")\"")
-      Some(result)
-    }
   }
 }
