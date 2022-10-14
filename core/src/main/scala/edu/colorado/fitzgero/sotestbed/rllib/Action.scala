@@ -1,10 +1,10 @@
 package edu.colorado.fitzgero.sotestbed.rllib
 
 import io.circe.{Decoder, Encoder}
-import cats.syntax.functor._
 import io.circe.generic.auto._
 import io.circe.syntax._
 import cats.effect.IO
+import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.util.CirceUtils
 
 sealed trait Action
@@ -27,6 +27,19 @@ object Action {
   implicit val obsRealMapDec: Decoder[Map[AgentId, Double]] =
     CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (d: Double) => Right(d))
 
+  implicit val obsRealMapQmixDec: Decoder[Map[AgentId, List[Double]]] =
+    CirceUtils.mapDecoder(
+      (s: String) => Right(AgentId(s)),
+      (ds: List[Double]) => {
+        ds match {
+          case Nil           => Left("empty action list from server")
+          case action :: Nil => Right(List(action))
+          // we may regret this in the future, it may work against QMIX's assumptions
+          case other => Left(s"too many actions sent for agent from server")
+        }
+      }
+    )
+
   implicit val enc: Encoder[Action] = {
     Encoder.instance {
       case sa: SingleAgentDiscreteAction => sa.action.asJson
@@ -47,7 +60,21 @@ object Action {
       Decoder[Option[Map[AgentId, Double]]].emap {
         case None    => Right(MultiAgentRealAction(Map.empty))
         case Some(m) => Right(MultiAgentRealAction(m))
-      }
+      },
+      // rllib sends back actions from QMIX wrapped in a list
+      Decoder[Option[Map[AgentId, List[Double]]]].emap {
+        case None => Right(MultiAgentRealAction(Map.empty))
+        case Some(m) =>
+          m.toList
+            .traverse {
+              case (agent, acts) =>
+                acts.headOption match {
+                  case None      => Left(s"empty action for agent $agent")
+                  case Some(act) => Right((agent, act))
+                }
+            }
+            .map { fixed => MultiAgentRealAction(fixed.toMap) }
+      }.widen
     ).reduceLeft(_.or(_))
 
   def extractSingleAgentRealAction(action: Action): IO[Double] =
