@@ -14,6 +14,9 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Bid
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 
+/**
+  * driver policies use an AllocationMetric to capture the allocations of various drivers
+  */
 sealed trait AllocationMetric
 
 object AllocationMetric extends LazyLogging {
