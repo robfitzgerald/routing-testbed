@@ -98,18 +98,23 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
   def endOfEpisodeRewardByFreeFlowDiff(
     tripLogs: List[TripLogRow]
   ): IO[List[(String, Double)]] = {
-    val AlmostZero = 0.000000001
+    val AlmostZero              = 0.000000001
+    val InvalidTravelTimeReward = 0.0
     val result = tripLogs.map { row =>
-      val t    = row.finalTravelTime.value.toDouble
-      val ff   = row.freeFlowTravelTime.value.toDouble
-      val dist = row.finalDistance.value
-      // this may be a bit too careful
-      val speed   = if (t == 0.0) dist / AlmostZero else dist / t
-      val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
-      // results in values in the range [0, inf] where 1.0 means the observed travel time
-      // matches free flow. values should typically be less than 1 and occasionally greater than 1.
-      val pDiff = if (speedFF == 0.0) 0.0 else speed / speedFF
-      (row.agentId, pDiff)
+      val t  = row.finalTravelTime.value.toDouble
+      val ff = row.freeFlowTravelTime.value.toDouble
+      if (t == 0.0 || ff == 0.0) {
+        (row.agentId, InvalidTravelTimeReward)
+      } else {
+        val dist = row.finalDistance.value
+        // this may be a bit too careful
+        val speed   = if (t == 0.0) dist / AlmostZero else dist / t
+        val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
+        // results in values in the range [0, inf] where 1.0 means the observed travel time
+        // matches free flow. values should typically be less than 1 and occasionally greater than 1.
+        val pDiff = if (speedFF == 0.0) 0.0 else speed / speedFF
+        (row.agentId, pDiff)
+      }
     }
     val (agentIds, allocations) = result.unzip
     IO.fromOption(JainFairnessMath.userFairness(allocations))(new Error(s"should not be called on empty logs"))
