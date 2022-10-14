@@ -5,13 +5,15 @@ import scala.reflect.{classTag, ClassTag}
 import cats.effect._
 import cats.implicits._
 
+import io.circe
+import io.circe.{Error => CirceError, _}
 import io.circe.syntax._
+
 import sttp.client3._
 import sttp.client3.circe._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest._
 import sttp.client3.asynchttpclient.cats.AsyncHttpClientCatsBackend
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
-import io.circe
 import sttp.client3.basicRequest
 
 object PolicyClientOps {
@@ -104,7 +106,15 @@ object PolicyClientOps {
         IO.pure(PolicyClientResponse.Empty)
       } else {
         val annotated = sttpRes.body.left
-          .map { t => new Error(s"error from rl server for msg $reqBody", t) }
+          .map { t =>
+            val detail = t match {
+              case de @ DeserializationException(body, error) =>
+                f"deserialization error, confirm circe Decoder covers message structure. $de"
+              case HttpError(body, statusCode) =>
+                f"failure due to HTTP status code $statusCode: $body"
+            }
+            new Error(s"failure via client/server call: $detail", t)
+          }
         IO.fromEither(annotated)
       }
     }
