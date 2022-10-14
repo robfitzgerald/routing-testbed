@@ -21,7 +21,9 @@ object ReservoirSampling {
     population: List[(T, Double)],
     k: Int
   ): (List[(T, Double)], List[(T, Double)]) = {
-    if (population.lengthCompare(k) <= 0) (population, List.empty)
+    if (population.isEmpty) (List.empty, List.empty)
+    else if (k == 0) (List.empty, List.empty)
+    else if (population.lengthCompare(k) <= 0) (population, List.empty)
     else {
       // create a min priority queue over the weighted population
       implicit val ord: Ordering[(T, Double)] = Ordering.by { case (_, w) => -w }
@@ -77,7 +79,8 @@ object ReservoirSampling {
         }
       }
 
-      val notSampled = _solve(recomputeX(), population.drop(k))
+      val initialX   = recomputeX()
+      val notSampled = _solve(initialX, population.drop(k))
       (reservoir.toList, notSampled)
     }
 
