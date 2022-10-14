@@ -41,6 +41,7 @@ import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
 import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.MultiAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.SingleAgentPolicy
+import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2PrintOps
 
 //import kantan.csv._
 //import kantan.csv.ops._
@@ -168,7 +169,9 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
           case so: Algorithm.SystemOptimal =>
             val soAlgorithmOrError = for {
               grid <- so.grid.build(network)
-              _    <- checkRLKarmaUsesFreeFlow(so)
+              gridFile = config.experimentLoggingDirectory.resolve("grid.csv").toFile
+              _ <- CoordinateGrid2PrintOps.writeGridToCsv(grid, gridFile)
+              _ <- checkRLKarmaUsesFreeFlow(so)
               // _    <- startEpisodesForRLPolicies(so.selectionAlgorithm, agentsUnderControl)
             } yield {
               val ksp: AltPathsAlgorithmRunner = {
