@@ -185,6 +185,26 @@ def run():
         #   beginning to end. Data collection will not stop unless the episode
         #   terminates or a configured horizon (hard or soft) is hit.
         "batch_mode": "complete_episodes",
+        # Divide episodes into fragments of this many steps each during rollouts.
+        # Sample batches of this size are collected from rollout workers and
+        # combined into a larger batch of `train_batch_size` for learning.
+        #
+        # For example, given rollout_fragment_length=100 and train_batch_size=1000:
+        #   1. RLlib collects 10 fragments of 100 steps each from rollout workers.
+        #   2. These fragments are concatenated and we perform an epoch of SGD.
+        #
+        # When using multiple envs per worker, the fragment size is multiplied by
+        # `num_envs_per_worker`. This is since we are collecting steps from
+        # multiple envs in parallel. For example, if num_envs_per_worker=5, then
+        # rollout workers will return experiences in chunks of 5*100 = 500 steps.
+        #
+        # The dataflow here can vary per algorithm. For example, PPO further
+        # divides the train batch into minibatches for multi-epoch SGD.
+        "rollout_fragment_length": 200,
+        # Training batch size, if applicable. Should be >= rollout_fragment_length.
+        # Samples batches will be concatenated together to a batch of this size,
+        # which is then passed to SGD.
+        "train_batch_size": 1000,
         # Number of environments to evaluate vector-wise per worker. This enables
         # model inference batching, which can improve performance for inference
         # bottlenecked workloads.
@@ -243,12 +263,7 @@ def run():
                     "warmup_timesteps": 14000,
                     # Timesteps over which to anneal epsilon.
                     "epsilon_timesteps": 70000,
-                },
-                # "learning_starts": 0,
-                # "timesteps_per_iteration": 200,
-                # "n_step": 3,
-                # "rollout_fragment_length": 200,
-                # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
+                }
             }
         )
         # config["model"] = {
