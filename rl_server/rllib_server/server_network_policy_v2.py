@@ -31,7 +31,7 @@ import ray
 from ray import air, tune
 from ray.rllib.algorithms.registry import get_algorithm_class
 from ray.rllib.algorithms.qmix import QMixConfig
-from rl_server.rllib_server.driver_cli import parser
+from rl_server.rllib_server.network_cli import parser
 from rl_server.so_routing.env.network_policy.network_obs_space import NetworkObsSpace, build_observation_space
 
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
@@ -181,6 +181,26 @@ def run():
         # Number of rollout worker actors to create for parallel sampling. Setting
         # this to 0 will force rollouts to be done in the trainer actor.
         "num_workers": args.num_workers,
+        # Divide episodes into fragments of this many steps each during rollouts.
+        # Sample batches of this size are collected from rollout workers and
+        # combined into a larger batch of `train_batch_size` for learning.
+        #
+        # For example, given rollout_fragment_length=100 and train_batch_size=1000:
+        #   1. RLlib collects 10 fragments of 100 steps each from rollout workers.
+        #   2. These fragments are concatenated and we perform an epoch of SGD.
+        #
+        # When using multiple envs per worker, the fragment size is multiplied by
+        # `num_envs_per_worker`. This is since we are collecting steps from
+        # multiple envs in parallel. For example, if num_envs_per_worker=5, then
+        # rollout workers will return experiences in chunks of 5*100 = 500 steps.
+        #
+        # The dataflow here can vary per algorithm. For example, PPO further
+        # divides the train batch into minibatches for multi-epoch SGD.
+        "rollout_fragment_length": 50,
+        # Training batch size, if applicable. Should be >= rollout_fragment_length.
+        # Samples batches will be concatenated together to a batch of this size,
+        # which is then passed to SGD.
+        "train_batch_size": 200,
         # How to build per-Sampler (RolloutWorker) batches, which are then
         # usually concat'd to form the train batch. Note that "steps" below can
         # mean different things (either env- or agent-steps) and depends on the

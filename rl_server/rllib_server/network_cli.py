@@ -73,7 +73,7 @@ parser.add_argument(
 parser.add_argument(
     "--stop-reward",
     type=float,
-    default=80.0,
+    default=9999999.0,
     help="Reward at which we stop training.",
 )
 parser.add_argument(
