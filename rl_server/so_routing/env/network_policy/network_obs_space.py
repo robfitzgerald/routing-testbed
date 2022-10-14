@@ -33,7 +33,8 @@ class NetworkObsSpace(Enum):
         """
         _OBSERVATION_SPACE_MAPPING = {
             NetworkObsSpace.SPEED: [0, np.inf],
-            NetworkObsSpace.SPEED_DIFF: [np.NINF, 0],
+            # speeds can be faster than free flow
+            NetworkObsSpace.SPEED_DIFF: [np.NINF, np.inf],
             NetworkObsSpace.SPEED_RELATIVE: [0, 1]
         }
         return _OBSERVATION_SPACE_MAPPING.get(driver_obs_space)
@@ -78,6 +79,6 @@ def build_observation_space(
         return spaces.Dict(mapping)
 
 
-class DriverObsSpaceEncoder(JSONEncoder):
+class NetworkObsSpaceEncoder(JSONEncoder):
     def default(self, o):
         return o.name
