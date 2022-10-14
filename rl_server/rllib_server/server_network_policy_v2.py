@@ -336,9 +336,11 @@ def run():
                 print("Last checkpoint", checkpoint)
 
                 ts += results["timesteps_total"]
-                met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
+                # todo: look for the right key to inspect for this
+                # met_reward_condition = results["policy_reward_mean"]["agent"] >= args.stop_reward
                 met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
-                print(f"met reward stopping condition? {met_reward_condition}")
+                # print(f"met reward stopping condition? {met_reward_condition}")
+                met_reward_condition = False
                 if args.stop_timesteps is not None:
                     print(
                         f"met timestep stopping condition? {met_ts_condition}")
