@@ -15,13 +15,13 @@ def build_action_space(
 
     _SPACE = [
         # DISCRETE SPACES
-        spaces.Discrete(max_k),
+        spaces.Discrete(max_k if max_k is not None else 1),
         # CONTINUOUS SPACES
         spaces.Box(
             low=np.array([0.0]),
             high=np.array([1.0]),
             shape=(1,),
-            dtype=np.float64
+            dtype=np.float32
         )
     ]
     try:
