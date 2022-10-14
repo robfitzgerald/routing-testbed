@@ -106,12 +106,17 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
       // this may be a bit too careful
       val speed   = if (t == 0.0) dist / AlmostZero else dist / t
       val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
-      val pDiff   = speedFF / math.min(speedFF, speed)
+      // results in values in the range [0, inf] where 1.0 means the observed travel time
+      // matches free flow. values should typically be less than 1 and occasionally greater than 1.
+      val pDiff = if (speedFF == 0.0) 0.0 else speed / speedFF
       (row.agentId, pDiff)
     }
     val (agentIds, allocations) = result.unzip
     IO.fromOption(JainFairnessMath.userFairness(allocations))(new Error(s"should not be called on empty logs"))
-      .map { rewards => agentIds.zip(rewards) }
+      .map { rewards =>
+        val result = agentIds.zip(rewards)
+        result
+      }
   }
 
   def finalObservations(
