@@ -9,11 +9,12 @@ trait BankOps {
   // deserves a different home
   implicit class MapOps[V](map: Map[String, V]) {
 
-    def getOrError(agent: String): Either[Error, V] =
+    def getOrError(key: String): Either[Error, V] =
       map
-        .get(agent)
+        .get(key)
         .toRight {
-          new Error(s"agent $agent missing from lookup")
+          val top5 = map.take(5).mkString("\n")
+          new Error(s"key $key missing from lookup with entries (top 5):\n$top5")
         }
   }
 
