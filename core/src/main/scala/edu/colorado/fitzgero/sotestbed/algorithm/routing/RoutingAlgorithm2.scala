@@ -2,6 +2,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
 import cats.effect.IO
 import cats.implicits._
+import io.circe.syntax._
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
@@ -248,8 +249,8 @@ object RoutingAlgorithm2 {
       case k: KarmaSelectionAlgorithm =>
         // generate a signal for each batch
         val batchesWithSignals: IO[Map[String, NetworkPolicySignal]] = k.networkPolicy match {
-          case UserOptimal                                 => IO.pure(Map.empty)
-          case ExternalRLServer(underlying, space, client) =>
+          case UserOptimal                          => IO.pure(Map.empty)
+          case ExternalRLServer(underlying, client) =>
             // v2: special handling for Karma-based selection
             // that integrates with an external control module when generating
             // network policy signals
@@ -257,11 +258,28 @@ object RoutingAlgorithm2 {
             // we assume here that everything is correctly configured so that batching
             // was informed by the NetworkPolicySpace and therefore ZoneIds match.
             for {
-              epId <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
-              obs  <- space.encodeObservation(roadNetwork, zoneLookup)
-              res  <- client.sendOne(PolicyClientRequest.GetActionRequest(epId, obs))
-              act  <- res.getAction
+              epId  <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
+              space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
+              // log reward since last time step
+              lastBatches = k.getPreviousBatchIds()
+              _ <- if (lastBatches.isEmpty) IO.pure(())
+              else
+                for {
+                  rew <- space.encodeReward(lastBatches, roadNetwork, zoneLookup)
+                  req: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
+                  _ <- client.sendOne(req)
+                  _ = k.networkClientPw.write(req.asJson.noSpaces.toString + "\n")
+                } yield ()
+              // get action for this time step
+              obs <- space.encodeObservation(roadNetwork, zoneLookup)
+              req2: PolicyClientRequest = PolicyClientRequest.GetActionRequest(epId, obs)
+              res2 <- client.sendOne(req2)
+              _ = k.networkClientPw.write(req2.asJson.noSpaces.toString + "\n")
+              _ = k.networkClientPw.write(res2.asJson.noSpaces.toString + "\n")
+              act  <- res2.getAction
               sigs <- space.decodeAction(act, k.gen)
+              // record batch ids to log rewards for at next time step
+              _ = k.updatePreviousBatchIds(sigs.keys.toList)
             } yield sigs
 
           case otherPolicy =>
@@ -286,7 +304,7 @@ object RoutingAlgorithm2 {
             signals,
             k.selectionPw,
             k.networkPw,
-            k.clientPw
+            k.driverClientPw
           )
 
           selectionRunner.copy(selectionAlgorithm = fixedKarmaSelection)

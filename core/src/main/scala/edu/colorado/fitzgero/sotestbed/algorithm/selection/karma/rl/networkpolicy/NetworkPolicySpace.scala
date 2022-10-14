@@ -15,6 +15,7 @@ import edu.colorado.fitzgero.sotestbed.rllib.Action.SingleAgentRealAction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
 import edu.colorado.fitzgero.sotestbed.rllib.AgentId
 import edu.colorado.fitzgero.sotestbed.rllib.Observation
+import edu.colorado.fitzgero.sotestbed.rllib.Reward
 
 sealed trait NetworkPolicySpace
 
@@ -36,7 +37,8 @@ object NetworkPolicySpace {
     *
     * @param zones
     */
-  case class ZonalSpeedDelta(aggregation: ObservationAggregation) extends NetworkPolicySpace
+  case class ZonalSpeedDelta(observation: ObservationAggregation, reward: ObservationAggregation)
+      extends NetworkPolicySpace
 
   implicit class NPSExtensions(nps: NetworkPolicySpace) {
 
@@ -44,23 +46,65 @@ object NetworkPolicySpace {
       network: RoadNetwork[IO, Coordinate, EdgeBPR],
       batchZoneLookup: Map[String, List[EdgeId]]
     ): IO[Observation] = nps match {
-      case ZonalSpeedDelta(aggregation) =>
+      case ZonalSpeedDelta(observation, reward) =>
         // for each zone, collect the network edge attributes and apply the chosen aggregation function
-        val speedByZone = batchZoneLookup.toList.traverse {
+        val obsByZone = batchZoneLookup.toList.traverse {
           case (batchId, zoneEdges) =>
             for {
               eas <- network.edges(zoneEdges)
             } yield {
               val obs       = eas.map { _.attribute }
-              val aggSpeeds = aggregation.aggregate(obs)
+              val aggSpeeds = observation.aggregate(obs)
               (AgentId(batchId), List(aggSpeeds))
             }
         }
-        speedByZone.map { obs => Observation.MultiAgentObservation(obs.toMap) }
+        obsByZone.map { obs => Observation.MultiAgentObservation(obs.toMap) }
     }
 
     def decodeAction(action: Action, sigGen: NetworkPolicySignalGenerator): IO[Map[String, NetworkPolicySignal]] =
       sigGen.generateSignalsForZones(action)
+
+    def encodeReward(
+      batchIds: List[String],
+      network: RoadNetwork[IO, Coordinate, EdgeBPR],
+      batchZoneLookup: Map[String, List[EdgeId]]
+    ): IO[Reward] = nps match {
+      case ZonalSpeedDelta(observation, reward) =>
+        // for each zone, collect the network edge attributes and apply the chosen aggregation function
+        val batchIdsSet = batchIds.toSet
+        val rewardByZone =
+          batchZoneLookup
+            .filter { case (bId, _) => batchIdsSet.contains(bId) }
+            .toList
+            .traverse {
+              case (batchId, zoneEdges) =>
+                for {
+                  eas <- network.edges(zoneEdges)
+                } yield {
+                  val edges = eas.map { _.attribute }
+                  val r     = reward.aggregate(edges)
+                  (AgentId(batchId), r)
+                }
+            }
+
+        rewardByZone.map { obs => Reward.MultiAgentReward(obs.toMap) }
+    }
+
+    def encodeFinalObservation(batchIds: List[String]): IO[Observation] = nps match {
+      case ZonalSpeedDelta(observation, reward) =>
+        observation.finalObservation.map { fo =>
+          val r = batchIds.map { id => AgentId(id) -> List(fo) }.toMap
+          Observation.MultiAgentObservation(r)
+        }
+    }
+
+    def encodeFinalReward(batchIds: List[String]): IO[Reward] = nps match {
+      case ZonalSpeedDelta(observation, reward) =>
+        reward.finalReward.map { fw =>
+          val r = batchIds.map { id => AgentId(id) -> fw }.toMap
+          Reward.MultiAgentReward(r)
+        }
+    }
 
   }
 }

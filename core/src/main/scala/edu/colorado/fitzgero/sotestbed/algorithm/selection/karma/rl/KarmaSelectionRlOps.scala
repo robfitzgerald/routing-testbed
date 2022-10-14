@@ -154,6 +154,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     networkPolicyConfig: NetworkPolicyConfig,
     experimentDirectory: JavaNioPath,
     allocationTransform: AllocationTransform,
+    allocationMetric: AllocationMetric,
     agentsWithEpisodes: Set[String],
     finalBank: Map[String, Karma],
     logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
@@ -161,7 +162,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     import PolicyClientRequest._
     import Reward._
     import Observation._
-    val finalData = collectFinalRewardsAndObservations(
+    val finalData = allocationMetric.collectFinalRewardsAndObservations(
       experimentDirectory = experimentDirectory,
       agentsWithEpisodes = agentsWithEpisodes,
       allocationTransform = allocationTransform,
@@ -169,6 +170,14 @@ object KarmaSelectionRlOps extends LazyLogging {
       networkPolicyConfig = networkPolicyConfig,
       finalBank = finalBank
     )
+    // val finalData = collectFinalRewardsAndObservations(
+    //   experimentDirectory = experimentDirectory,
+    //   agentsWithEpisodes = agentsWithEpisodes,
+    //   allocationTransform = allocationTransform,
+    //   driverPolicySpace = multiAgentStructure.space,
+    //   networkPolicyConfig = networkPolicyConfig,
+    //   finalBank = finalBank
+    // )
     for {
       data <- finalData
       (rewards, observations) = data
@@ -236,49 +245,49 @@ object KarmaSelectionRlOps extends LazyLogging {
     result
   }
 
-  def collectFinalRewardsAndObservations(
-    experimentDirectory: JavaNioPath,
-    agentsWithEpisodes: Set[String],
-    allocationTransform: AllocationTransform,
-    driverPolicySpace: DriverPolicySpace,
-    networkPolicyConfig: NetworkPolicyConfig,
-    finalBank: Map[String, Karma]
-  ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
-    for {
-      tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
-      tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
-      rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(tripsWithEpisodes, allocationTransform)
-      observations <- RLDriverPolicyEpisodeOps.finalObservations(
-        tripsWithEpisodes,
-        driverPolicySpace,
-        networkPolicyConfig,
-        finalBank
-      )
-    } yield (rewards, observations)
-  }
+  // def collectFinalRewardsAndObservations(
+  //   experimentDirectory: JavaNioPath,
+  //   agentsWithEpisodes: Set[String],
+  //   allocationTransform: AllocationTransform,
+  //   driverPolicySpace: DriverPolicySpace,
+  //   networkPolicyConfig: NetworkPolicyConfig,
+  //   finalBank: Map[String, Karma]
+  // ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
+  //   for {
+  //     tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+  //     tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+  //     rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(tripsWithEpisodes, allocationTransform)
+  //     observations <- RLDriverPolicyEpisodeOps.finalObservations(
+  //       tripsWithEpisodes,
+  //       driverPolicySpace,
+  //       networkPolicyConfig,
+  //       finalBank
+  //     )
+  //   } yield (rewards, observations)
+  // }
 
-  def collectFinalRewardsAndObservationsAuctionDelayMetric(
-    experimentDirectory: JavaNioPath,
-    agentsWithEpisodes: Set[String],
-    allocationTransform: AllocationTransform,
-    driverPolicySpace: DriverPolicySpace,
-    networkPolicyConfig: NetworkPolicyConfig,
-    finalBank: Map[String, Karma]
-  ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
-    for {
-      tripLogs  <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
-      karmaLogs <- RLDriverPolicyEpisodeOps.getKarmaLog(experimentDirectory)
-      tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
-      karmaWithEpisodes = karmaLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
-      rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByAuctionDelay(karmaWithEpisodes, tripsWithEpisodes)
-      observations <- RLDriverPolicyEpisodeOps.finalObservations(
-        tripsWithEpisodes,
-        driverPolicySpace,
-        networkPolicyConfig,
-        finalBank
-      )
-    } yield (rewards, observations)
-  }
+  // def collectFinalRewardsAndObservationsAuctionDelayMetric(
+  //   experimentDirectory: JavaNioPath,
+  //   agentsWithEpisodes: Set[String],
+  //   allocationTransform: AllocationTransform,
+  //   driverPolicySpace: DriverPolicySpace,
+  //   networkPolicyConfig: NetworkPolicyConfig,
+  //   finalBank: Map[String, Karma]
+  // ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
+  //   for {
+  //     tripLogs  <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+  //     karmaLogs <- RLDriverPolicyEpisodeOps.getKarmaLog(experimentDirectory)
+  //     tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+  //     karmaWithEpisodes = karmaLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+  //     rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByAuctionDelay(karmaWithEpisodes, tripsWithEpisodes)
+  //     observations <- RLDriverPolicyEpisodeOps.finalObservations(
+  //       tripsWithEpisodes,
+  //       driverPolicySpace,
+  //       networkPolicyConfig,
+  //       finalBank
+  //     )
+  //   } yield (rewards, observations)
+  // }
 
   def logFinalRewards(
     rewards: List[(String, Double)],

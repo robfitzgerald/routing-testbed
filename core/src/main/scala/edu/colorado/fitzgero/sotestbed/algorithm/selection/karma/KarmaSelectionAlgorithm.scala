@@ -33,6 +33,10 @@ import cats.effect.unsafe.implicits.global
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ExternalRLServer
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.numeric.TravelTimeSeconds
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.UserOptimal
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionWeightedSampling
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -51,12 +55,15 @@ case class KarmaSelectionAlgorithm(
 
   import KarmaSelectionAlgorithm._
 
-  val selectionLogFile: java.nio.file.Path = experimentDirectory.resolve(KarmaSelectionLogRow.KarmaLogFilename)
-  val networkLogFile: java.nio.file.Path   = experimentDirectory.resolve(KarmaNetworkLogFilename)
-  val rlClientLogFile: java.nio.file.Path  = experimentDirectory.resolve(ClientLogFilename)
-  val selectionPw: PrintWriter             = new PrintWriter(selectionLogFile.toFile)
-  val networkPw: PrintWriter               = new PrintWriter(networkLogFile.toFile)
-  val clientPw: PrintWriter                = new PrintWriter(rlClientLogFile.toFile)
+  val selectionLogPath: java.nio.file.Path     = experimentDirectory.resolve(KarmaSelectionLogRow.KarmaLogFilename)
+  val networkLogPath: java.nio.file.Path       = experimentDirectory.resolve(KarmaNetworkLogFilename)
+  val driverClientLogPath: java.nio.file.Path  = experimentDirectory.resolve(DriverClientLogFilename)
+  val networkClientLogPath: java.nio.file.Path = experimentDirectory.resolve(NetworkClientLogFilename)
+
+  val selectionPw: PrintWriter     = new PrintWriter(selectionLogPath.toFile)
+  val networkPw: PrintWriter       = new PrintWriter(networkLogPath.toFile)
+  val driverClientPw: PrintWriter  = new PrintWriter(driverClientLogPath.toFile)
+  val networkClientPw: PrintWriter = new PrintWriter(networkClientLogPath.toFile)
   // todo: intercept all client communications and write to json newline-formatted file
   //  - maybe RayRLlibClient.send takes an optional callback for logging?
 
@@ -84,7 +91,7 @@ case class KarmaSelectionAlgorithm(
   }
 
   val multiAgentNetworkPolicyEpisodeId: Option[EpisodeId] = networkPolicy match {
-    case ExternalRLServer(underlying, space, client) =>
+    case ExternalRLServer(underlying, client) =>
       // only multi-agent
       val episodeId = EpisodeId()
       KarmaSelectionRlOps.startMultiAgentEpisode(client, Some(episodeId)).unsafeRunSync()
@@ -103,16 +110,48 @@ case class KarmaSelectionAlgorithm(
 
   val gen: NetworkPolicySignalGenerator = networkPolicy.buildGenerator
 
+  // RL-based network policy needs to know what "agents" submitted GET_ACTION
+  // requests last time step in order to reward them in the future
+  private var previousBatchIds: List[String] = List.empty
+
+  def updatePreviousBatchIds(ids: List[String]): Unit = {
+    previousBatchIds = ids
+  }
+  def getPreviousBatchIds(): List[String] = previousBatchIds
+
   /**
     * this close method is used as it is called in RoutingExperiment2's .close() method
     */
-  def close(finalBank: Map[String, Karma]): IO[Unit] = {
+  def close(
+    finalBank: Map[String, Karma],
+    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[Unit] = {
     logger.info(s"closing ${KarmaSelectionLogRow.KarmaLogFilename}")
     selectionPw.close()
     logger.info(s"closing $KarmaNetworkLogFilename")
     networkPw.close()
-    clientPw.close()
-    driverPolicy match {
+    driverClientPw.close()
+    networkClientPw.close()
+    val networkPolicyResult = networkPolicy match {
+      case ExternalRLServer(underlying, client) =>
+        val episodeId =
+          IO.fromOption(this.multiAgentNetworkPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
+        for {
+          epId <- episodeId
+          lastBatches = this.getPreviousBatchIds()
+          space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
+          rew   <- space.encodeFinalReward(lastBatches)
+          mao   <- space.encodeFinalObservation(lastBatches)
+          req1: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
+          req2: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, mao)
+          res1 <- client.sendOne(req1)
+          res2 <- client.sendOne(req2)
+          _ = networkClientPw.write(req1.asJson.noSpaces.toString + "\n")
+          _ = networkClientPw.write(req2.asJson.noSpaces.toString + "\n")
+        } yield ()
+      case _ => IO.unit
+    }
+    val driverPolicyResult = driverPolicy match {
       case RLBasedDriverPolicy(structure, client) =>
         logger.info(s"sending final messages to RL server")
         structure match {
@@ -128,12 +167,13 @@ case class KarmaSelectionAlgorithm(
                 networkPolicy,
                 experimentDirectory,
                 allocationTransform,
+                allocationMetric,
                 agentsWithEpisodes.toSet,
                 finalBank,
                 Some((req, res) =>
                   IO {
-                    clientPw.write(req.asJson.noSpaces.toString + "\n")
-                    clientPw.write(res.asJson.noSpaces.toString + "\n")
+                    driverClientPw.write(req.asJson.noSpaces.toString + "\n")
+                    driverClientPw.write(res.asJson.noSpaces.toString + "\n")
                   }
                 )
               )
@@ -152,8 +192,8 @@ case class KarmaSelectionAlgorithm(
               episodePrefix,
               Some((reqs, ress) =>
                 IO {
-                  reqs.foreach { req => clientPw.write(req.asJson.noSpaces.toString + "\n") }
-                  ress.foreach { res => clientPw.write(res.asJson.noSpaces.toString + "\n") }
+                  reqs.foreach { req => driverClientPw.write(req.asJson.noSpaces.toString + "\n") }
+                  ress.foreach { res => driverClientPw.write(res.asJson.noSpaces.toString + "\n") }
                 }
               )
             )
@@ -161,6 +201,10 @@ case class KarmaSelectionAlgorithm(
 
       case _ => IO.unit
     }
+    for {
+      _ <- driverPolicyResult
+      _ <- networkPolicyResult
+    } yield ()
   }
 
   /**
@@ -285,8 +329,8 @@ case class KarmaSelectionAlgorithm(
             multiAgentDriverPolicyEpisodeId,
             Some((req, res) =>
               IO {
-                clientPw.write(req.asJson.noSpaces.toString + "\n")
-                clientPw.write(res.asJson.noSpaces.toString + "\n")
+                driverClientPw.write(req.asJson.noSpaces.toString + "\n")
+                driverClientPw.write(res.asJson.noSpaces.toString + "\n")
               }
             )
           )
@@ -295,7 +339,8 @@ case class KarmaSelectionAlgorithm(
         // a path for each driver agent
         // get the costs associated with the trips
         val result = for {
-          _      <- updateRlClientServerResult
+          _ <- updateRlClientServerResult
+
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           bids   <- bidFn(signal)
           selections = signal.assign(bids, alts)
@@ -401,8 +446,9 @@ case class KarmaSelectionAlgorithm(
 
 object KarmaSelectionAlgorithm {
 
-  val KarmaNetworkLogFilename = "karma_network_log.csv"
-  val ClientLogFilename       = "client_log.json"
+  val KarmaNetworkLogFilename  = "karma_network_log.csv"
+  val DriverClientLogFilename  = "driver_client_log.json"
+  val NetworkClientLogFilename = "network_client_log.json"
 
   final case class KarmaBatchData(batchId: String, obs: CongestionObservationResult, signal: NetworkPolicySignal)
 

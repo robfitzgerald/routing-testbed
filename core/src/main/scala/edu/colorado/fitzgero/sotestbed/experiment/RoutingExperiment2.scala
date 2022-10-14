@@ -155,7 +155,7 @@ object RoutingExperiment2 extends LazyLogging {
       case None => IO.unit
       case Some(routingAlg) =>
         routingAlg.selectionRunner.selectionAlgorithm match {
-          case k: KarmaSelectionAlgorithm => k.close(finalState.bank)
+          case k: KarmaSelectionAlgorithm => k.close(finalState.bank, finalState.roadNetwork)
           case _                          => IO.unit
         }
     }

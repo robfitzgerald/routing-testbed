@@ -114,7 +114,9 @@ object NetworkPolicySignal extends LazyLogging {
     }
 
     def assign(bids: List[Bid], alts: Map[Request, List[Path]]): List[(Bid, Int, Path)] =
-      if (bids.lengthCompare(1) == 0) {
+      if (bids.isEmpty || alts.isEmpty) {
+        List.empty
+      } else if (bids.lengthCompare(1) == 0) {
         pickPaths(bids, alts, uoPathSelection)
       } else {
         sig match {

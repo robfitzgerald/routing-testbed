@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy
 
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import cats.effect.IO
 
 sealed trait ObservationAggregation
 
@@ -40,6 +41,24 @@ object ObservationAggregation {
   case object MeanRelativeDistanceWeightedSpeedDiff extends ObservationAggregation
 
   implicit class OAExtensions(oa: ObservationAggregation) {
+
+    def finalObservation: IO[Double] = oa match {
+      case MeanCurrentSpeed                      => IO.raiseError(new NotImplementedError)
+      case MeanDistanceWeightedCurrentSpeed      => IO.raiseError(new NotImplementedError)
+      case MeanAbsoluteSpeedDiff                 => IO.pure(0.0)
+      case MeanAbsoluteDistanceWeightedSpeedDiff => IO.pure(0.0)
+      case MeanRelativeSpeedDiff                 => IO.pure(0.0)
+      case MeanRelativeDistanceWeightedSpeedDiff => IO.pure(0.0)
+    }
+
+    def finalReward: IO[Double] = oa match {
+      case MeanCurrentSpeed                      => IO.raiseError(new NotImplementedError)
+      case MeanDistanceWeightedCurrentSpeed      => IO.raiseError(new NotImplementedError)
+      case MeanAbsoluteSpeedDiff                 => IO.pure(1.0)
+      case MeanAbsoluteDistanceWeightedSpeedDiff => IO.pure(1.0)
+      case MeanRelativeSpeedDiff                 => IO.pure(1.0)
+      case MeanRelativeDistanceWeightedSpeedDiff => IO.pure(1.0)
+    }
 
     /**
       * given a zone of network edges, apply some variant of an ObservationAggregation

@@ -70,8 +70,7 @@ object NetworkPolicyConfig {
   case class ScaledProportionalThreshold(space: NetworkPolicySpace, scale: Double, seed: Option[Long])
       extends NetworkPolicyConfig
 
-  case class ExternalRLServer(underlying: NetworkPolicyConfig, space: NetworkPolicySpace, client: RayRLlibClient)
-      extends NetworkPolicyConfig
+  case class ExternalRLServer(underlying: NetworkPolicyConfig, client: RayRLlibClient) extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
 
@@ -81,7 +80,7 @@ object NetworkPolicyConfig {
       case CongestionWeightedSampling(space, seed)         => Some(space)
       case CongestionThreshold(space, seed)                => Some(space)
       case ScaledProportionalThreshold(space, scale, seed) => Some(space)
-      case ExternalRLServer(underlying, space, client)     => Some(space)
+      case ExternalRLServer(underlying, client)            => underlying.space
     }
 
     def buildGenerator: NetworkPolicySignalGenerator = policy match {
