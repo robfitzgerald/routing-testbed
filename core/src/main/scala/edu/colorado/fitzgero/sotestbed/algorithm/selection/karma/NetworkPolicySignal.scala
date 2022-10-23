@@ -191,7 +191,7 @@ object NetworkPolicySignal extends LazyLogging {
     * @return the pct value as a discrete value
     */
   def percentToDiscreteRange(pct: Double, max: Int): Int = {
-    val result = math.max(0.0, math.min(max, max * pct)).toInt
+    val result = math.max(0.0, math.min(max, math.ceil(max * pct))).toInt
     result
   }
 
