@@ -16,8 +16,9 @@ class DriverObsSpace(Enum):
     ORIGINAL_DISTANCE = 10
     EXPERIENCED_DISTANCE = 11
     REMAINING_DISTANCE = 12
-    MARGINAL_UO_DISTANCE = 13
-    MARGINAL_WORST_SO_DISTANCE = 14
+    PERCENT_DISTANCE = 13
+    MARGINAL_UO_DISTANCE = 14
+    MARGINAL_WORST_SO_DISTANCE = 15
 
     ORIGINAL_TRAVEL_TIME_ESTIMATE = 20
     EXPERIENCED_TRAVEL_TIME = 21
@@ -62,6 +63,7 @@ class DriverObsSpace(Enum):
             DriverObsSpace.ORIGINAL_DISTANCE: [0, np.Inf],
             DriverObsSpace.EXPERIENCED_DISTANCE: [0, np.Inf],
             DriverObsSpace.REMAINING_DISTANCE: [0, np.Inf],
+            DriverObsSpace.PERCENT_DISTANCE: [0, 1],
             DriverObsSpace.MARGINAL_UO_DISTANCE: [np.NINF, np.Inf],
             DriverObsSpace.MARGINAL_WORST_SO_DISTANCE: [np.NINF, np.Inf],
 
