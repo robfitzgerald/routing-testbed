@@ -13,6 +13,9 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Bid
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 
 /**
   * driver policies use an AllocationMetric to capture the allocations of various drivers
@@ -53,6 +56,7 @@ object AllocationMetric extends LazyLogging {
       allocationTransform: AllocationTransform,
       driverPolicySpace: DriverPolicySpace,
       networkPolicyConfig: NetworkPolicyConfig,
+      roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
       finalBank: Map[String, Karma]
     ): IO[(List[(String, Double)], List[(String, List[Double])])] = {
 

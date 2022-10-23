@@ -46,9 +46,8 @@ object ObservationOps {
   }
 
   /**
-    * given an experienced route and a spur made from coalescing the remaining
-    * route with an alt path, find the diffs by edge between observed/estimated
-    * travel time and the free flow travel time.
+    * find the diffs by edge between observed
+    * travel time and the free flow travel time, and sums them.
     *
     * @param rn road network state
     * @param experiencedRoute list of edges we have traversed with their travel time

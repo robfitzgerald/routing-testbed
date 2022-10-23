@@ -261,11 +261,11 @@ object RoutingAlgorithm2 {
               epId  <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
               space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
               // log reward since last time step
-              lastBatches = k.getPreviousBatchIds()
-              _ <- if (lastBatches.isEmpty) IO.pure(())
+              lastBatch = k.getPreviousBatch()
+              _ <- if (lastBatch.isEmpty) IO.pure(())
               else
                 for {
-                  rew <- space.encodeReward(lastBatches, roadNetwork, zoneLookup)
+                  rew <- space.encodeReward(roadNetwork, lastBatch)
                   req: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
                   _ <- client.sendOne(req)
                   _ = k.networkClientPw.write(req.asJson.noSpaces.toString + "\n")
@@ -278,8 +278,10 @@ object RoutingAlgorithm2 {
               _ = k.networkClientPw.write(res2.asJson.noSpaces.toString + "\n")
               act  <- res2.getAction
               sigs <- space.decodeAction(act, k.gen)
-              // record batch ids to log rewards for at next time step
-              _ = k.updatePreviousBatchIds(sigs.keys.toList)
+              // record zone batches to log rewards for at next time step
+              sigIdLookup   = sigs.keySet
+              batchesUpdate = zoneLookup.filter { case (k, _) => sigIdLookup.contains(k) }
+              _             = k.updatePreviousBatch(batchesUpdate)
             } yield sigs
 
           case otherPolicy =>

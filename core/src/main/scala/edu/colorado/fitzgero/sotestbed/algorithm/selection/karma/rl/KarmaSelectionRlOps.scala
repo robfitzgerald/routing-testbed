@@ -155,6 +155,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     experimentDirectory: JavaNioPath,
     allocationTransform: AllocationTransform,
     allocationMetric: AllocationMetric,
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     agentsWithEpisodes: Set[String],
     finalBank: Map[String, Karma],
     logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
@@ -168,6 +169,7 @@ object KarmaSelectionRlOps extends LazyLogging {
       allocationTransform = allocationTransform,
       driverPolicySpace = multiAgentStructure.space,
       networkPolicyConfig = networkPolicyConfig,
+      roadNetwork = roadNetwork,
       finalBank = finalBank
     )
     // val finalData = collectFinalRewardsAndObservations(
@@ -204,6 +206,7 @@ object KarmaSelectionRlOps extends LazyLogging {
     experimentDirectory: JavaNioPath,
     allocationTransform: AllocationTransform,
     allocationMetric: AllocationMetric,
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     agentsWithEpisodes: Set[String],
     finalBank: Map[String, Karma],
     episodePrefix: String,
@@ -225,6 +228,7 @@ object KarmaSelectionRlOps extends LazyLogging {
         allocationTransform = allocationTransform,
         driverPolicySpace = singleAgentStructure.space,
         networkPolicyConfig = networkPolicyConfig,
+        roadNetwork = roadNetwork,
         finalBank = finalBank
       )
       (rewardValues, obsValues) = data

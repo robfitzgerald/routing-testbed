@@ -2,6 +2,8 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpoli
 
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import cats.effect.IO
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 
 sealed trait ObservationAggregation
 
@@ -41,24 +43,6 @@ object ObservationAggregation {
   case object MeanRelativeDistanceWeightedSpeedDiff extends ObservationAggregation
 
   implicit class OAExtensions(oa: ObservationAggregation) {
-
-    def finalObservation: IO[Double] = oa match {
-      case MeanCurrentSpeed                      => IO.raiseError(new NotImplementedError)
-      case MeanDistanceWeightedCurrentSpeed      => IO.raiseError(new NotImplementedError)
-      case MeanAbsoluteSpeedDiff                 => IO.pure(0.0)
-      case MeanAbsoluteDistanceWeightedSpeedDiff => IO.pure(0.0)
-      case MeanRelativeSpeedDiff                 => IO.pure(0.0)
-      case MeanRelativeDistanceWeightedSpeedDiff => IO.pure(0.0)
-    }
-
-    def finalReward: IO[Double] = oa match {
-      case MeanCurrentSpeed                      => IO.raiseError(new NotImplementedError)
-      case MeanDistanceWeightedCurrentSpeed      => IO.raiseError(new NotImplementedError)
-      case MeanAbsoluteSpeedDiff                 => IO.pure(1.0)
-      case MeanAbsoluteDistanceWeightedSpeedDiff => IO.pure(1.0)
-      case MeanRelativeSpeedDiff                 => IO.pure(1.0)
-      case MeanRelativeDistanceWeightedSpeedDiff => IO.pure(1.0)
-    }
 
     /**
       * given a zone of network edges, apply some variant of an ObservationAggregation
@@ -134,10 +118,8 @@ object ObservationAggregation {
 
   /**
     * computes the (relative) difference in speed between the free flow
-    * and the observed current speed of a link, with a lower bound of
-    * MinSpeedMetersPerSecond (aka 5mph, above) and an upper bound
-    * of the freeflow speed:
-    * [0, 1]
+    * and the observed current speed of a link, that results in a value
+    * in the range [0, 1] where 1 == free flow (100% speed)
     *
     * @param e the edge to compute
     * @return the absolute speed diff

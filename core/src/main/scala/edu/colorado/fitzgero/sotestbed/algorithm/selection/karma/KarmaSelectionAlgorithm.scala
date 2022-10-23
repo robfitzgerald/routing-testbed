@@ -112,12 +112,13 @@ case class KarmaSelectionAlgorithm(
 
   // RL-based network policy needs to know what "agents" submitted GET_ACTION
   // requests last time step in order to reward them in the future
-  private var previousBatchIds: List[String] = List.empty
+  private var previousBatch: Map[String, List[EdgeId]] = Map.empty
 
-  def updatePreviousBatchIds(ids: List[String]): Unit = {
-    previousBatchIds = ids
+  def updatePreviousBatch(batch: Map[String, List[EdgeId]]): Unit = {
+    previousBatch = batch
   }
-  def getPreviousBatchIds(): List[String] = previousBatchIds
+  def getPreviousBatchIds(): List[String]           = previousBatch.keys.toList
+  def getPreviousBatch(): Map[String, List[EdgeId]] = previousBatch
 
   /**
     * this close method is used as it is called in RoutingExperiment2's .close() method
@@ -138,10 +139,10 @@ case class KarmaSelectionAlgorithm(
           IO.fromOption(this.multiAgentNetworkPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
         for {
           epId <- episodeId
-          lastBatches = this.getPreviousBatchIds()
+          lastBatches = this.getPreviousBatch()
           space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
-          rew   <- space.encodeFinalReward(lastBatches)
-          mao   <- space.encodeFinalObservation(lastBatches)
+          rew   <- space.encodeReward(roadNetwork, lastBatches)
+          mao   <- space.encodeObservation(roadNetwork, lastBatches)
           req1: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
           req2: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, mao)
           res1 <- client.sendOne(req1)
@@ -168,6 +169,7 @@ case class KarmaSelectionAlgorithm(
                 experimentDirectory,
                 allocationTransform,
                 allocationMetric,
+                roadNetwork,
                 agentsWithEpisodes.toSet,
                 finalBank,
                 Some((req, res) =>
@@ -187,6 +189,7 @@ case class KarmaSelectionAlgorithm(
               experimentDirectory,
               allocationTransform,
               allocationMetric,
+              roadNetwork,
               agentsWithEpisodes.toSet,
               finalBank,
               episodePrefix,
@@ -339,8 +342,7 @@ case class KarmaSelectionAlgorithm(
         // a path for each driver agent
         // get the costs associated with the trips
         val result = for {
-          _ <- updateRlClientServerResult
-
+          _      <- updateRlClientServerResult
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           bids   <- bidFn(signal)
           selections = signal.assign(bids, alts)
