@@ -8,6 +8,9 @@ import edu.colorado.fitzgero.sotestbed.rllib.Action._
 import cats.effect._
 import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse
+import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest
+import edu.colorado.fitzgero.sotestbed.rllib.EpisodeId
 
 /**
   * at this point we aren't using this abstraction because all
@@ -29,6 +32,27 @@ object NetworkPolicyStructure {
       case SingleAgentPolicy(space) => space
       case MultiAgentPolicy(space)  => space
     }
+
+    def generateLogReturnsMessage(
+      episodeId: EpisodeId,
+      roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+      previousBatch: Map[String, List[EdgeId]]
+    ): IO[PolicyClientRequest.LogReturnsRequest] =
+      nps match {
+        case SingleAgentPolicy(space) =>
+          for {
+            reward <- space.encodeReward(roadNetwork, previousBatch)
+            singleAgentReward = reward.toSingleAgentReward
+          } yield PolicyClientRequest.LogReturnsRequest(
+            episode_id = episodeId,
+            reward = singleAgentReward
+          )
+        case MultiAgentPolicy(space) =>
+          space.encodeReward(roadNetwork, previousBatch).map { rew =>
+            PolicyClientRequest.LogReturnsRequest(episodeId, rew)
+          }
+
+      }
   }
 
 }

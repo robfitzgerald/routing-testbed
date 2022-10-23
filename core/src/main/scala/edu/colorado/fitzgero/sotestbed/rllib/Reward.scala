@@ -32,6 +32,20 @@ object Reward {
       case SingleAgentReward(reward) => reward.toString
       case MultiAgentReward(reward)  => reward.asJson.noSpaces
     }
+
+    /**
+      * when the RL server is set up as a single agent, we flatten the rewards to
+      * a single value
+      *
+      * @return the reward as a single value (summed if coming from a multiagent reward)
+      */
+    def toSingleAgentReward: SingleAgentReward = r match {
+      case s: SingleAgentReward => s
+      case MultiAgentReward(reward) =>
+        val r = if (reward.isEmpty) 0.0 else reward.map { case (_, r) => r }.sum
+        SingleAgentReward(r)
+    }
+
   }
 
   implicit val dec: Decoder[Reward] =
