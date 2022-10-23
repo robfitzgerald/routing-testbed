@@ -112,7 +112,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
         val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
         // results in values in the range [0, inf] where 1.0 means the observed travel time
         // matches free flow. values should typically be less than 1 and occasionally greater than 1.
-        val pDiff = if (speedFF == 0.0) 0.0 else speed / speedFF
+        val pDiff = if (speedFF == 0.0) 0.0 else speedFF / speed
         (row.agentId, pDiff)
       }
     }
