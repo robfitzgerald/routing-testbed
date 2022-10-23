@@ -22,7 +22,7 @@ object ReservoirSampling {
     k: Int
   ): (List[(T, Double)], List[(T, Double)]) = {
     if (population.isEmpty) (List.empty, List.empty)
-    else if (k == 0) (List.empty, List.empty)
+    else if (k == 0) (population, List.empty)
     else if (population.lengthCompare(k) <= 0) (population, List.empty)
     else {
       // create a min priority queue over the weighted population
