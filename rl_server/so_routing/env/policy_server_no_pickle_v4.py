@@ -249,7 +249,8 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                 # self.writer.writerow(response)
             except Exception:
                 print("server error exception when handling POST call")
-                print()
+                print("request (parsed):")
+                print(parsed_input)
                 self.send_error(500, traceback.format_exc())
 
         def execute_command(self, args):
