@@ -28,7 +28,7 @@ object KSPFilterFunctionConfig {
   /**
     * the NOOP filter function
     */
-  final case object DoNothing extends KSPFilterFunctionConfig {
+  final case object NoFilter extends KSPFilterFunctionConfig {
 
     /**
       * builds a function which takes the ksp result for an agent, the history of that
