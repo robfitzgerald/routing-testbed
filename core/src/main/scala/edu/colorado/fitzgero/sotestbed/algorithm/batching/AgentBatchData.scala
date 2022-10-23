@@ -71,6 +71,10 @@ object AgentBatchData {
 
     def overallDistance: Meters = experiencedDistance + remainingDistance
 
+    def percentDistance: Double =
+      if (overallDistance == Meters.Zero) 0.0
+      else experiencedDistance.value / overallDistance.value
+
     def experiencedRouteTravelTime: Either[Error, SimTime] =
       experiencedRoute
         .traverse { e =>

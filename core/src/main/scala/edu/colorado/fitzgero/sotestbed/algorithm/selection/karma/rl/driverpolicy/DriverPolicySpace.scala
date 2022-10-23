@@ -61,6 +61,11 @@ object DriverPolicySpace {
   case object ExperiencedDistance extends DriverPolicySpace
 
   /**
+    * the percentage of distance along the current path
+    */
+  case object PercentDistance extends DriverPolicySpace
+
+  /**
     * at a replanning event, captures the marginal change in
     * distance due to selecting the UO route (aka winning)
     */
@@ -193,6 +198,10 @@ object DriverPolicySpace {
           for {
             current <- IO.fromEither(history.currentRequest)
           } yield List(current.remainingDistance.value)
+        case PercentDistance =>
+          for {
+            current <- IO.fromEither(history.currentRequest)
+          } yield List(current.percentDistance)
         case MarginalUODistance =>
           for {
             currentRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
@@ -344,6 +353,8 @@ object DriverPolicySpace {
         IO.pure(List(finalDistance.value))
       case RemainingDistance =>
         IO.pure(List(0.0))
+      case PercentDistance =>
+        IO.pure(List(1.0))
       case MarginalUODistance =>
         IO.pure(List(0.0))
       case MarginalWorstSODistance =>
