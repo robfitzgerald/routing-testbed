@@ -12,26 +12,6 @@ import kantan.csv.ops._
 object CoordinateGrid2PrintOps {
   val GridIdRegex: Regex = """^(\d+)#(\d+)$""".r
 
-  /**
-    * presents a spatial grid and grid counts as a string
-    *
-    * @param grouped the current batch grouping
-    * @return a pretty-printed representation of the batch grouping
-    */
-  def printGrid(
-    grouped: List[(String, Int)],
-    xSteps: Int,
-    gridIdOrdering: Ordering[String]
-  ): String = {
-    grouped
-      .sortBy {
-        _._1
-      }(gridIdOrdering)
-      .sliding(xSteps, xSteps)
-      .map { row => row.map { case (_, count) => count.toString.padTo(3, ' ') }.mkString("") }
-      .mkString("\n")
-  }
-
   def printList(grouped: Map[String, List[(String, AgentBatchData)]]): String = {
     val columns: Int = 8
     val asStrings: List[String] = grouped.toList

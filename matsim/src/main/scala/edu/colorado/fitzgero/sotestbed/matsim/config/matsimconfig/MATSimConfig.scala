@@ -207,26 +207,10 @@ object MATSimConfig {
       batchingFunction: BatchingFunctionConfig,
       batchFilterFunction: BatchFilterFunctionConfig,
       kspFilterFunction: KSPFilterFunctionConfig,
-      grid: SystemOptimal.GridConfig,
+      grid: GridConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {
       override def selfishOnly: Boolean = false
-    }
-
-    object SystemOptimal {
-
-      final case class GridConfig(
-        minX: Double,
-        maxX: Double,
-        minY: Double,
-        maxY: Double,
-        gridCellSideLength: Double,
-        srid: Int
-      ) {
-
-        def build(rn: RoadNetwork[IO, Coordinate, EdgeBPR]): Either[Error, CoordinateGrid2] =
-          CoordinateGrid2(minX, maxX, minY, maxY, gridCellSideLength, srid, rn)
-      }
     }
 
     implicit class AlgorithmExtensions(a: Algorithm) {

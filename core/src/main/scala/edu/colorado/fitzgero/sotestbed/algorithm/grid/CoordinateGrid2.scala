@@ -12,6 +12,10 @@ import cats.effect.unsafe.implicits.global
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import java.io.File
+import kantan.csv._
+import kantan.csv.ops._
+import org.locationtech.jts.io.WKTReader
 
 /**
   * revised coordinate grid which uses JTS polygons + spatial tree search
@@ -20,8 +24,6 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
   */
 final class CoordinateGrid2(
   val gridCells: Map[String, Polygon],
-  val xSteps: Int,
-  val ySteps: Int,
   geometryFactory: GeometryFactory,
   private val lookup: STRtree,
   val edgeLookup: Map[String, List[EdgeId]]
@@ -32,32 +34,52 @@ final class CoordinateGrid2(
 
   def getGridId(x: Double, y: Double): Either[Error, String] =
     CoordinateGrid2.getGridId(this.lookup, this.geometryFactory)(x, y)
-
-  /**
-    * pretty prints the batch information in a grid
-    * @param countsByBatchId grid ids and the counts of requests associated with each
-    * @return a pretty-printed grid of this info
-    */
-  def prettyPrintBatches(countsByBatchId: List[(String, Int)]): String =
-    CoordinateGrid2PrintOps.printGrid(countsByBatchId, this.xSteps, GroupIdOrdering)
-
-  /**
-    * Ordering used for pretty printing a grid based on the stringified grid indices
-    */
-  val GroupIdOrdering: Ordering[String] = Ordering.by {
-    case CoordinateGrid2PrintOps.GridIdRegex(xStr, yStr) =>
-      Try {
-        val (xId, yId) = (xStr.toInt, yStr.toInt)
-        -(xId + yId * xSteps)
-      }.toOption match {
-        case None      => Int.MaxValue
-        case Some(ord) => ord
-      }
-    case _ => Int.MaxValue
-  }
 }
 
 object CoordinateGrid2 {
+
+  object TableDefaults {
+    def IdColumnName       = "grid_id"
+    def GeometryColumnName = "polygon"
+  }
+
+  def fromCsv(
+    tableFile: File,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    srid: Int,
+    idCol: String = TableDefaults.IdColumnName,
+    geoCol: String = TableDefaults.GeometryColumnName
+  ): Either[Error, CoordinateGrid2] = {
+    val pm: PrecisionModel   = new PrecisionModel()
+    val gf: GeometryFactory  = new GeometryFactory(pm, srid)
+    val wktReader: WKTReader = new WKTReader(gf)
+
+    implicit val gd: CellDecoder[Polygon] = CellDecoder.from { string =>
+      Try { wktReader.read(string).asInstanceOf[Polygon] }.toEither.left.map { t =>
+        DecodeError.TypeError(s"unable to decode geometry from WKT: ${t.getMessage}")
+      }
+    }
+    case class Row(grid_id: String, polygon: Polygon) {
+      def toTuple: (String, Polygon) = (grid_id, polygon)
+    }
+    implicit val hd: HeaderDecoder[Row] = HeaderDecoder.decoder(idCol, geoCol) { Row.apply }
+
+    tableFile
+      .readCsv[List, Row](rfc.withHeader)
+      .sequence
+      .left
+      .map { t => new Error("failure reading grid table", t) }
+      .flatMap { table =>
+        // lazy, i just don't want to dig out MathTransform and CRS.decode right now
+        if (srid != 3857) Left(new Error("currently only supports EPSG:3857 grids"))
+        else {
+          // polygons are expected to be annotated with their grid id
+          val tableWithAnnotations = for { Row(gridId, polygon) <- table } { polygon.setUserData(gridId) }
+          build(table.map(_.toTuple), rn, gf)
+        }
+      }
+
+  }
 
   /**
     * build a CoordinateGrid2 that fits to the provided bounds and where
@@ -94,8 +116,6 @@ object CoordinateGrid2 {
         val xSteps: Int = math.ceil((maxX - minX) / gridCellSideLength).toInt
         val ySteps: Int = math.ceil((maxY - minY) / gridCellSideLength).toInt
 
-        val strTree: STRtree = new STRtree()
-
         val gridCells = for {
           x <- 0 until xSteps
           y <- 0 until ySteps
@@ -110,39 +130,60 @@ object CoordinateGrid2 {
           polygon.setSRID(srid)
           val gridId = createGridId(x, y)
           polygon.setUserData(gridId)
-          strTree.insert(polygon.getEnvelopeInternal, polygon) // side-effect
           gridId -> polygon
         }
 
-        val gridCellsLookup: Map[String, Polygon] = gridCells.toMap
+        build(gridCells, rn, gf)
 
-        val lookupQueries = for {
-          edgeTriplet <- rn.edgeTriplets.unsafeRunSync
-          src         <- rn.vertex(edgeTriplet.src).unsafeRunSync
-          dst         <- rn.vertex(edgeTriplet.dst).unsafeRunSync
-          midpoint = LocalAdjacencyListFlowNetwork.midpoint(src.attribute, dst.attribute)
-        } yield (edgeTriplet.edgeId, midpoint)
-
-        val gridIdFn: (Double, Double) => Either[Error, String] = CoordinateGrid2.getGridId(strTree, gf)
-        val lookupResult = lookupQueries
-          .traverse {
-            case (edgeId, midpoint) =>
-              gridIdFn(midpoint.x, midpoint.y).map { batchId => (batchId, edgeId) }
-          }
-          .map {
-            _.groupBy { case (batchId, _) => batchId }
-              .map {
-                case (batchId, grouped) =>
-                  val (_, edgeIds) = grouped.unzip
-                  batchId -> edgeIds
-              }
-          }
-
-        lookupResult.map { edgeLookup => new CoordinateGrid2(gridCellsLookup, xSteps, ySteps, gf, strTree, edgeLookup) }
-      }.toEither.left.map { t => new Error("failed building coordinate grid", t) }
+      }.toEither.left.map { t => new Error("failed creating new coordinate grid", t) }
 
       initialGrid.flatten
     }
+  }
+
+  def build(
+    gridCells: Seq[(String, Polygon)],
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    gf: GeometryFactory
+  ): Either[Error, CoordinateGrid2] = {
+    Try {
+      val tree = new STRtree()
+
+      for {
+        (gridId, polygon) <- gridCells
+      } {
+        tree.insert(polygon.getEnvelopeInternal, polygon) // side-effect
+      }
+
+      val gridCellsLookup: Map[String, Polygon] = gridCells.toMap
+
+      val lookupQueries = for {
+        edgeTriplet <- rn.edgeTriplets.unsafeRunSync
+        src         <- rn.vertex(edgeTriplet.src).unsafeRunSync
+        dst         <- rn.vertex(edgeTriplet.dst).unsafeRunSync
+        midpoint = LocalAdjacencyListFlowNetwork.midpoint(src.attribute, dst.attribute)
+      } yield (edgeTriplet.edgeId, midpoint)
+
+      val gridIdFn: (Double, Double) => Option[String] =
+        (x, y) => {
+          CoordinateGrid2.getGridId(tree, gf)(x, y).toOption
+        }
+
+      // find the grid id for every edge that intersects with a grid cell
+      val edgeLookup = lookupQueries
+        .flatMap {
+          case (edgeId, midpoint) =>
+            gridIdFn(midpoint.x, midpoint.y).map { batchId => (batchId, edgeId) }
+        }
+        .groupBy { case (batchId, _) => batchId }
+        .map {
+          case (batchId, grouped) =>
+            val (_, edgeIds) = grouped.unzip
+            batchId -> edgeIds
+        }
+
+      new CoordinateGrid2(gridCellsLookup, gf, tree, edgeLookup)
+    }.toEither.left.map { t => new Error("failed building coordinate grid", t) }
   }
 
   /**
@@ -162,7 +203,7 @@ object CoordinateGrid2 {
       gridId
     }
 
-    result.toEither.left.map { t => new Error(s"failure getting grid idea for point ($x, $y)", t) }
+    result.toEither.left.map { t => new Error(s"failure getting grid id for point ($x, $y)", t) }
   }
 
   /**
