@@ -36,55 +36,6 @@ object MATSimBatchConfig {
       .trim
   }
 
-  def createVariationNameWithFallback(matsimConfig: MATSimConfig, popSize: Int, config: Config): String = {
-    if (config.hasPath("name")) {
-      config.getString("name")
-    } else {
-      createVariationNameV2(matsimConfig, popSize)
-    }
-  }
-
-  /**
-    * just highlighting the most important parameters and returning their values in lexi order
-    * @param config
-    * @return
-    */
-  def createVariationNameV2(config: MATSimConfig, popSize: Int): String = {
-    val populationSize: String = popSize.toString
-    val adoptionRate: String   = config.routing.adoptionRate.toString
-    val batchWindow: String    = config.routing.batchWindow.value.toString
-    val k: String = config.algorithm match {
-      case _: MATSimConfig.Algorithm.Selfish        => "0"
-      case so: MATSimConfig.Algorithm.SystemOptimal => so.kspAlgorithm.k.toString
-    }
-    val theta: String = config.algorithm match {
-      case _: MATSimConfig.Algorithm.Selfish => "0"
-      case so: MATSimConfig.Algorithm.SystemOptimal =>
-        so.kspAlgorithm match {
-          case ksp: KSPAlgorithmConfig.SvpLoSync => ksp.theta.value.toString
-        }
-    }
-    val batchingFunction: String = config.algorithm match {
-      case _: MATSimConfig.Algorithm.Selfish => "0"
-      case so: MATSimConfig.Algorithm.SystemOptimal =>
-        so.batchingFunction match {
-          case BatchingFunctionConfig.NoBatching                        => "0"
-          case _: BatchingFunctionConfig.Random                         => "0"
-          case _: BatchingFunctionConfig.Greedy                         => "0"
-          case bf: BatchingFunctionConfig.CoordinateGridGrouping        => bf.batchType
-          case _: BatchingFunctionConfig.LabelBasedTrajectoryClustering => "traj"
-          case _: BatchingFunctionConfig.NetworkZoneBatching            => "0"
-        }
-    }
-    val gridCellSideLength: String = config.algorithm match {
-      case _: MATSimConfig.Algorithm.Selfish        => "0"
-      case so: MATSimConfig.Algorithm.SystemOptimal => so.grid.gridCellSideLength.toString
-    }
-    val maxPathAssignments: String    = config.routing.maxPathAssignments.toString
-    val minReplanningWaitTime: String = config.routing.minimumReplanningWaitTime.value.toString
-    s"p=$populationSize-a=$adoptionRate-b=$batchWindow-k=$k-t=$theta-bf=$batchingFunction-sqlen=$gridCellSideLength-mP=$maxPathAssignments-mRWT=$minReplanningWaitTime"
-  }
-
   def createVariationNameV3(config: MATSimConfig, popSize: Int): String = {
     config.hashCode().toString
   }
