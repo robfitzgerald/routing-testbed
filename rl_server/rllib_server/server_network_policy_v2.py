@@ -27,6 +27,7 @@ import json
 import os
 import time
 
+import pandas as pd
 import ray
 from ray import air, tune
 from ray.rllib.algorithms.registry import get_algorithm_class
@@ -94,6 +95,12 @@ def run():
 
     grouping = None
     agents_list = None
+    if args.agents_grid is not None:
+        agents_list = pd.read_csv(args.agents_grid,
+                                  dtype={'grid_id': str}).grid_id.to_list()
+        grouping = {SINGLE_GROUP_NAME: agents_list}
+        print(
+            f'got {len(agents_list)} agent names from grid file {args.agents_grid}')
     if args.grouping_file is not None:
         with open(args.grouping_file, 'r') as f:
             grouping = json.loads(f.read())
@@ -115,18 +122,39 @@ def run():
     obs_space_instance = list(obs_space.values())[0]
     act_space_instance = list(act_space.values())[0]
 
+    if args.single_policy:
+        print("building network agent with a single shared policy")
+        policies = {
+            SINGLE_GROUP_NAME: PolicySpec(None, obs_space_instance, act_space_instance),
+        }
+        policy_mapping_fn = lambda agent_id, episode, worker, **kwargs: SINGLE_GROUP_NAME
+    elif len(agents_list) == 0:
+        raise ValueError(
+            "use --single-policy if no agent list/grouping is provided")
+    else:
+        print(f"building network agent with {len(agents_list)} policies")
+        # policy names are used as TensorFlow root scope names and have a restricted naming convention
+        # https://stackoverflow.com/questions/72673927/valueerror-penguin-classifier-is-not-a-valid-root-scope-name
+
+        def make_policy():
+            return PolicySpec(None, obs_space_instance, act_space_instance)
+        policies = {agent.replace("#", "."): make_policy()
+                    for agent in agents_list}
+        policy_mapping_fn = lambda agent_id, episode, worker, **kwargs: agent_id.replace(
+            "#", ".")
+
     print("observation space example")
     print(obs_space_instance)
     print("action space example")
     print(act_space_instance)
+    print(f"policies: {len(policies)}")
+    # print(json.dumps(policies, indent=4))
 
     multiagent = {
         # Map of type MultiAgentPolicyConfigDict from policy ids to tuples
         # of (policy_cls, obs_space, act_space, config). This defines the
         # observation and action spaces of the policies and any extra config.
-        "policies": {
-            SINGLE_GROUP_NAME: PolicySpec(None, obs_space_instance, act_space_instance),
-        },
+        "policies": policies,
         # Keep this many policies in the "policy_map" (before writing
         # least-recently used ones to disk/S3).
         # "policy_map_capacity": 100,
@@ -136,7 +164,7 @@ def run():
         # "policy_map_cache": None,
         # Function mapping agent ids to policy ids.
         # "policy_mapping_fn": None,
-        "policy_mapping_fn": lambda agent_id, episode, worker, **kwargs: SINGLE_GROUP_NAME,
+        "policy_mapping_fn": policy_mapping_fn,
         # Determines those policies that should be updated.
         # Options are:
         # - None, for all policies.
@@ -196,11 +224,11 @@ def run():
         #
         # The dataflow here can vary per algorithm. For example, PPO further
         # divides the train batch into minibatches for multi-epoch SGD.
-        "rollout_fragment_length": 50,
+        "rollout_fragment_length": 20,
         # Training batch size, if applicable. Should be >= rollout_fragment_length.
         # Samples batches will be concatenated together to a batch of this size,
         # which is then passed to SGD.
-        "train_batch_size": 200,
+        "train_batch_size": 100,
         # How to build per-Sampler (RolloutWorker) batches, which are then
         # usually concat'd to form the train batch. Note that "steps" below can
         # mean different things (either env- or agent-steps) and depends on the
@@ -227,6 +255,7 @@ def run():
         # Set to INFO so we'll see the server's actual address:port.
         "log_level": "INFO",
         "model": {},
+
         # === Evaluation Settings ===
         # Evaluate with every `evaluation_interval` training iterations.
         # The evaluation stats will be reported under the "evaluation" metric key.
@@ -278,34 +307,81 @@ def run():
         alg_config = alg_config.to_dict()
         config.update(alg_config)
 
-    # PPO settings if we are training
-    # if not args.as_test:
-    #     # Example of using DQN (supports off-policy actions).
-    #     config.update(
-    #         {
-    #             # "explore": not args.as_test,
-    #             # "exploration_config": {
-    #             #     # Exploration sub-class by name or full path to module+class
-    #             #     # (e.g. “ray.rllib.utils.exploration.epsilon_greedy.EpsilonGreedy”)
-    #             #     "type": "EpsilonGreedy",
-    #             #     # Parameters for the Exploration class' constructor:
-    #             #     "initial_epsilon": 1.0,
-    #             #     "final_epsilon": 0.02,
-    #             #     "warmup_timesteps": 1200,  # approx. 2 days
-    #             #     # Timesteps over which to anneal epsilon.
-    #             #     "epsilon_timesteps": 12000,  # approx. 20 days
-    #             # },
-    #             # "learning_starts": 0,
-    #             # "timesteps_per_iteration": 200,
-    #             # "n_step": 3,
-    #             # "rollout_fragment_length": 200,
-    #             # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
-    #         }
-    #     )
-    #     # config["model"] = {
-    #     #     "fcnet_hiddens": [64],
-    #     #     "fcnet_activation": "linear",
-    #     # }
+    if args.run == "PPO":
+        # defaults - see https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#proximal-policy-optimization-ppo
+
+        # updated_model = config.get("model", {})
+        # updated_model['vf_share_layers'] = False
+        config.update(
+            {
+                # PPO specific settings
+                #         "lr_schedule": None,
+                #         "use_critic": True,
+                #         "use_gae": True,
+                #         "lambda": 1.0,
+                #         "kl_coeff": 0.2,
+                #         "sgd_minibatch_size": 128,
+                #         "num_sgd_iter": 30,
+                #         "shuffle_sequences": True,
+                #         "vf_loss_coeff": 1.0,
+                #         "entropy_coeff": 0.0,
+                #         "entropy_coeff_schedule": None,
+                #         "clip_param": 0.3,
+                #         "vf_clip_param": 10.0,
+                #         "grad_clip": None,
+                #         "kl_target": 0.01,
+                #         "gamma": 0.99,
+                # "rollout_fragment_length": 200,
+                # "train_batch_size": 2000,
+                "lr": 5e-5,
+                #         "config": updated_model
+            }
+        )
+
+        # adding our own flavor based on ideas from the PPO paper, someone's notes, and a unity PPO setup:
+        # https://docs.google.com/spreadsheets/d/1fNVfqgAifDWnTq-4izPPW_CVAUu9FXl3dWkqWIXz04o/edit#gid=0
+        # https://arxiv.org/pdf/1707.06347.pdf
+        # https://github.com/ray-project/ray/blob/master/rllib/tuned_examples/ppo/unity3d-soccer-strikers-vs-goalie-ppo.yaml
+        config.update(
+            {
+                "sgd_minibatch_size": 64,
+                # "num_sgd_iter": 20,
+                "lambda": 0.95,
+                "clip_param": 0.2
+            }
+        )
+
+        pass  # extension poin
+
+    if not args.as_test:
+        config.update(
+            {
+                # === Exploration Settings ===
+                # Default exploration behavior, iff `explore`=None is passed into
+                # compute_action(s).
+                # Set to False for no exploration behavior (e.g., for evaluation).
+                "explore": not args.as_test,
+                # Provide a dict specifying the Exploration object's config.
+                # "exploration_config": {
+                #     # The Exploration class to use. In the simplest case, this is the name
+                #     # (str) of any class present in the `rllib.utils.exploration` package.
+                #     # You can also provide the python class directly or the full location
+                #     # of your class (e.g. "ray.rllib.utils.exploration.epsilon_greedy.
+                #     # EpsilonGreedy").
+                #     "type": "StochasticSampling",
+                #     # Add constructor kwargs here (if any).
+                # },
+                # "learning_starts": 0,
+                # "timesteps_per_iteration": 200,
+                # "n_step": 3,
+                # "rollout_fragment_length": 200,
+                # "train_batch_size": 1000,  # 5 rollout fragments of 200 each
+            }
+        )
+        # config["model"] = {
+        #     "fcnet_hiddens": [64],
+        #     "fcnet_activation": "linear",
+        # }
 
     # Manual training loop (no Ray tune), allows for using checkpoint
     if args.no_tune:

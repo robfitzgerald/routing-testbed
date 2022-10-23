@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 from rl_server.so_routing.env.network_policy.network_act_space import NetworkActionSpace
 
 SERVER_BASE_PORT = 9905
@@ -121,6 +122,12 @@ parser.add_argument(
     ),
     default=None
 )
+parser.add_argument(
+    '--agents-grid',
+    type=str,
+    help="a tabular grid file with grid_id column",
+    default=None
+)
 
 parser.add_argument(
     '--action-space',
@@ -134,4 +141,9 @@ parser.add_argument(
     help="comma-delimited list of feature names for the observation space",
     type=str,
     required=True
+)
+parser.add_argument(
+    '--single-policy',
+    action="store_true",
+    help="use the same policy for all network agents",
 )
