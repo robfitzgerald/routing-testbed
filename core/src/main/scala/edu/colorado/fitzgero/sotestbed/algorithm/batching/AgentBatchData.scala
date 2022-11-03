@@ -10,6 +10,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, PathSegment, R
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import kantan.csv.HeaderDecoder
 import scala.annotation.tailrec
+import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
 
 sealed trait AgentBatchData
 
@@ -158,23 +159,33 @@ object AgentBatchData {
     */
   final case class SOAgentArrivalData(
     agentId: String,
+    requestClass: RequestClass,
     departureTime: SimTime,
     arrivalTime: SimTime,
     finalTravelTime: SimTime,
     finalDistance: Meters,
     finalFreeFlowTravelTime: SimTime
   ) extends AgentBatchData {
-    override def toString = f"$agentId,$departureTime,$arrivalTime,$finalTravelTime,$finalDistance"
+    override def toString = f"$agentId,$requestClass,$departureTime,$arrivalTime,$finalTravelTime,$finalDistance"
   }
 
   object SOAgentArrivalData {
 
     val Columns =
-      ("agentId", "departureTime", "arrivalTime", "finalTravelTime", "finalDistance", "finalFreeFlowTravelTime")
+      (
+        "agentId",
+        "requestClass",
+        "departureTime",
+        "arrivalTime",
+        "finalTravelTime",
+        "finalDistance",
+        "finalFreeFlowTravelTime"
+      )
     def Header = Columns.toList.mkString(",")
 
     implicit val hd: HeaderDecoder[SOAgentArrivalData] = HeaderDecoder.decoder(
       "agentId",
+      "requestClass",
       "departureTime",
       "arrivalTime",
       "finalTravelTime",
