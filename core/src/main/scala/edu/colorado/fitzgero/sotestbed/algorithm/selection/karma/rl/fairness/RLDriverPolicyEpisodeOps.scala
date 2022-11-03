@@ -19,6 +19,7 @@ import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpace
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
+import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
 
 object RLDriverPolicyEpisodeOps extends LazyLogging {
 
@@ -29,10 +30,18 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     * trip log should be found
     * @return the effect of reading the tripLog.csv file
     */
-  def getTripLog(experimentDirectory: Path): IO[List[TripLogRow]] = {
+  def getTripLog(experimentDirectory: Path, includeUoAgents: Boolean): IO[List[TripLogRow]] = {
     val tripLogFile = BatchingManager.TripLogFilename
     val uri         = experimentDirectory.resolve(tripLogFile).toFile
-    val rowsResult  = ReadResult.sequence(uri.asCsvReader[TripLogRow](rfc.withHeader).toList)
+    val rowsResult =
+      uri
+        .asCsvReader[TripLogRow](rfc.withHeader)
+        .filter {
+          case Right(r) => includeUoAgents || r.requestClass != RequestClass.UE
+          case _        => true
+        }
+        .toList
+        .sequence
     IO.fromEither(rowsResult)
   }
 
@@ -58,7 +67,8 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     tripLogs: List[TripLogRow],
     allocationTransform: AllocationTransform
   ): IO[List[(String, Double)]] = {
-    val diffs  = tripLogs.map { r => (r.agentId, r.travelTimeDiff.value.toDouble) }
+    val diffs =
+      tripLogs.map { r => (r.agentId, r.travelTimeDiff.value.toDouble) }
     val result = generateSingleAgentRewardValues(diffs, allocationTransform)
     IO.fromEither(result)
   }
@@ -112,7 +122,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
         val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
         // results in values in the range [0, inf] where 1.0 means the observed travel time
         // matches free flow. values should typically be less than 1 and occasionally greater than 1.
-        val pDiff = if (speedFF == 0.0) 0.0 else speedFF / speed
+        val pDiff = if (speed == 0.0) 0.0 else speedFF / speed
         (row.agentId, pDiff)
       }
     }

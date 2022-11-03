@@ -482,6 +482,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
                           val arrivalData = SOAgentArrivalData(
                             agentId = agentId.toString,
+                            requestClass = requestClass,
                             departureTime = SimTime(departureTime.value),
                             arrivalTime = SimTime(event.getTime.toInt),
                             finalTravelTime = SimTime(travelTimeSeconds),

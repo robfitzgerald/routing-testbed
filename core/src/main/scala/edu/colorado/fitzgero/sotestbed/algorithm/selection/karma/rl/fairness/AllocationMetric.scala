@@ -63,7 +63,7 @@ object AllocationMetric extends LazyLogging {
       am match {
         case SelfishTripDiff =>
           for {
-            tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+            tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory, includeUoAgents = false)
             tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
             rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByTripComparison(
               tripsWithEpisodes,
@@ -78,7 +78,7 @@ object AllocationMetric extends LazyLogging {
           } yield (rewards, observations)
         case AccumulatedAuctionDelay =>
           for {
-            tripLogs  <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+            tripLogs  <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory, includeUoAgents = false)
             karmaLogs <- RLDriverPolicyEpisodeOps.getKarmaLog(experimentDirectory)
             tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
             karmaWithEpisodes = karmaLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
@@ -92,7 +92,7 @@ object AllocationMetric extends LazyLogging {
           } yield (rewards, observations)
         case FreeFlowDiffProportion =>
           for {
-            tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory)
+            tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory, includeUoAgents = false)
             tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
             rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByFreeFlowDiff(tripsWithEpisodes)
             observations <- RLDriverPolicyEpisodeOps.finalObservations(
