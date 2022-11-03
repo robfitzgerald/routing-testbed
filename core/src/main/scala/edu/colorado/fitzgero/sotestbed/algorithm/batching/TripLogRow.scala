@@ -4,9 +4,11 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 
 import kantan.csv._
+import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
 
 final case class TripLogRow(
   agentId: String,
+  requestClass: RequestClass,
   departureTime: SimTime,
   arrivalTime: SimTime,
   originalTravelTimeEstimate: SimTime,
@@ -33,7 +35,7 @@ final case class TripLogRow(
     * @return stringified trip log row
     */
   override def toString =
-    f"$agentId,$departureTime,$arrivalTime,$originalTravelTimeEstimate," +
+    f"$agentId,$requestClass,$departureTime,$arrivalTime,$originalTravelTimeEstimate," +
       s"$finalTravelTime,$freeFlowTravelTime,$finalDistance,$replannings,$uoRoutesAssigned"
 }
 
@@ -49,6 +51,7 @@ object TripLogRow {
   ): TripLogRow =
     TripLogRow(
       agentId = row.agentId,
+      requestClass = row.requestClass,
       departureTime = row.departureTime,
       arrivalTime = row.arrivalTime,
       originalTravelTimeEstimate = originalTravelTimeEstimate,
@@ -61,6 +64,7 @@ object TripLogRow {
 
   val Columns = List(
     "agentId",
+    "requestClass",
     "departureTime",
     "arrivalTime",
     "originalTravelTimeEstimate",
@@ -75,6 +79,7 @@ object TripLogRow {
   def dec: HeaderDecoder[TripLogRow] =
     HeaderDecoder.decoder(
       "agentId",
+      "requestClass",
       "departureTime",
       "arrivalTime",
       "originalTravelTimeEstimate",
@@ -88,6 +93,7 @@ object TripLogRow {
   def enc: HeaderEncoder[TripLogRow] =
     HeaderEncoder.encoder(
       "agentId",
+      "requestClass",
       "departureTime",
       "arrivalTime",
       "originalTravelTimeEstimate",
@@ -99,6 +105,7 @@ object TripLogRow {
     ) { row =>
       (
         row.agentId,
+        row.requestClass,
         row.departureTime.toString,
         row.arrivalTime.toString,
         row.originalTravelTimeEstimate.toString,
