@@ -6,46 +6,57 @@ import cats.syntax.functor._
 import io.circe.generic.auto._
 import io.circe.syntax._
 import edu.colorado.fitzgero.sotestbed.util.CirceUtils
+import cats.effect.IO
 
 sealed trait Reward
 
 object Reward {
-  case class SingleAgentReward(reward: Double)              extends Reward
-  case class MultiAgentReward(reward: Map[AgentId, Double]) extends Reward
+  case class SingleAgentReward(reward: Double)                           extends Reward
+  case class MultiAgentReward(reward: Map[AgentId, Double])              extends Reward
+  case class GroupedMultiAgentReward(reward: Map[AgentId, List[Double]]) extends Reward
 
-  implicit val obsMapEnc: Encoder[Map[AgentId, Double]] =
+  implicit val marEnc: Encoder[Map[AgentId, Double]] =
     CirceUtils.mapEncoder(_.value, identity)
 
-  implicit val obsMapDec: Decoder[Map[AgentId, Double]] =
+  implicit val marDec: Decoder[Map[AgentId, Double]] =
     CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (d: Double) => Right(d))
+
+  implicit val gmarEnc: Encoder[Map[AgentId, List[Double]]] =
+    CirceUtils.mapEncoder(_.value, identity)
+
+  implicit val gmarDec: Decoder[Map[AgentId, List[Double]]] =
+    CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (ds: List[Double]) => Right(ds))
 
   implicit val enc: Encoder[Reward] = {
     Encoder.instance {
-      case sa: SingleAgentReward => sa.reward.asJson
-      case ma: MultiAgentReward  => if (ma.reward.isEmpty) None.asJson else ma.reward.asJson
+      case sa: SingleAgentReward        => sa.reward.asJson
+      case ma: MultiAgentReward         => if (ma.reward.isEmpty) None.asJson else ma.reward.asJson
+      case gma: GroupedMultiAgentReward => if (gma.reward.isEmpty) None.asJson else gma.reward.asJson
     }
   }
 
   implicit class RewardOps(r: Reward) {
 
     def prettyPrint: String = r match {
-      case SingleAgentReward(reward) => reward.toString
-      case MultiAgentReward(reward)  => reward.asJson.noSpaces
+      case SingleAgentReward(reward)       => reward.toString
+      case MultiAgentReward(reward)        => reward.asJson.noSpaces
+      case GroupedMultiAgentReward(reward) => reward.asJson.noSpaces
     }
 
-    /**
-      * when the RL server is set up as a single agent, we flatten the rewards to
-      * a single value
-      *
-      * @return the reward as a single value (summed if coming from a multiagent reward)
-      */
-    def toSingleAgentReward: SingleAgentReward = r match {
-      case s: SingleAgentReward => s
-      case MultiAgentReward(reward) =>
-        val r = if (reward.isEmpty) 0.0 else reward.map { case (_, r) => r }.sum
-        SingleAgentReward(r)
+    def asSingleAgentReward: IO[SingleAgentReward] = r match {
+      case s: SingleAgentReward => IO.pure(s)
+      case other                => IO.raiseError(new Error(s"the reward type is not single agent: ${other.getClass.getSimpleName}"))
     }
 
+    def asMultiAgentReward: IO[MultiAgentReward] = r match {
+      case s: MultiAgentReward => IO.pure(s)
+      case other               => IO.raiseError(new Error(s"the reward type is not multi agent: ${other.getClass.getSimpleName}"))
+    }
+
+    def asGroupedMultiAgentReward: IO[GroupedMultiAgentReward] = r match {
+      case s: GroupedMultiAgentReward => IO.pure(s)
+      case other                      => IO.raiseError(new Error(s"the reward type is not grouped: ${other.getClass.getSimpleName}"))
+    }
   }
 
   implicit val dec: Decoder[Reward] =

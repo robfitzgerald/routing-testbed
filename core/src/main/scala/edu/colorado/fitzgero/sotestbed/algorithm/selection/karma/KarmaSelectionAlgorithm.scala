@@ -91,7 +91,7 @@ case class KarmaSelectionAlgorithm(
   }
 
   val multiAgentNetworkPolicyEpisodeId: Option[EpisodeId] = networkPolicy match {
-    case ExternalRLServer(underlying, client) =>
+    case ExternalRLServer(underlying, structure, client) =>
       // only multi-agent
       val episodeId = EpisodeId()
       KarmaSelectionRlOps.startMultiAgentEpisode(client, Some(episodeId)).unsafeRunSync()
@@ -134,7 +134,7 @@ case class KarmaSelectionAlgorithm(
     driverClientPw.close()
     networkClientPw.close()
     val networkPolicyResult = networkPolicy match {
-      case ExternalRLServer(underlying, client) =>
+      case ExternalRLServer(underlying, structure, client) =>
         val episodeId =
           IO.fromOption(this.multiAgentNetworkPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
         for {

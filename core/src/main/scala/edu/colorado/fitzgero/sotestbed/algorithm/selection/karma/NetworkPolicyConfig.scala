@@ -12,6 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicySpace
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicyStructure
 
 sealed trait NetworkPolicyConfig
 
@@ -70,17 +71,21 @@ object NetworkPolicyConfig {
   case class ScaledProportionalThreshold(space: NetworkPolicySpace, scale: Double, seed: Option[Long])
       extends NetworkPolicyConfig
 
-  case class ExternalRLServer(underlying: NetworkPolicyConfig, client: RayRLlibClient) extends NetworkPolicyConfig
+  case class ExternalRLServer(
+    underlying: NetworkPolicyConfig,
+    structure: NetworkPolicyStructure,
+    client: RayRLlibClient
+  ) extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
 
     def space: Option[NetworkPolicySpace] = policy match {
-      case UserOptimal                                     => None
-      case RandomPolicy(space, seed)                       => Some(space)
-      case CongestionWeightedSampling(space, seed)         => Some(space)
-      case CongestionThreshold(space, seed)                => Some(space)
-      case ScaledProportionalThreshold(space, scale, seed) => Some(space)
-      case ExternalRLServer(underlying, client)            => underlying.space
+      case UserOptimal                              => None
+      case RandomPolicy(space, _)                   => Some(space)
+      case CongestionWeightedSampling(space, _)     => Some(space)
+      case CongestionThreshold(space, _)            => Some(space)
+      case ScaledProportionalThreshold(space, _, _) => Some(space)
+      case ExternalRLServer(underlying, _, _)       => underlying.space
     }
 
     def buildGenerator: NetworkPolicySignalGenerator = policy match {

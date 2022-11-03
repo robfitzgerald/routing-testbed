@@ -44,14 +44,24 @@ object PolicyClientRequest {
   implicit val obsMapDec: Decoder[Map[AgentId, Boolean]] =
     CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (b: Boolean) => Right(b))
 
+  // implicit val encodeMessage: Encoder[PolicyClientRequest] =
+  //   Encoder.instance {
+  //     case m: StartEpisodeRequest => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.StartEpisode)))
+  //     case m: LogActionRequest    => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.LogAction)))
+  //     case m: GetActionRequest    => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.GetAction)))
+  //     case m: LogReturnsRequest   => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.LogReturns)))
+  //     case m: EndEpisodeRequest   => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.EndEpisode)))
+  //   }
+
   implicit val encodeMessage: Encoder[PolicyClientRequest] =
-    Encoder.instance {
-      case m: StartEpisodeRequest => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.StartEpisode)))
-      case m: LogActionRequest    => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.LogAction)))
-      case m: GetActionRequest    => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.GetAction)))
-      case m: LogReturnsRequest   => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.LogReturns)))
-      case m: EndEpisodeRequest   => m.asJson.mapObject(_.add("command", Command.jsonEncoder(Command.EndEpisode)))
-    }
+    Encoder.instance { m => m.asJson.mapObject(_.add("command", Command.jsonEncoder(m.command))) }
+
+  // helpers to allow calling asJson on subtypes of PolicyClientRequest
+  implicit val encSE: Encoder[StartEpisodeRequest] = Encoder[PolicyClientRequest].contramap(identity)
+  implicit val encGA: Encoder[GetActionRequest]    = Encoder[PolicyClientRequest].contramap(identity)
+  implicit val encLA: Encoder[LogActionRequest]    = Encoder[PolicyClientRequest].contramap(identity)
+  implicit val encLR: Encoder[LogReturnsRequest]   = Encoder[PolicyClientRequest].contramap(identity)
+  implicit val encEE: Encoder[EndEpisodeRequest]   = Encoder[PolicyClientRequest].contramap(identity)
 
   implicit val decodeMessage: Decoder[PolicyClientRequest] =
     Decoder.instance { hcursor =>

@@ -93,6 +93,8 @@ def run():
     except Exception as e:
         raise Exception(f"failed parsing observation features") from e
 
+    # invariant: we sort agent ids within a batch grouping on both server + client
+    # side to ensure that the ordering of grouped {obs|act|rew} entries are idempotent
     grouping = None
     agents_list = None
     if args.agents_grid is not None:

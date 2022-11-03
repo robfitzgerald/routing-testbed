@@ -249,8 +249,8 @@ object RoutingAlgorithm2 {
       case k: KarmaSelectionAlgorithm =>
         // generate a signal for each batch
         val batchesWithSignals: IO[Map[String, NetworkPolicySignal]] = k.networkPolicy match {
-          case UserOptimal                          => IO.pure(Map.empty)
-          case ExternalRLServer(underlying, client) =>
+          case UserOptimal                                     => IO.pure(Map.empty)
+          case ExternalRLServer(underlying, structure, client) =>
             // v2: special handling for Karma-based selection
             // that integrates with an external control module when generating
             // network policy signals
@@ -265,18 +265,16 @@ object RoutingAlgorithm2 {
               _ <- if (lastBatch.isEmpty) IO.pure(())
               else
                 for {
-                  rew <- space.encodeReward(roadNetwork, lastBatch)
-                  req: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
-                  _ <- client.sendOne(req)
+                  req <- structure.generateLogReturnsRequest(epId, roadNetwork, lastBatch, space)
+                  _   <- client.sendOne(req)
                   _ = k.networkClientPw.write(req.asJson.noSpaces.toString + "\n")
                 } yield ()
               // get action for this time step
-              obs <- space.encodeObservation(roadNetwork, zoneLookup)
-              req2: PolicyClientRequest = PolicyClientRequest.GetActionRequest(epId, obs)
-              res2 <- client.sendOne(req2)
-              _ = k.networkClientPw.write(req2.asJson.noSpaces.toString + "\n")
-              _ = k.networkClientPw.write(res2.asJson.noSpaces.toString + "\n")
-              act  <- res2.getAction
+              actReq <- structure.generateGetActionRequest(epId, roadNetwork, zoneLookup, space)
+              actRes <- client.sendOne(actReq)
+              _ = k.networkClientPw.write(actReq.asJson.noSpaces.toString + "\n")
+              _ = k.networkClientPw.write(actRes.asJson.noSpaces.toString + "\n")
+              act  <- actRes.getAction
               sigs <- space.decodeAction(act, k.gen)
               // record zone batches to log rewards for at next time step
               sigIdLookup   = sigs.keySet
