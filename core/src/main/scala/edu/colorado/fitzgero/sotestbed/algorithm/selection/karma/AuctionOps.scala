@@ -43,6 +43,8 @@ object AuctionOps extends LazyLogging {
     * to achieve this, any trip with a trip index not equal to zero has it's bid value
     * reset to zero (recall trip index 0 is the true shortest path).
     *
+    * 2022-11-04 update: winners don't pay other winners.
+    *
     * @param selectedRoutes all bids, the selected path index, and the path. a path
     *                       index of 0 is a "user-optimal" path.
     * @param bank the current bank ledger
@@ -54,12 +56,22 @@ object AuctionOps extends LazyLogging {
     bank: Map[String, Karma],
     maxKarma: Karma
   ): Either[Error, Map[String, Karma]] = {
+    def bothWinners(b1: Bid, b2: Bid): Boolean = b1.value != Karma.Zero && b2.value != Karma.Zero
+    val agents                                 = selectedRoutes.map { case (b, _, _) => b.request.agent }
     val onlyWinnersPaying = selectedRoutes
       .map {
         case (bid, idx, _) if idx != 0 => bid.copy(value = Karma.Zero)
         case (bid, _, _)               => bid
       }
-    resolveBidsUniformly(onlyWinnersPaying, bank, maxKarma)
+      .combinations(2)
+      .filter {
+        case b1 :: b2 :: Nil if bothWinners(b1, b2) => false
+        case _                                      => true
+      }
+      .map {
+        case b1 :: b2 :: Nil => (b1, b2)
+      }
+    resolveBidsUniformly(onlyWinnersPaying, agents, bank, maxKarma)
   }
 
   /**
@@ -73,40 +85,36 @@ object AuctionOps extends LazyLogging {
     * @return the updated bank
     */
   def resolveBidsUniformly(
-    bids: List[Bid],
+    bidPairs: Iterator[(Bid, Bid)],
+    agents: List[String],
     bank: Map[String, Karma],
     maxKarma: Karma
   ): Either[Error, Map[String, Karma]] = {
-    if (bids.lengthCompare(1) <= 0) Right(bank)
+    if (agents.lengthCompare(1) <= 0) Right(bank)
     else {
       // first, withdraw the amount each agent has bid from the bank
-//      val bankAfterWithdrawalOrError = BankOps.processWithdrawals(bank, bids, maxKarma)
-//      val initial                    = bankAfterWithdrawalOrError.map { b => (b, Karma.Zero) }
+      val numAgents                                           = agents.length
       val initial: Either[Error, (Map[String, Karma], Karma)] = Right((bank, Karma.Zero))
-      val transactionResults = bids.combinations(2).foldLeft(initial) { (acc, pair) =>
-        acc.flatMap {
-          case (innerBank, unallocatedKarma) =>
-            logger.debug(f"bidA: ${pair(0)} | bidB: ${pair(1)} | bank size ${innerBank.size}")
-            pair match {
-              case bid1 :: bid2 :: Nil =>
-                val transactionResult = resolveTransactionsInBankWithRemainingUnallocatedFunds(
-                  bank = innerBank,
-                  agentA = bid1.request.agent,
-                  bidA = bid1.value,
-                  agentB = bid2.request.agent,
-                  bidB = bid2.value,
-                  numAgents = bids.length,
-                  max = maxKarma
-                )
-                transactionResult.map {
-                  case (b, r) =>
-                    logger.debug(f"after ${bid1.request.agent}, ${bid2.request.agent} transaction, $r unallocated")
-                    (b, r + unallocatedKarma)
-                }
-              case other =>
-                Left(new Error(s"bids.combinations(2) result created non-pair: $other"))
-            }
-        }
+      val transactionResults = bidPairs.foldLeft(initial) {
+        case (acc, (bid1, bid2)) =>
+          acc.flatMap {
+            case (innerBank, unallocatedKarma) =>
+              logger.debug(f"bidA: $bid1 | bidB: $bid2 | bank size ${innerBank.size}")
+              val transactionResult = resolveTransactionsInBankWithRemainingUnallocatedFunds(
+                bank = innerBank,
+                agentA = bid1.request.agent,
+                bidA = bid1.value,
+                agentB = bid2.request.agent,
+                bidB = bid2.value,
+                numAgents = numAgents,
+                max = maxKarma
+              )
+              transactionResult.map {
+                case (b, r) =>
+                  logger.debug(f"after ${bid1.request.agent}, ${bid2.request.agent} transaction, $r unallocated")
+                  (b, r + unallocatedKarma)
+              }
+          }
       }
 
       transactionResults.flatMap {
@@ -116,7 +124,7 @@ object AuctionOps extends LazyLogging {
             // somehow re-distribute these unallocated funds. working up
             // from the agents with the least karma, we can give them each a
             // portion until we are clear (sounds like a recursive fn)
-            redistributeUnallocatedKarma(innerBank, bids, unallocated, maxKarma)
+            redistributeUnallocatedKarma(innerBank, agents, unallocated, maxKarma)
           }
       }
     }
@@ -240,14 +248,14 @@ object AuctionOps extends LazyLogging {
     * the unallocated funds in a greedy traversal of the sorted agents.
     *
     * @param bank
-    * @param bids
+    * @param agents
     * @param unallocated
     * @param max
     * @return
     */
   def redistributeUnallocatedKarma(
     bank: Map[String, Karma],
-    bids: List[Bid],
+    agents: List[String],
     unallocated: Karma,
     max: Karma
   ): Either[Error, Map[String, Karma]] = {
@@ -258,11 +266,11 @@ object AuctionOps extends LazyLogging {
 
       // track each agent's balance and headroom
       case class Row(agent: String, balance: Karma, headroom: Karma)
-      val headroomPerAgentAscendingOrError = bids
-        .traverse { bid =>
+      val headroomPerAgentAscendingOrError = agents
+        .traverse { agent =>
           BankOps
-            .getBalance(bank, bid.request.agent)
-            .map { bal => Row(bid.request.agent, bal, max - bal) }
+            .getBalance(bank, agent)
+            .map { bal => Row(agent, bal, max - bal) }
         }
         .map { _.sortBy { _.headroom } }
 
