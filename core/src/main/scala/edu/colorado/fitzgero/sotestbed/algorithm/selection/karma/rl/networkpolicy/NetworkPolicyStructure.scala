@@ -16,6 +16,8 @@ import edu.colorado.fitzgero.sotestbed.rllib.Reward.MultiAgentReward
 import edu.colorado.fitzgero.sotestbed.rllib.Reward.SingleAgentReward
 import edu.colorado.fitzgero.sotestbed.rllib.AgentId
 import edu.colorado.fitzgero.sotestbed.rllib.Observation
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
 
 /**
   * at this point we aren't using this abstraction because all
@@ -121,6 +123,37 @@ object NetworkPolicyStructure {
               PolicyClientRequest.GetActionRequest(episodeId, groupedObservation)
             }
       }
+
+    /**
+      * extracts the incoming action as network signals, making sure to unpack from the
+      * provided RLlib action data object
+      *
+      * note: currently restricted to real-numbered action spaces only
+      *
+      * @param action action to extract
+      * @param space policy space used
+      * @param gen signal generator used
+      * @param agents list of agents used by grouped policies
+      * @return effect of creating signals by network AgentId
+      */
+    def extractActions(
+      action: Action,
+      space: NetworkPolicySpace,
+      gen: NetworkPolicySignalGenerator,
+      agents: List[String]
+    ): IO[Map[String, NetworkPolicySignal]] = nps match {
+      case SingleAgentPolicy =>
+        IO.raiseError(new NotImplementedError)
+      case MultiAgentPolicy => space.decodeAction(action, gen)
+      case SingleGroupMultiAgentPolicy(groupId) =>
+        for {
+          maAct <- Action.extractGroupedMultiAgentRealAction(action)
+          agentIds = agents.map(AgentId.apply)
+          ungrouped <- IO.fromEither(ungroup(maAct, groupId, agentIds))
+          act = Action.MultiAgentRealAction(ungrouped)
+          sigs <- MultiAgentPolicy.extractActions(act, space, gen, List.empty)
+        } yield sigs
+    }
   }
 
   /**
@@ -133,6 +166,30 @@ object NetworkPolicyStructure {
   def group[T](batchId: String, data: Map[AgentId, T]): Map[AgentId, List[T]] = {
     val flat = data.toList.sortBy { case (a, _) => a.value }.map { case (_, r) => r }
     Map(AgentId(batchId) -> flat)
+  }
+
+  /**
+    * specialized version of ungroup where there is one expected group id
+    *
+    * @param data data to ungroup
+    * @param singleGroupId the group id expected
+    * @param agents the agents that are reported in this group
+    * @return either the ungrouped data, or an error
+    */
+  def ungroup[T](
+    data: Map[AgentId, List[T]],
+    singleGroupId: String,
+    agents: List[AgentId]
+  ): Either[Error, Map[AgentId, T]] = {
+    data.get(AgentId(singleGroupId)) match {
+      case None =>
+        val keys = data.keys.mkString(",")
+        Left(new Error(s"expected group id $singleGroupId not found in response data with keys $keys"))
+      case Some(d) if d.lengthCompare(agents) != 0 =>
+        Left(new Error(s"data to ungroup doesn't match expected number of agents"))
+      case Some(d) =>
+        Right(agents.sortBy(_.value).zip(d).toMap)
+    }
   }
 
   /**

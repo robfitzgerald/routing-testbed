@@ -10,10 +10,13 @@ import edu.colorado.fitzgero.sotestbed.util.CirceUtils
 sealed trait Action
 
 object Action {
-  case class SingleAgentDiscreteAction(action: Int)              extends Action
-  case class MultiAgentDiscreteAction(action: Map[AgentId, Int]) extends Action
-  case class SingleAgentRealAction(action: Double)               extends Action
-  case class MultiAgentRealAction(action: Map[AgentId, Double])  extends Action
+  case class SingleAgentDiscreteAction(action: Int)                           extends Action
+  case class MultiAgentDiscreteAction(action: Map[AgentId, Int])              extends Action
+  case class SingleAgentRealAction(action: Double)                            extends Action
+  case class MultiAgentRealAction(action: Map[AgentId, Double])               extends Action
+  case class GroupedMultiAgentDiscreteAction(action: Map[AgentId, List[Int]]) extends Action
+  case class GroupedMultiAgentRealAction(action: Map[AgentId, List[Double]])  extends Action
+  // todo: grouped versions
 
   implicit val obsDiscMapEnc: Encoder[Map[AgentId, Int]] =
     CirceUtils.mapEncoder(_.value, identity)
@@ -77,6 +80,29 @@ object Action {
       }.widen
     ).reduceLeft(_.or(_))
 
+  implicit class Ext(a: Action) {
+
+    def asSingleAgentDiscreteAction: IO[SingleAgentDiscreteAction] = a match {
+      case s: SingleAgentDiscreteAction => IO.pure(s)
+      case other                        => IO.raiseError(new Error(s"the action type is not single agent: ${other.getClass.getSimpleName}"))
+    }
+
+    def asMultiAgentDiscreteAction: IO[MultiAgentDiscreteAction] = a match {
+      case s: MultiAgentDiscreteAction => IO.pure(s)
+      case other                       => IO.raiseError(new Error(s"the action type is not multi agent: ${other.getClass.getSimpleName}"))
+    }
+
+    def asSingleAgentRealAction: IO[SingleAgentRealAction] = a match {
+      case s: SingleAgentRealAction => IO.pure(s)
+      case other                    => IO.raiseError(new Error(s"the action type is not single agent: ${other.getClass.getSimpleName}"))
+    }
+
+    def asMultiAgentRealAction: IO[MultiAgentRealAction] = a match {
+      case s: MultiAgentRealAction => IO.pure(s)
+      case other                   => IO.raiseError(new Error(s"the action type is not multi agent: ${other.getClass.getSimpleName}"))
+    }
+  }
+
   def extractSingleAgentRealAction(action: Action): IO[Double] =
     action match {
       case SingleAgentRealAction(action) => IO.pure(action)
@@ -87,5 +113,11 @@ object Action {
     action match {
       case MultiAgentRealAction(action) => IO.pure(action)
       case other                        => IO.raiseError(new Error(s"expected MultiAgentRealAction, found $other"))
+    }
+
+  def extractGroupedMultiAgentRealAction(action: Action): IO[Map[AgentId, List[Double]]] =
+    action match {
+      case GroupedMultiAgentRealAction(action) => IO.pure(action)
+      case other                               => IO.raiseError(new Error(s"expected MultiAgentRealAction, found $other"))
     }
 }

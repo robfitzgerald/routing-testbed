@@ -36,8 +36,6 @@ import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.rllib.Observation
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
-import edu.colorado.fitzgero.sotestbed.rllib.Observation.MultiAgentObservation
-import edu.colorado.fitzgero.sotestbed.rllib.Observation.SingleAgentObservation
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicySpace
 
 /**
@@ -275,8 +273,9 @@ object RoutingAlgorithm2 {
               _ = k.networkClientPw.write(actReq.asJson.noSpaces.toString + "\n")
               _ = k.networkClientPw.write(actRes.asJson.noSpaces.toString + "\n")
               act  <- actRes.getAction
-              sigs <- space.decodeAction(act, k.gen)
+              sigs <- structure.extractActions(act, space, k.gen, lastBatch.keys.toList)
               // record zone batches to log rewards for at next time step
+              // this doesn't change from timestep to timestep for now, but it may in the future
               sigIdLookup   = sigs.keySet
               batchesUpdate = zoneLookup.filter { case (k, _) => sigIdLookup.contains(k) }
               _             = k.updatePreviousBatch(batchesUpdate)
@@ -318,9 +317,9 @@ object RoutingAlgorithm2 {
     npsg: NetworkPolicySignalGenerator
   ): IO[Map[String, NetworkPolicySignal]] = {
     obs match {
-      case sao: SingleAgentObservation =>
+      case sao: Observation.SingleAgentObservation =>
         IO.raiseError(new Error(s"expected multiagent observation, found $sao"))
-      case MultiAgentObservation(observation) =>
+      case Observation.MultiAgentObservation(observation) =>
         observation.toList
           .traverse {
             case (agentId, obsFeatures) =>
@@ -330,6 +329,8 @@ object RoutingAlgorithm2 {
               IO.fromOption(sigOpt)(new Error(s"expected single observation feature but was empty"))
           }
           .map { _.toMap }
+      case Observation.GroupedMultiAgentObservation(observation) =>
+        IO.raiseError(new NotImplementedError)
     }
   }
 
