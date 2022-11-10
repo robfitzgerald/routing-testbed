@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from rl_server.so_routing.env.network_policy.network_act_space import NetworkActionSpace
+from rl_server.so_routing.network_policy.network_act_space import NetworkActionSpace
 
 SERVER_BASE_PORT = 9905
 

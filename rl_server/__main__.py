@@ -1,5 +1,5 @@
 import rl_server.rllib_server.server_driver_policy as d_server
-import rl_server.rllib_server.server_network_policy_v2 as n_server
+import rl_server.rllib_server.server_network_policy as n_server
 import os
 import sys
 import logging

@@ -1,3 +1,4 @@
+import csv
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import logging
 import queue
@@ -6,34 +7,40 @@ import threading
 import time
 import traceback
 import json
+
+from typing import List
 # import ray.cloudpickle as pickle
-from ray.rllib.env.policy_client import PolicyClient, _create_embedded_rollout_worker
+from ray.rllib.env.policy_client import (
+    _create_embedded_rollout_worker,
+    Commands,
+)
 from ray.rllib.offline.input_reader import InputReader
 from ray.rllib.policy.sample_batch import SampleBatch
 from ray.rllib.utils.annotations import override, PublicAPI
+from ray.rllib.evaluation.metrics import RolloutMetrics
+from ray.rllib.evaluation.sampler import SamplerInput
+from ray.rllib.utils.typing import SampleBatchType
 
-from rl_server.so_routing.env.np_encoder import NpEncoder
+from rl_server.so_routing.np_encoder import NpEncoder
 
 logger = logging.getLogger(__name__)
 
 
+@PublicAPI
 class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
     """REST policy server that acts as an offline data source.
-
     This launches a multi-threaded server that listens on the specified host
     and port to serve policy requests and forward experiences to RLlib. For
     high performance experience collection, it implements InputReader.
-
     For an example, run `examples/serving/cartpole_server.py` along
     with `examples/serving/cartpole_client.py --inference-mode=local|remote`.
-
     Examples:
         >>> import gym
-        >>> from ray.rllib.agents.pg import PGTrainer
+        >>> from ray.rllib.algorithms.pg import PG
         >>> from ray.rllib.env.policy_client import PolicyClient
         >>> from ray.rllib.env.policy_server_input import PolicyServerInput
         >>> addr, port = ... # doctest: +SKIP
-        >>> pg = PGTrainer( # doctest: +SKIP
+        >>> pg = PG( # doctest: +SKIP
         ...     env="CartPole-v0", config={ # doctest: +SKIP
         ...         "input": lambda io_ctx: # doctest: +SKIP
         ...             PolicyServerInput(io_ctx, addr, port), # doctest: +SKIP
@@ -42,7 +49,6 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
         ...     } # doctest: +SKIP
         >>> while True: # doctest: +SKIP
         >>>     pg.train() # doctest: +SKIP
-
         >>> client = PolicyClient( # doctest: +SKIP
         ...     "localhost:9900", inference_mode="local")
         >>> eps_id = client.start_episode()  # doctest: +SKIP
@@ -57,21 +63,17 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
     @PublicAPI
     def __init__(self, ioctx, address, port, idle_timeout=3.0):
         """Create a PolicyServerInput.
-
         This class implements rllib.offline.InputReader, and can be used with
         any Trainer by configuring
-
             {"num_workers": 0,
              "input": lambda ioctx: PolicyServerInput(ioctx, addr, port)}
-
         Note that by setting num_workers: 0, the trainer will only create one
         rollout worker / PolicyServerInput. Clients can connect to the launched
         server using rllib.env.PolicyClient.
-
         Args:
-            ioctx (IOContext): IOContext provided by RLlib.
-            address (str): Server addr (e.g., "localhost").
-            port (int): Server port (e.g., 9900).
+            ioctx: IOContext provided by RLlib.
+            address: Server addr (e.g., "localhost").
+            port: Server port (e.g., 9900).
         """
 
         self.rollout_worker = ioctx.worker
@@ -79,27 +81,60 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
         self.metrics_queue = queue.Queue()
         self.idle_timeout = idle_timeout
 
-        def get_metrics():
-            completed = []
-            while True:
-                try:
-                    completed.append(self.metrics_queue.get_nowait())
-                except queue.Empty:
-                    break
-            return completed
-
-        # Forwards client-reported rewards directly into the local rollout
-        # worker. This is a bit of a hack since it is patching the get_metrics
-        # function of the sampler.
+        # Forwards client-reported metrics directly into the local rollout
+        # worker.
         if self.rollout_worker.sampler is not None:
-            self.rollout_worker.sampler.get_metrics = get_metrics
+            # This is a bit of a hack since it is patching the get_metrics
+            # function of the sampler.
 
-        # Create a request handler that receives commands from the clients
+            def get_metrics():
+                completed = []
+                while True:
+                    try:
+                        completed.append(self.metrics_queue.get_nowait())
+                    except queue.Empty:
+                        break
+
+                return completed
+
+            self.rollout_worker.sampler.get_metrics = get_metrics
+        else:
+            # If there is no sampler, act like if there would be one to collect
+            # metrics from
+            class MetricsDummySampler(SamplerInput):
+                """This sampler only maintains a queue to get metrics from."""
+
+                def __init__(self, metrics_queue):
+                    """Initializes an AsyncSampler instance.
+                    Args:
+                        metrics_queue: A queue of metrics
+                    """
+                    self.metrics_queue = metrics_queue
+
+                def get_data(self) -> SampleBatchType:
+                    raise NotImplementedError
+
+                def get_extra_batches(self) -> List[SampleBatchType]:
+                    raise NotImplementedError
+
+                def get_metrics(self) -> List[RolloutMetrics]:
+                    """Returns metrics computed on a policy client rollout worker."""
+                    completed = []
+                    while True:
+                        try:
+                            completed.append(self.metrics_queue.get_nowait())
+                        except queue.Empty:
+                            break
+                    return completed
+
+            self.rollout_worker.sampler = MetricsDummySampler(
+                self.metrics_queue)
+
+            # Create a request handler that receives commands from the clients
         # and sends data and metrics into the queues.
         handler = _make_handler(
             self.rollout_worker, self.samples_queue, self.metrics_queue
         )
-
         try:
             import time
 
@@ -157,10 +192,11 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
 
     def setup_child_rollout_worker():
         nonlocal lock
-        nonlocal child_rollout_worker
-        nonlocal inference_thread
 
         with lock:
+            nonlocal child_rollout_worker
+            nonlocal inference_thread
+
             if child_rollout_worker is None:
                 (
                     child_rollout_worker,
@@ -188,6 +224,10 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
 
+            # fieldnames = ['command', 'episode_id', 'observation', 'action', 'reward', 'info', 'done']
+            # self.f = open('rl_events_log.json', 'w')
+            # self.writer = csv.DictWriter(self.f, fieldnames, extrasaction='ignore')
+
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length"), 0)
             raw_body = self.rfile.read(content_len)
@@ -204,24 +244,28 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                 print(response_str)
                 response_bytes = response_str.encode(encoding='utf_8')
                 self.wfile.write(response_bytes)
+                # # log request and response
+                # self.writer.writerow(parsed_input)
+                # self.writer.writerow(response)
             except Exception:
                 print("server error exception when handling POST call")
-                print()
+                print("request (parsed):")
+                print(parsed_input)
                 self.send_error(500, traceback.format_exc())
 
         def execute_command(self, args):
-            command = args["command"]
+            command = Commands[args["command"]]
             response = {}
 
             # Local inference commands:
-            if command == PolicyClient.GET_WORKER_ARGS:
+            if command == Commands.GET_WORKER_ARGS:
                 logger.info("Sending worker creation args to client.")
                 response["worker_args"] = rollout_worker.creation_args()
-            elif command == PolicyClient.GET_WEIGHTS:
+            elif command == Commands.GET_WEIGHTS:
                 logger.info("Sending worker weights to client.")
                 response["weights"] = rollout_worker.get_weights()
                 response["global_vars"] = rollout_worker.get_global_vars()
-            elif command == PolicyClient.REPORT_SAMPLES:
+            elif command == Commands.REPORT_SAMPLES:
                 logger.info(
                     "Got sample batch of size {} from client.".format(
                         args["samples"].count
@@ -230,23 +274,23 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                 report_data(args)
 
             # Remote inference commands:
-            elif command == PolicyClient.START_EPISODE:
+            elif command == Commands.START_EPISODE:
                 setup_child_rollout_worker()
                 assert inference_thread.is_alive()
                 response["episode_id"] = child_rollout_worker.env.start_episode(
                     args["episode_id"], args["training_enabled"]
                 )
-            elif command == PolicyClient.GET_ACTION:
+            elif command == Commands.GET_ACTION:
                 assert inference_thread.is_alive()
                 response["action"] = child_rollout_worker.env.get_action(
                     args["episode_id"], args["observation"]
                 )
-            elif command == PolicyClient.LOG_ACTION:
+            elif command == Commands.LOG_ACTION:
                 assert inference_thread.is_alive()
                 child_rollout_worker.env.log_action(
                     args["episode_id"], args["observation"], args["action"]
                 )
-            elif command == PolicyClient.LOG_RETURNS:
+            elif command == Commands.LOG_RETURNS:
                 assert inference_thread.is_alive()
                 if args["done"]:
                     child_rollout_worker.env.log_returns(
@@ -256,7 +300,7 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
                     child_rollout_worker.env.log_returns(
                         args["episode_id"], args["reward"], args["info"]
                     )
-            elif command == PolicyClient.END_EPISODE:
+            elif command == Commands.END_EPISODE:
                 assert inference_thread.is_alive()
                 child_rollout_worker.env.end_episode(
                     args["episode_id"], args["observation"]

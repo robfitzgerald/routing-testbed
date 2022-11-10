@@ -7,7 +7,7 @@ from gym.spaces import Tuple
 from ray.rllib import MultiAgentEnv
 from ray.rllib.env import GroupAgentsWrapper
 from ray.rllib.env.external_multi_agent_env import ExternalMultiAgentEnv
-from rl_server.so_routing.env import space_v1
+from rl_server.so_routing import space_v1
 
 # deprecated
 

@@ -1,5 +1,5 @@
 import argparse
-from rl_server.so_routing.env.driver_policy.driver_action_space import DriverActionSpace
+from rl_server.so_routing.driver_policy.driver_action_space import DriverActionSpace
 
 SERVER_BASE_PORT = 9900
 
@@ -150,4 +150,9 @@ parser.add_argument(
     help="comma-delimited list of feature names for the observation space",
     type=str,
     required=True
+)
+parser.add_argument(
+    "--toy",
+    action="store_true",
+    help="run against the toy environment"
 )

@@ -33,12 +33,16 @@ from ray.rllib.algorithms.registry import get_algorithm_class
 from rl_server.rllib_server.driver_cli import parser
 
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
+from ray.rllib.models.catalog import MODEL_DEFAULTS
 from ray.tune.logger import pretty_print
 from ray.rllib.policy.policy import PolicySpec
 
 # from ray.rllib.env.policy_server_input import PolicyServerInput
-from rl_server.so_routing.env.policy_server_no_pickle_v4 import PolicyServerInput
-from rl_server.so_routing.env.driver_policy.driver_obs_space import DriverObsSpace, build_observation_space
+from rl_server.so_routing.policy_server_no_pickle_v4 import PolicyServerInput
+from rl_server.so_routing.driver_policy.driver_obs_space import DriverObsSpace, build_observation_space
+from rl_server.so_routing.env.toy_driver_env.toy_driver_environment import ToyDriverEnv
+from rl_server.so_routing.env.toy_driver_env.network_signal import NetworkSignalFunctionType
+from rl_server.so_routing.env.toy_driver_env.observation import compose_observation_fn
 
 SERVER_ADDRESS = "localhost"
 # In this example, the user can run the policy server with
@@ -102,21 +106,21 @@ def run():
 
     obs_space = build_observation_space(o_names, args.max_account, agents_list)
     act_space = args.action_space.action_space(args.max_bid, agents_list)
-    is_multi = grouping is not None
-    obs_space_instance = list(obs_space.values())[0] if is_multi else obs_space
-    act_space_instance = list(act_space.values())[0] if is_multi else act_space
+    # is_multi = grouping is not None
+    # obs_space_instance = list(obs_space.values())[0] if is_multi else obs_space
+    # act_space_instance = list(act_space.values())[0] if is_multi else act_space
 
-    # print("observation space")
-    # print(obs_space)
-    # print("action space")
-    # print(act_space)
+    print(f"observation space of type {type(obs_space)}:")
+    print(obs_space)
+    print(f"action space of type {type(act_space)}")
+    print(act_space)
 
     multiagent = {
         # Map of type MultiAgentPolicyConfigDict from policy ids to tuples
         # of (policy_cls, obs_space, act_space, config). This defines the
         # observation and action spaces of the policies and any extra config.
         "policies": {
-            "driver": PolicySpec(None, obs_space_instance, act_space_instance),
+            "driver": PolicySpec(None, obs_space, act_space),
         },
         # Keep this many policies in the "policy_map" (before writing
         # least-recently used ones to disk/S3).
@@ -216,7 +220,7 @@ def run():
         # DL framework to use.
         "framework": args.framework,
         # Set to INFO so we'll see the server's actual address:port.
-        "log_level": "INFO",
+        "log_level": "DEBUG",
         "model": {},
         # === Evaluation Settings ===
         # Evaluate with every `evaluation_interval` training iterations.
@@ -273,8 +277,65 @@ def run():
         if args.run == "R2D2":
             config["model"]["use_lstm"] = args.use_lstm
 
+    if args.toy:
+        # override config for toy problem setup
+        config["input"] = "sampler"
+        config['env'] = ToyDriverEnv
+        config['model'] = MODEL_DEFAULTS
+        config['env_config'] = {
+            "delay_increment": 1,
+            "timestep_size": 1,
+            "dist_per_timestep": 1,
+            "n_drivers": 1000,
+            "max_replannings": 20,
+            "max_balance": args.max_account,
+            "max_trip_duration": 20,
+            "min_start_time": 0,
+            "max_start_time": 10,
+            "n_auctions": 10,
+            "max_batch_size": 10,
+            "network_signal_fn": NetworkSignalFunctionType.FIXED_FIFTY_PERCENT.create_fn(),
+            "observation_fn": compose_observation_fn(o_names),
+            "observation_space": obs_space,
+            "action_space": act_space
+        }
+
+        ser_conf = config.copy()
+        for k, v in ser_conf.items():
+            ser_conf[k] = str(v)
+        print("configuration:")
+        print(json.dumps(ser_conf, indent=4))
+
+        algo = get_algorithm_class(args.run)(config=config)
+        if args.checkpoint_path:
+            print("Restoring from checkpoint path", args.checkpoint_path)
+            algo.restore(args.checkpoint_path)
+
+        if args.as_test:
+            # create a test configuration
+            test_config = config.copy()
+            test_config.update({"explore": False})
+
+            algo = get_algorithm_class(args.run)(config=test_config)
+            results = algo.train()
+            print(results)
+
+        else:
+
+            for i in range(algo.iteration, args.stop_iters):
+                print(f"running iteration {i}")
+                results = algo.train()
+                print(results)
+                met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
+                met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
+                if met_reward_condition or met_ts_condition:
+                    break
+
+            checkpoint = algo.save()
+            print("Last checkpoint", checkpoint)
+
     # Manual training loop (no Ray tune), allows for using checkpoint
-    if args.no_tune:
+    elif args.no_tune:
         algo = get_algorithm_class(args.run)(config=config)
 
         if args.checkpoint_path:
