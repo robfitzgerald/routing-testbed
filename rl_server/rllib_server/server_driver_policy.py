@@ -282,6 +282,7 @@ def run():
         config["input"] = "sampler"
         config['env'] = ToyDriverEnv
         config['model'] = MODEL_DEFAULTS
+        # config['model']["use_attention"] = True
         config['env_config'] = {
             "delay_increment": 1,
             "timestep_size": 1,
