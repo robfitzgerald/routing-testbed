@@ -1,5 +1,6 @@
 import math
 from rl_server.so_routing.env.toy_driver_env.driver import Driver, DriverState
+from rl_server.so_routing.env.toy_driver_env.auction import resolve_winner_pay_all_auction
 from rl_server.so_routing.env.toy_driver_env.efraimidis_spirakis_sampling import reservoir_sampling
 from rl_server.so_routing.env.toy_driver_env.reward import jain_user_fairness
 from ray.rllib.env.env_context import EnvContext
@@ -8,6 +9,10 @@ import random
 from typing import Dict, List, Tuple
 import logging
 import json
+import pandas as pd
+import statistics as stats
+
+from rl_server.so_routing.env.toy_driver_env.scenario.scenario import Scenario
 
 
 log = logging.getLogger(__name__)
@@ -19,27 +24,35 @@ class ToyDriverEnv(MultiAgentEnv):
         self,
         config: EnvContext
     ):
+        # OPENAI GYM ARGUMENTS
+        self.action_space = config['action_space']
+        self.observation_space = config['observation_space']
 
-        self.n_drivers = config['n_drivers']
-        self.n_auctions = config['n_auctions']
+        # ENVIRONMENT-SPECIFIC ARGUMENTS
+        self.scenario: Scenario = config['scenario']
         self.max_balance = config['max_balance']
-        self.max_trip_duration = config['max_trip_duration']
         self.min_start_time = config['min_start_time']
         self.max_start_time = config['max_start_time']
-        self.max_batch_size = config['max_batch_size']
         self.max_replannings = config['max_replannings']
-        self.delay_increment = config['delay_increment']
-        self.timestep_size = config['timestep_size']
-        self.dist_per_timestep = config['dist_per_timestep']
+        self.max_trip_increase_pct = config['max_trip_increase_pct']
+        self.timestep_size = 1
+        # Callable[[int], int]  from iteration # to population size
+        self.population_fn = config['population_fn']
         # Callable[[Driver], List[float]]
         self.observation_fn = config['observation_fn']
         # Callable[[List[Driver]], int]
         self.network_signal_fn = config['network_signal_fn']
+        # Union[int,str]
         self.balance_initialization = config.get(
             'balance_initialization', 'uniform')
-        self.trip_initialization = config.get('trip_initialization', 'uniform')
-        self.action_space = config['action_space']
-        self.observation_space = config['observation_space']
+
+        # STATEFUL ARGUMENTS
+        self.rng = random.Random()
+        self.iteration = 0
+        self.stats = {}
+
+        log.info(f"loaded '{self.scenario.name}' scenario with configuration:")
+        print(json.dumps(self.scenario.as_dict(), indent=4))
 
     def step(self, action):
         """Returns observations from ready agents.
@@ -85,19 +98,26 @@ class ToyDriverEnv(MultiAgentEnv):
         moved = self.move_active_trips()
         self.current_time += self.timestep_size
         self.activate_new_trips()
-        report = self.report_state()
-        print(f"TIME: {self.current_time}")
-        print(json.dumps(report, indent=4))
+        # print(json.dumps(report, indent=4))
         # print(f'moved {moved} trips')
 
         # (t+1) - observe state
         done = self.generate_dones()  # side-effect: advance driver state
-        rew = self.generate_rewards()
+        rew, allocs = self.generate_rewards(done['__all__'])
         obs = self.generate_observations()
 
         # (t+1) - set up auctions to resolve in (t+2)
         self.clear_auctions()
         self.create_auctions()
+
+        report = self.report_state()
+        auctions = [len(a) for a in self.auctions]
+        print(f"TIME: {str(self.current_time).ljust(3)} {report} AUCTIONS: {auctions}")
+
+        if done['__all__']:
+            self.append_final_stats(rew, allocs)
+            print("FINISHED")
+            print(json.dumps(self.stats, indent=4))
         # n_auctions, pct_bidding = self.create_auctions()
 
         # print(f'{n_auctions} auctions ({pct_bidding*100:.2f}% of active)')
@@ -127,6 +147,8 @@ class ToyDriverEnv(MultiAgentEnv):
                 "traffic_light_1": [0, 3, 5, 1],
             }
         """
+        self.iteration = self.iteration + 1
+
         def init_balance():
             if self.balance_initialization == "uniform":
                 return random.randint(0, self.max_balance)
@@ -144,25 +166,29 @@ class ToyDriverEnv(MultiAgentEnv):
             return random.randint(self.min_start_time, self.max_start_time)
 
         def init_trip():
-            if self.trip_initialization == "uniform":
-                return random.randint(1, self.max_trip_duration)
-            elif isinstance(self.trip_initialization, int):
-                return self.trip_initialization
-            else:
-                msg = f"unknown trip initialization type {self.trip_initialization}"
-                raise Exception(msg)
+            return self.scenario.sample_initial_trip_distance(self.rng)
 
         # create drivers and activate trips that start at time zero
+        n_drivers = self.population_fn(self.iteration)
         self.drivers: List[Driver] = [
-            Driver(i, init_balance(), init_start(), init_trip())
-            for i in range(self.n_drivers)]
+            Driver.build(i, init_balance(), init_start(), init_trip())
+            for i in range(n_drivers)]
         self.current_time = 0
         self.auctions: List[List[Driver]] = []
         self.auction_lookup: Dict[str, int] = []
         self.activate_new_trips()
         obs = self.generate_observations()
+        self.stats = {
+            'iteration': self.iteration,
+            'n_drivers': n_drivers,
+            'sum_initial_balance': sum([d.balance for d in self.drivers])
+        }
 
-        print(f"starting new episode at time {self.current_time}")
+        msg = (
+            f'starting episode {self.iteration} at time {self.current_time} '
+            f'with {n_drivers} drivers'
+        )
+        print(msg)
 
         # for d in sorted(self.drivers, key=lambda d: d.trip_start_time):
         #     print(d)
@@ -171,6 +197,99 @@ class ToyDriverEnv(MultiAgentEnv):
 
     def done(self):
         return all([d.done for d in self.drivers])
+
+    def activate_new_trips(self):
+        newly_activated = 0
+        for driver in self.drivers:
+            if driver.trip_start_time == self.current_time:
+                updated = driver.start_trip(self.current_time)
+                self.drivers[updated.driver_id] = updated
+                newly_activated += 1
+        return newly_activated
+
+    def move_active_trips(self):
+        n_active = len([d for d in self.drivers if d.active])
+        moved = 0
+        for driver in self.drivers:
+            if driver.active:
+                distance = self.scenario.sample_move_distance(
+                    n_active, driver, self.rng)
+                updated = driver.move(distance).update_if_arrived()
+                self.drivers[updated.driver_id] = updated
+                moved += 1
+                # print(
+                #     f'time {self.current_time} - driver {driver.driver_id} moved and '
+                #     f'has traversed {updated.trip_pct()*100:.2f}% of trip'
+                # )
+        return moved
+
+    def create_auctions(self) -> Tuple[int, float]:
+        # create batches from active drivers
+        active = [d for d in self.drivers
+                  if d.active and not d.replannings >= self.max_replannings]
+        n_active = len(active)
+        if n_active < 2:
+            return 0, 0.0
+
+        batches = self.scenario.create_batches(active, self.rng)
+
+        # place batches into auctions where there are at least 2 drivers
+        self.auctions = []
+        for batch in batches:
+            if len(batch) > 1:  # could put other filter criteria here in the future
+                auction_id = len(self.auctions)
+                ids = {d.driver_id: auction_id for d in batch}
+                self.auction_lookup.update(ids)
+                self.auctions.append(batch)
+
+        # report number of auctions and percent of active agents placed in auctions
+        in_auction = len([d for a in self.auctions for d in a])
+        auction_pct = in_auction / n_active
+        n_auctions = len(self.auctions)
+        return n_auctions, auction_pct
+
+    def resolve_auctions(self, bids: Dict[str, int]):
+
+        # prepare a delay function for loser drivers that is 
+        # based on the current network state
+        n_active = len([d for d in self.drivers if d.active])
+        def delay_fn(d: Driver) -> Driver:
+            delay = self.scenario.sample_delay_increment(
+                n_active, d, self.max_trip_increase_pct, self.rng
+            )
+            updated = d.reroute(delay, self.current_time)
+            return updated
+
+        # resolve each auction and store the resulting driver states
+        for auction in self.auctions:
+            auction_result = resolve_winner_pay_all_auction(
+                auction, 
+                bids, 
+                self.network_signal_fn, 
+                delay_fn, 
+                self.max_balance)
+
+            for driver_update in auction_result:
+                self.drivers[driver_update.driver_id] = driver_update
+
+    def clear_auctions(self):
+        self.auctions: List[List[Driver]] = []
+        self.auction_lookup = {}
+
+    def generate_observations(self):
+        return {d.driver_id_str: self.observation_fn(d) for d in self.drivers if d.active}
+
+    def generate_rewards(self, done: bool):
+        if not done:
+            r = {d.driver_id_str: 0.0 for a in self.auctions for d in a}
+            return r, []
+        else:
+            allocations = [d.pct_original_of_final() for d in self.drivers]
+            fairness = jain_user_fairness(allocations)
+            rewards = {d.driver_id_str: f for d,
+                       f in zip(self.drivers, fairness)}
+
+            return rewards, allocations
 
     def generate_dones(self):
         """
@@ -189,181 +308,59 @@ class ToyDriverEnv(MultiAgentEnv):
         done_msg['__all__'] = self.done()
         return done_msg
 
-    def activate_new_trips(self):
-        newly_activated = 0
-        for driver in self.drivers:
-            if driver.trip_start_time == self.current_time:
-                updated = driver.start_trip(self.current_time)
-                self.drivers[updated.driver_id] = updated
-                newly_activated += 1
-        return newly_activated
-
-    def resolve_auctions(self, bids: Dict[str, int]):
-        # for each auction, sample winners
-
-        for a in self.auctions:
-            auction_size = len(a)
-            n_winners = self.network_signal_fn(a)
-            n_losers = auction_size - n_winners
-            if n_losers == 0:
-                continue
-
-            # grab bids for drivers in this auction
-            auction_data = [(d.driver_id, bids.get(str(d.driver_id)))
-                            for d in a]
-
-            # protect against over-bidding
-            for idx, (d_id, bid) in enumerate(auction_data):
-                driver = self.drivers[d_id]
-                if driver.balance <= bid:
-                    auction_data[idx] = d_id, driver.balance
-                    # msg = (
-                    #     f'driver {d_id} overbid {bid} which exceeds '
-                    #     f'balance of {driver.balance}'
-                    # )
-                    # print(msg)
-
-            # print(f'auction bids (id, bid): {auction_data}')
-
-            # use weighted sampling to pick winners from the bids
-            a_ids, a_bids = zip(*auction_data)
-            winner_ids = reservoir_sampling(a_ids, a_bids, n_winners, random)
-
-            # assign winners/losers
-            winners = [d for d in a if d.driver_id in winner_ids]
-            win_bids = [bids.get(str(d.driver_id))
-                        for d in a if d.driver_id in winner_ids]
-            losers = [d.reroute(self.delay_increment, self.current_time)
-                      for d in a if not d.driver_id in winners]
-
-            # distribute payments for winner-pay-all auction
-            overflow_pool = 0
-            for i in range(len(winners)):
-                for j in range(len(losers)):
-                    # pull latest state for winner/loser
-                    winner = winners[i]
-                    win_bid = win_bids[i]
-                    loser = losers[i]
-
-                    # payment p due from d1 to d2, a fraction of d1's bid
-                    # proportional to the number of losers to distribute to
-                    p = int(math.floor(float(win_bid) / float(len(losers))))
-                    exceeds_winner_balance = p > winner.balance
-                    exceeds_loser_max = loser.balance + p > self.max_balance
-                    if p == 0 or exceeds_winner_balance or exceeds_loser_max:
-                        continue
-                    winner_updated, winner_overs = winner.increment_balance(
-                        -p, self.max_balance)
-                    loser_updated, loser_overs = loser.increment_balance(
-                        p, self.max_balance)
-                    overflow_pool += (winner_overs + loser_overs)
-                    winners[i] = winner_updated
-                    losers[j] = loser_updated
-
-            # we have an overflow pool because the currency is bounded.
-            # redistribute any funds from the overflow pool, using a round robin
-            # assignment of a single currency unit to the bidders until the pool
-            # is exhausted. if all agents reach their limit before the pool
-            # is emptied, raise an error
-            def redistributing():
-                return overflow_pool > 0
-            i = 0
-            # print(f'overflow pool: {overflow_pool}')
-            overflow_drivers = winners.copy()
-            overflow_drivers.extend(losers)
-            while redistributing():
-                driver = overflow_drivers[i]
-                updated, overs = driver.increment_balance(1, self.max_balance)
-                if overs == 0:
-                    overflow_pool -= 1
-                    overflow_drivers[i] = updated
-                no_headroom = all(
-                    [d.balance == self.max_balance for d in overflow_drivers])
-                if redistributing() and no_headroom:
-                    msg = (
-                        f"overflow pool has {overflow_pool} remaining but all "
-                        f"agents in this auction are maxxed on balance"
-                    )
-                    for d in sorted(a, key=lambda d: d.driver_id):
-                        print(d)
-                    for d, _ in sorted(overflow_drivers, key=lambda d: d.driver_id):
-                        print(d)
-                    raise Exception(msg)
-                i = (i + 1) % len(overflow_drivers)
-
-            # update the final driver states after settling the auction
-            for updated_driver in overflow_drivers:
-                self.drivers[updated_driver.driver_id] = updated_driver
-
-    def move_active_trips(self):
-        moved = 0
-        for driver in self.drivers:
-            if driver.active:
-                updated = driver.move(self.dist_per_timestep)
-                self.drivers[updated.driver_id] = updated
-                moved += 1
-                # print(
-                #     f'time {self.current_time} - driver {driver.driver_id} moved and '
-                #     f'has traversed {updated.trip_pct()*100:.2f}% of trip'
-                # )
-        return moved
-
-    def create_auctions(self) -> Tuple[int, float]:
-        active = [d for d in self.drivers
-                  if d.active and not d.replannings >= self.max_replannings]
-        random.shuffle(active)
-        n_active = len(active)
-        if n_active < 2:
-            # print(f'no auctions to create, # of active trips is {n_active}')
-            return 0, 0.0
-        else:
-            while len(active) > 1 and len(self.auctions) < self.n_auctions:
-                batch_size = random.randint(2, self.max_batch_size)
-                # append a batch
-                if len(active) < batch_size:
-                    batch = active
-                    active = []
-                else:
-                    batch = [active.pop(0) for _ in range(batch_size)]
-
-                # update auctions
-                self.auctions.append(batch)
-                auction_id = len(self.auctions) - 1
-                ids = {d.driver_id: auction_id for d in batch}
-                self.auction_lookup.update(ids)
-
-            in_auction = len([d for a in self.auctions for d in a])
-            auction_pct = in_auction / n_active
-            n_auctions = len(self.auctions)
-            return n_auctions, auction_pct
-
-    def clear_auctions(self):
-        self.auctions: List[List[Driver]] = []
-        self.auction_lookup = {}
-
-    def generate_observations(self):
-        return {str(d.driver_id): self.observation_fn(d) for d in self.drivers if d.active}
-
-    def generate_rewards(self):
-        done = self.done()
-        # print(f"generating rewards, done? {done}")
-        if not done:
-            r = {str(d.driver_id): 0.0 for a in self.auctions for d in a}
-            return r
-        else:
-            allocations = [d.pct_original_of_final() for d in self.drivers]
-            fairness = jain_user_fairness(allocations)
-            rewards = {str(d.driver_id): f for d,
-                       f in zip(self.drivers, fairness)}
-            # print("FINAL REWARDS")
-            # for d_id, r in rewards.items():
-            #     pad_id = str(d_id).ljust(5)
-            #     d = self.drivers[int(d_id)]
-            #     print(f'{pad_id}: {r:.6f} {d}')
-            return rewards
-
     def report_state(self):
-        report = {s.name: 0 for s in DriverState}
+        states = [
+            DriverState.INACTIVE,
+            DriverState.ACTIVE,
+            DriverState.DONE,
+        ]
+        acc = {s.name: 0 for s in states}
         for d in self.drivers:
-            report[d.state.name] = report[d.state.name] + 1
-        return report
+            acc[d.state.name] = acc[d.state.name] + 1
+        report = [k + ": " + str(v).ljust(5) for k, v in acc.items()]
+        return ' '.join(report)
+
+    def append_final_stats(self, rewards, allocations):
+
+        # karma stats
+        sum_balance = sum([d.balance for d in self.drivers])
+        mean_balance = stats.mean([d.balance for d in self.drivers])
+        mean_balance_diff = stats.mean([d.balance_diff() for d in self.drivers])
+        std_balance_diff = stats.stdev([d.balance_diff() for d in self.drivers])
+
+        # reward stats
+        mean_allocation = stats.mean(allocations)
+        std_allocation = stats.stdev(allocations)
+        mean_alloc_replanned = stats.mean([d.pct_original_of_final()
+                                            for d in self.drivers
+                                            if d.replannings > 0])
+        mean_reward = stats.mean(rewards.values())
+        
+        # trip stats
+        mean_orig_trip = stats.mean(
+            [d.original_trip_total for d in self.drivers])
+        mean_exp_trip = stats.mean([d.trip_total() for d in self.drivers])
+        mean_replannings = stats.mean([d.replannings for d in self.drivers])
+        mean_delay = stats.mean([d.delay for d in self.drivers])
+        mean_delay_pct = stats.mean([d.delay_pct() for d in self.drivers])
+        std_delay_pct = stats.stdev([d.delay_pct() for d in self.drivers])
+        mean_increase = stats.mean([d.delay_offset_pct() for d in self.drivers])
+        
+        self.stats['sum_final_balance'] = sum_balance
+        self.stats['mean_balance'] = mean_balance
+        self.stats['mean_balance_diff'] = mean_balance_diff
+        self.stats['std_balance_diff'] = std_balance_diff
+        
+        self.stats['mean_allocation'] = mean_allocation
+        self.stats['std_allocation'] = std_allocation
+        self.stats['mean_allocation_replanned_only'] = mean_alloc_replanned
+        self.stats['mean_reward'] = mean_reward
+
+        self.stats['mean_original_trip_distance'] = mean_orig_trip
+        self.stats['mean_experienced_trip_distance'] = mean_exp_trip
+        self.stats['mean_replannings'] = mean_replannings
+        self.stats['mean_delay'] = mean_delay
+        self.stats['mean_delay_pct'] = mean_delay_pct
+        self.stats['std_delay_pct'] = std_delay_pct
+        self.stats['mean_increase'] = mean_increase
+        

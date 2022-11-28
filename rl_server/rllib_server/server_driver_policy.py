@@ -25,6 +25,7 @@ You may connect more than one policy client to any open listen port.
 
 import json
 import os
+import random
 import time
 
 import ray
@@ -36,6 +37,7 @@ from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
 from ray.rllib.models.catalog import MODEL_DEFAULTS
 from ray.tune.logger import pretty_print
 from ray.rllib.policy.policy import PolicySpec
+from rl_server.so_routing.env.toy_driver_env.scenario.lafayette import Lafayette
 
 # from ray.rllib.env.policy_server_input import PolicyServerInput
 from rl_server.so_routing.policy_server_no_pickle_v4 import PolicyServerInput
@@ -283,19 +285,20 @@ def run():
         config['env'] = ToyDriverEnv
         config['model'] = MODEL_DEFAULTS
         # config['model']["use_attention"] = True
+
+        # def population_fn(iteration):
+        #     min_pop = 100
+        #     max_pop = 1000
+
         config['env_config'] = {
-            "delay_increment": 1,
-            "timestep_size": 1,
-            "dist_per_timestep": 1,
-            "n_drivers": 1000,
-            "max_replannings": 20,
+            "scenario": Lafayette,
             "max_balance": args.max_account,
-            "max_trip_duration": 20,
             "min_start_time": 0,
-            "max_start_time": 10,
-            "n_auctions": 10,
-            "max_batch_size": 10,
-            "network_signal_fn": NetworkSignalFunctionType.FIXED_FIFTY_PERCENT.create_fn(),
+            "max_start_time": 20,  # 10 minutes in 30s increments
+            "max_replannings": 20,
+            "max_trip_increase_pct": 1.0,  # 100%
+            "population_fn": lambda x: 400,  # random.randint(100, 500),
+            "network_signal_fn": NetworkSignalFunctionType.UNIFORM.create_fn(),
             "observation_fn": compose_observation_fn(o_names),
             "observation_space": obs_space,
             "action_space": act_space
@@ -324,9 +327,9 @@ def run():
         else:
 
             for i in range(algo.iteration, args.stop_iters):
-                print(f"running iteration {i}")
+                print(f"running driver server training iteration {i}")
                 results = algo.train()
-                print(results)
+                # print(results)
                 met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
                 met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
                 if met_reward_condition or met_ts_condition:

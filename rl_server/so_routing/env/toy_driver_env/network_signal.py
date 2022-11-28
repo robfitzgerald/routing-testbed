@@ -33,11 +33,9 @@ class NetworkSignalFunctionType(Enum):
 
 
 def create_random_network_signal_fn():
-    rng = random
-
     def _fn(drivers: List[Driver]) -> int:
         n_drivers = len(drivers)
-        sig = rng.randint(0, n_drivers)
+        sig = random.randint(0, n_drivers)
         return sig
     return _fn
 
