@@ -25,6 +25,10 @@ sealed trait DriverPolicySpace
 
 object DriverPolicySpace {
 
+  // when computing offsets, truncate at this value, where anything beyond
+  // this value is an extreme outlier in travel time increase
+  val MaxOffset: Double = 4.0
+
   /**
     * encode the agent's karma balance as a feature
     */
@@ -76,6 +80,12 @@ object DriverPolicySpace {
     * distance due to selecting the worst SO route (aka losing)
     */
   case object MarginalWorstSODistance extends DriverPolicySpace
+
+  /**
+    * travel time estimate for the complete (experienced|remaining)
+    * current trip
+    */
+  case object CurrentOverallTravelTimeEstimate extends DriverPolicySpace
 
   /**
     * while observing other values, keep in perspective the original travel time estimate
@@ -134,6 +144,11 @@ object DriverPolicySpace {
     * and their current estimate as a feature
     */
   case object OriginalTravelTimeDiff extends DriverPolicySpace
+
+  /**
+    * offset as (so - uo) / uo
+    */
+  case object MarginalUOToSOOffset extends DriverPolicySpace
 
   /**
     * offset as ((so-ff) - (uo-ff)) / (uo-ff)
@@ -218,6 +233,17 @@ object DriverPolicySpace {
             maxSoRouteDist <- proposedPaths.traverse { coalesceFn }.map { _.max }
           } yield List(currentDist - maxSoRouteDist)
         ////////////////////////////////// TIME FEATURES
+        case CurrentOverallTravelTimeEstimate =>
+          for {
+            current <- IO.fromEither(history.currentRequest)
+            overall <- IO.fromEither(current.overallTravelTimeEstimate)
+          } yield List(overall.value)
+        case WorstAlternative =>
+          for {
+            remainingRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
+            coalesceFn = ObservationOps.coalesceCostFor(remainingRoute) _
+            maxCost    = proposedPaths.map { coalesceFn }.max
+          } yield List(maxCost)
         case OriginalTravelTimeEstimate =>
           for {
             ttEst <- IO.fromEither(history.first.tripTravelTimeEstimate)
@@ -273,12 +299,32 @@ object DriverPolicySpace {
           } yield List(maxFreeFlowDiffSoTravelTime)
         case OriginalTravelTimeDiff =>
           ObservationOps.travelTimeDiffFromInitialTrip(history).map { u => List(u) }
-        case WorstAlternative =>
+        case MarginalUOToSOOffset =>
           for {
-            remainingRoute <- IO.fromEither(history.currentRequest.map { _.remainingRoute })
-            coalesceFn = ObservationOps.coalesceCostFor(remainingRoute) _
-            maxCost    = proposedPaths.map { coalesceFn }.max
-          } yield List(maxCost)
+            soList <- WorstAlternative.encodeObservation(
+              request,
+              balance,
+              roadNetwork,
+              history,
+              proposedPaths,
+              batch,
+              networkSignal
+            )
+            uoList <- CurrentOverallTravelTimeEstimate.encodeObservation(
+              request,
+              balance,
+              roadNetwork,
+              history,
+              proposedPaths,
+              batch,
+              networkSignal
+            )
+            so <- IO.fromOption(soList.headOption)(new Error(s"missing obs value"))
+            uo <- IO.fromOption(uoList.headOption)(new Error(s"missing obs value"))
+          } yield {
+            val offset = if (uo == 0.0) MaxOffset else (so - uo) / uo
+            List(math.max(0.0, math.min(MaxOffset, offset)))
+          }
         case MarginalFreeFlowUOToSOOffset =>
           for {
             soList <- FreeFlowDiffWorstSOTravelTime.encodeObservation(
@@ -301,8 +347,10 @@ object DriverPolicySpace {
             )
             so <- IO.fromOption(soList.headOption)(new Error(s"missing obs value"))
             uo <- IO.fromOption(uoList.headOption)(new Error(s"missing obs value"))
-            observation = (so - uo) / uo
-          } yield List(observation)
+          } yield {
+            val offset = if (uo == 0.0) MaxOffset else (so - uo) / uo
+            List(math.max(0.0, math.min(MaxOffset, offset)))
+          }
         case NetworkSignal =>
           networkSignal match {
             case NetworkPolicySignal.BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
@@ -360,6 +408,8 @@ object DriverPolicySpace {
       case MarginalWorstSODistance =>
         IO.pure(List(0.0))
       ////////////////////////////////// TIME FEATURES
+      case CurrentOverallTravelTimeEstimate =>
+        IO.pure(List(finalTravelTime.value.toDouble))
       case OriginalTravelTimeEstimate =>
         IO.pure(List(originalTravelTimeEstimate.value.toDouble))
       case ExperiencedTravelTime =>
@@ -384,6 +434,8 @@ object DriverPolicySpace {
         val diff = (finalTravelTime - originalTravelTimeEstimate).value.toDouble
         IO.pure(List(diff))
       case WorstAlternative =>
+        IO.pure(List(0.0))
+      case MarginalUOToSOOffset =>
         IO.pure(List(0.0))
       case MarginalFreeFlowUOToSOOffset =>
         IO.pure(List(0.0))
