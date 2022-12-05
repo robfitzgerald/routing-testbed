@@ -26,8 +26,12 @@ object AuctionPolicy {
     ): Either[Error, Map[String, Karma]] = {
       a match {
         case UniformRedistribution =>
-          val bids = bidsAndSelectedRoutes.map { case (bid, _, _) => bid }
-          AuctionOps.resolveBidsUniformly(bids, bank, maxKarma)
+          val bids = bidsAndSelectedRoutes
+            .map { case (bid, _, _) => bid }
+            .combinations(2)
+            .map { case a :: b :: Nil => (a, b) }
+          val agents = bidsAndSelectedRoutes.map { case (bid, _, _) => bid.request.agent }
+          AuctionOps.resolveBidsUniformly(bids, agents, bank, maxKarma)
         case WinnersPayAll =>
           AuctionOps.resolveBidsWinnersPayAll(bidsAndSelectedRoutes, bank, maxKarma)
       }
