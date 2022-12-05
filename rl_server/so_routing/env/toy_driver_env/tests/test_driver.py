@@ -112,3 +112,33 @@ class DriverTest(TestCase):
         d0 = driver().start_trip(0)
         with self.assertRaises(ValueError):
             d0.update_balance(increment, max_balance)
+
+    def test_remaining_delay_headroom_unmoved(self):
+        trip_total = 60
+        max_increase_pct = 0.5  # 50%, or distance == 30
+        d0 = driver(original_trip_total=trip_total).start_trip(0)
+        result = d0.remaining_delay_headroom(max_increase_pct)
+        self.assertEqual(result, 30) 
+        
+    def test_remaining_delay_headroom_with_move(self):
+        trip_total = 60
+        max_increase_pct = 0.5  # 50%, or distance == 30
+        move_dist = 20
+        d0 = driver(original_trip_total=trip_total).start_trip(0).move(move_dist)
+        result = d0.remaining_delay_headroom(max_increase_pct)
+        self.assertEqual(result, 30)
+        
+    def test_remaining_delay_headroom_with_delay(self):
+        trip_total = 60
+        max_increase_pct = 0.5  # 50%, or distance == 30
+        d0 = driver(original_trip_total=trip_total).start_trip(0).reroute(20, 0)
+        result = d0.remaining_delay_headroom(max_increase_pct)
+        self.assertEqual(result, 10)
+        
+    def test_remaining_delay_headroom_maxxed(self):
+        trip_total = 60
+        max_increase_pct = 0.5  # 50%, or distance == 30
+        d0 = driver(original_trip_total=trip_total).start_trip(0).reroute(30, 0)
+        result = d0.remaining_delay_headroom(max_increase_pct)
+        self.assertEqual(result, 0)
+        

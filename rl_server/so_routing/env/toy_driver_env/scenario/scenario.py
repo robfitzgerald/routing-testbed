@@ -88,26 +88,50 @@ class Scenario:
         similar to real-life trip delays which follow a normal distribution.
 
         """
-        increase_headroom_pct = max_trip_increase - driver.delay_offset_pct()
-        if increase_headroom_pct <= 0:
+        # how much delay could this driver be given?
+        delay_headroom = driver.remaining_delay_headroom(max_trip_increase)
+        if delay_headroom == 0:
             # msg = (
             #     f'DELAY driver {driver.driver_id} delay: 0 (driver has '
-            #     f'reached max trip increase of {max_trip_increase*100:.2f}%)'
+            #     f'reached max trip increase of {max_trip_increase*100:.2f}% '
+            #     f'or {driver.trip_total()} meters)'
             # )
             # print(msg)
             return 0
 
         load = self.network_load_percent(n_active)
-        delay_norm = min(rng.gauss(load, load), increase_headroom_pct)
+        delay_norm = rng.gauss(load, load)
         delay_distance = int(self.mean_delay_distance * delay_norm)
-        delay_result = max(0, delay_distance)
+        delay_result = min(delay_headroom, max(0, delay_distance))
+        # msg = (
+        #     f'DELAY driver {driver.driver_id_str.ljust(4)} delay: {str(delay_result).ljust(5)} '
+        #     f'(load: {load} norm: {delay_norm:.4f}; sample delay: {delay_distance} '
+        #     f'n_active {n_active} headroom for trip increase: {delay_headroom:.2f} meters '
+        #     f'{(max_trip_increase*100)-(driver.delay_offset_pct()*100):.2f}%)'
+        # )
+        # print(msg)
+        return delay_result
+
+        # increase_headroom_pct = max_trip_increase - driver.delay_offset_pct()
+        # if increase_headroom_pct <= 0:
+        #     msg = (
+        #         f'DELAY driver {driver.driver_id} delay: 0 (driver has '
+        #         f'reached max trip increase of {max_trip_increase*100:.2f}%)'
+        #     )
+        #     print(msg)
+        #     return 0
+
+        # load = self.network_load_percent(n_active)
+        # delay_norm = max(0, min(rng.gauss(load, load), increase_headroom_pct))
+        # delay_distance = int(self.mean_delay_distance * delay_norm)
+        # delay_result = max(0, delay_distance)
         # msg = (
         #     f'DELAY driver {driver.driver_id} delay: {delay_result} '
         #     f'(load: {load} norm: {delay_norm:.4f}; sample delay: {delay_distance} '
         #     f'n_active {n_active} headroom for trip increase: {increase_headroom_pct*100:.2f}%)'
         # )
         # print(msg)
-        return delay_result
+        # return delay_result
 
     def sample_move_distance(self, n_active: int, driver: Driver, rng: Random) -> int:
         """

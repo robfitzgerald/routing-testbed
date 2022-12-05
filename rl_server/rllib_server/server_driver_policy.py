@@ -294,14 +294,15 @@ def run():
             "scenario": Lafayette,
             "max_balance": args.max_account,
             "min_start_time": 0,
-            "max_start_time": 20,  # 10 minutes in 30s increments
+            "max_start_time": 50,  # 1h in 30s increments
             "max_replannings": 20,
             "max_trip_increase_pct": 1.0,  # 100%
-            "population_fn": lambda x: 400,  # random.randint(100, 500),
+            "population_fn": lambda x: 500,  # random.randint(100, 500),
             "network_signal_fn": NetworkSignalFunctionType.UNIFORM.create_fn(),
             "observation_fn": compose_observation_fn(o_names),
             "observation_space": obs_space,
-            "action_space": act_space
+            "action_space": act_space,
+            "log_filename": "log.csv"
         }
 
         ser_conf = config.copy()

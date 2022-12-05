@@ -87,6 +87,15 @@ class Driver:
         denom = float(self.original_trip_total)
         return numer / denom
 
+    def remaining_delay_headroom(self, max_increase_pct: float) -> int:
+        """
+        returns the distance which can be added to this trip, bounded
+        by the max increase percent
+        """
+        max_dist = self.original_trip_total * (1 + max_increase_pct)
+        remaining = max(0, max_dist - self.trip_total())
+        return remaining
+
     def pct_original_of_final(self) -> float:
         return float(self.original_trip_total) / float(self.trip_total())
 

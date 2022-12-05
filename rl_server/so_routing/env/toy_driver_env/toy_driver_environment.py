@@ -9,6 +9,7 @@ import random
 from typing import Dict, List, Tuple
 import logging
 import json
+import csv
 import pandas as pd
 import statistics as stats
 
@@ -16,6 +17,28 @@ from rl_server.so_routing.env.toy_driver_env.scenario.scenario import Scenario
 
 
 log = logging.getLogger(__name__)
+
+
+report_fieldnames = [
+    'iteration',
+    'n_drivers',
+    'sum_initial_balance',
+    'sum_final_balance',
+    'mean_balance',
+    'mean_balance_diff',
+    'std_balance_diff',
+    'mean_allocation',
+    'std_allocation',
+    'mean_allocation_replanned_only',
+    'mean_reward',
+    'mean_original_trip_distance',
+    'mean_experienced_trip_distance',
+    'mean_replannings',
+    'mean_delay',
+    'mean_delay_pct',
+    'std_delay_pct',
+    'mean_increase'
+]
 
 
 class ToyDriverEnv(MultiAgentEnv):
@@ -38,13 +61,25 @@ class ToyDriverEnv(MultiAgentEnv):
         self.timestep_size = 1
         # Callable[[int], int]  from iteration # to population size
         self.population_fn = config['population_fn']
-        # Callable[[Driver], List[float]]
+        # Callable[[Driver, int], List[float]]
         self.observation_fn = config['observation_fn']
         # Callable[[List[Driver]], int]
         self.network_signal_fn = config['network_signal_fn']
         # Union[int,str]
-        self.balance_initialization = config.get(
-            'balance_initialization', 'uniform')
+        self.balance_initialization = config.get('balance_initialization', 'uniform')
+        
+        # input validation
+        assert self.max_trip_increase_pct >= 0.0, "max_trip_increase_pct must be in [0,1]"
+        assert self.max_trip_increase_pct <= 1.0, "max_trip_increase_pct must be in [0,1]"
+
+        # set up optional logging
+        log_filename = config.get('log_filename')
+        if log_filename is not None:
+            self.f = open(log_filename, 'w')
+            self.report_logger = csv.DictWriter(self.f, fieldnames=report_fieldnames)
+            self.report_logger.writeheader()
+        else:
+            self.report_logger = None
 
         # STATEFUL ARGUMENTS
         self.rng = random.Random()
@@ -95,7 +130,7 @@ class ToyDriverEnv(MultiAgentEnv):
 
         # (t) - update routes and step forward in time
         self.resolve_auctions(action)
-        moved = self.move_active_trips()
+        self.move_active_trips()
         self.current_time += self.timestep_size
         self.activate_new_trips()
         # print(json.dumps(report, indent=4))
@@ -104,11 +139,13 @@ class ToyDriverEnv(MultiAgentEnv):
         # (t+1) - observe state
         done = self.generate_dones()  # side-effect: advance driver state
         rew, allocs = self.generate_rewards(done['__all__'])
-        obs = self.generate_observations()
 
-        # (t+1) - set up auctions to resolve in (t+2)
+
+        # (t+1) - set up auctions to resolve in (t+2), and generate observations
+        #         for the drivers that are participating in auctions
         self.clear_auctions()
         self.create_auctions()
+        obs = self.generate_observations()
 
         report = self.report_state()
         auctions = [len(a) for a in self.auctions]
@@ -116,8 +153,12 @@ class ToyDriverEnv(MultiAgentEnv):
 
         if done['__all__']:
             self.append_final_stats(rew, allocs)
+            self.log_report_row(self.stats)
             print("FINISHED")
             print(json.dumps(self.stats, indent=4))
+
+        # info = self.stats if done['__all__'] else {}
+
         # n_auctions, pct_bidding = self.create_auctions()
 
         # print(f'{n_auctions} auctions ({pct_bidding*100:.2f}% of active)')
@@ -174,6 +215,7 @@ class ToyDriverEnv(MultiAgentEnv):
             Driver.build(i, init_balance(), init_start(), init_trip())
             for i in range(n_drivers)]
         self.current_time = 0
+        self.sampled_delays: Dict[str, int] = {}
         self.auctions: List[List[Driver]] = []
         self.auction_lookup: Dict[str, int] = []
         self.activate_new_trips()
@@ -194,6 +236,11 @@ class ToyDriverEnv(MultiAgentEnv):
         #     print(d)
 
         return obs
+
+    def log_report_row(self, row):
+        if self.report_logger is not None:
+            self.report_logger.writerow(row)
+            self.f.flush()
 
     def done(self):
         return all([d.done for d in self.drivers])
@@ -242,6 +289,14 @@ class ToyDriverEnv(MultiAgentEnv):
                 self.auction_lookup.update(ids)
                 self.auctions.append(batch)
 
+        # dish out delays to each driver that made it into an auction
+        self.sampled_delays = {}
+        for driver in [d for batch in batches for d in batch]:
+            delay = self.scenario.sample_delay_increment(
+                n_active, driver, self.max_trip_increase_pct, self.rng
+            )
+            self.sampled_delays.update({driver.driver_id: delay})
+
         # report number of auctions and percent of active agents placed in auctions
         in_auction = len([d for a in self.auctions for d in a])
         auction_pct = in_auction / n_active
@@ -250,13 +305,8 @@ class ToyDriverEnv(MultiAgentEnv):
 
     def resolve_auctions(self, bids: Dict[str, int]):
 
-        # prepare a delay function for loser drivers that is 
-        # based on the current network state
-        n_active = len([d for d in self.drivers if d.active])
         def delay_fn(d: Driver) -> Driver:
-            delay = self.scenario.sample_delay_increment(
-                n_active, d, self.max_trip_increase_pct, self.rng
-            )
+            delay = self.sampled_delays.get(d.driver_id)
             updated = d.reroute(delay, self.current_time)
             return updated
 
@@ -273,11 +323,18 @@ class ToyDriverEnv(MultiAgentEnv):
                 self.drivers[driver_update.driver_id] = driver_update
 
     def clear_auctions(self):
-        self.auctions: List[List[Driver]] = []
+        self.auctions = []
         self.auction_lookup = {}
+        self.sampled_delays = {}
 
     def generate_observations(self):
-        return {d.driver_id_str: self.observation_fn(d) for d in self.drivers if d.active}
+        """
+        generate an observation for each driver that is participating in an auction.
+        since they are in an auction, they should have had a sampled_delay generated
+        in the create_auctions method.
+        """
+        return {d.driver_id_str: self.observation_fn(d, self.sampled_delays.get(d.driver_id)) 
+                for a in self.auctions for d in a}
 
     def generate_rewards(self, done: bool):
         if not done:

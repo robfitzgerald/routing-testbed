@@ -7,6 +7,11 @@ import numpy as np
 from json import JSONEncoder
 
 
+# when comparing the SO and UO trips, we ignore increase beyond this
+# factor, which would be extreme outliers.
+MAX_UO_SO_OFFSET = 4
+
+
 class DriverObsSpace(Enum):
     BALANCE = 0
     BATCH_SIZE = 1
@@ -26,11 +31,13 @@ class DriverObsSpace(Enum):
     MARGINAL_UO_TRAVEL_TIME = 23
     MARGINAL_WORST_SO_TRAVEL_TIME = 24
     FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME = 25
-    FREE_FLOW_DIFF_UO_TRAVEL_TIME = 26
-    FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME = 27
-    ORIGINAL_TRAVEL_TIME_DIFF = 28
-    WORST_ALTERNATIVE = 29
-    MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO = 30
+    FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME_PCT = 26
+    FREE_FLOW_DIFF_UO_TRAVEL_TIME = 27
+    FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME = 28
+    ORIGINAL_TRAVEL_TIME_DIFF = 29
+    WORST_ALTERNATIVE = 30
+    MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO = 31
+    MARGINAL_OFFSET_UO_TO_SO = 32
 
     # maybe other network signals?
     THRESHOLD_NETWORK_SIGNAL = 40
@@ -73,11 +80,13 @@ class DriverObsSpace(Enum):
             DriverObsSpace.MARGINAL_UO_TRAVEL_TIME: [np.NINF, np.Inf],
             DriverObsSpace.MARGINAL_WORST_SO_TRAVEL_TIME: [np.NINF, np.Inf],
             DriverObsSpace.FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME: [np.NINF, np.Inf],
+            DriverObsSpace.FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME_PCT: [0, 1],
             DriverObsSpace.FREE_FLOW_DIFF_UO_TRAVEL_TIME: [np.NINF, np.Inf],
             DriverObsSpace.FREE_FLOW_DIFF_WORST_SO_TRAVEL_TIME: [np.NINF, np.Inf],
             DriverObsSpace.ORIGINAL_TRAVEL_TIME_DIFF: [np.NINF, np.Inf],
             DriverObsSpace.WORST_ALTERNATIVE: [np.NINF, np.Inf],
-            DriverObsSpace.MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO: [np.NINF, np.Inf],
+            DriverObsSpace.MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO: [0, MAX_UO_SO_OFFSET],
+            DriverObsSpace.MARGINAL_OFFSET_UO_TO_SO: [0, MAX_UO_SO_OFFSET],
 
             DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
         }
