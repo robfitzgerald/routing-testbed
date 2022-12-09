@@ -113,27 +113,6 @@ class Scenario:
         # print(msg)
         return delay_result
 
-        # increase_headroom_pct = max_trip_increase - driver.delay_offset_pct()
-        # if increase_headroom_pct <= 0:
-        #     msg = (
-        #         f'DELAY driver {driver.driver_id} delay: 0 (driver has '
-        #         f'reached max trip increase of {max_trip_increase*100:.2f}%)'
-        #     )
-        #     print(msg)
-        #     return 0
-
-        # load = self.network_load_percent(n_active)
-        # delay_norm = max(0, min(rng.gauss(load, load), increase_headroom_pct))
-        # delay_distance = int(self.mean_delay_distance * delay_norm)
-        # delay_result = max(0, delay_distance)
-        # msg = (
-        #     f'DELAY driver {driver.driver_id} delay: {delay_result} '
-        #     f'(load: {load} norm: {delay_norm:.4f}; sample delay: {delay_distance} '
-        #     f'n_active {n_active} headroom for trip increase: {increase_headroom_pct*100:.2f}%)'
-        # )
-        # print(msg)
-        # return delay_result
-
     def sample_move_distance(self, n_active: int, driver: Driver, rng: Random) -> int:
         """
         move a driver. this should be based on the number of
