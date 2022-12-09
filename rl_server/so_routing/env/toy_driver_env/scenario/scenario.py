@@ -101,11 +101,12 @@ class Scenario:
 
         load = self.network_load_percent(n_active)
         delay_norm = rng.gauss(load, load)
-        delay_distance = int(self.mean_delay_distance * delay_norm)
-        delay_result = min(delay_headroom, max(0, delay_distance))
+        del_dist = int(self.mean_delay_distance * delay_norm)
+        del_dist_w_luck = driver.apply_luck_factor(del_dist) + del_dist
+        delay_result = min(delay_headroom, max(0, del_dist_w_luck))
         # msg = (
         #     f'DELAY driver {driver.driver_id_str.ljust(4)} delay: {str(delay_result).ljust(5)} '
-        #     f'(load: {load} norm: {delay_norm:.4f}; sample delay: {delay_distance} '
+        #     f'(load: {load} norm: {delay_norm:.4f}; sample delay: {del_dist} del w/ luck: {del_dist_w_luck} '
         #     f'n_active {n_active} headroom for trip increase: {delay_headroom:.2f} meters '
         #     f'{(max_trip_increase*100)-(driver.delay_offset_pct()*100):.2f}%)'
         # )

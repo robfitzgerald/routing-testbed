@@ -3,13 +3,15 @@ from rl_server.so_routing.env.toy_driver_env.driver import Driver
 from rl_server.so_routing.driver_policy.driver_obs_space import DriverObsSpace, MAX_UO_SO_OFFSET
 
 
-def get_driver_obs(obs_type: DriverObsSpace, driver: Driver, sampled_delay: int) -> float:
+def get_driver_obs(obs_type: DriverObsSpace, driver: Driver, sampled_delay: int, max_karma: int) -> float:
     """
     observes a driver based on the provided DriverObsSpace observation type. includes
     the driver
     """
     if obs_type == DriverObsSpace.BALANCE:
         return float(driver.balance)
+    if obs_type == DriverObsSpace.KARMA_HEADROOM:
+        return max_karma - float(driver.balance)
     elif obs_type == DriverObsSpace.FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME:
         return float(driver.delay)
     elif obs_type == DriverObsSpace.FREE_FLOW_DIFF_EXPERIENCED_TRAVEL_TIME_PCT:
@@ -36,11 +38,16 @@ def get_driver_obs(obs_type: DriverObsSpace, driver: Driver, sampled_delay: int)
         return float(driver.trip_position)
     elif obs_type == DriverObsSpace.PERCENT_DISTANCE:
         return float(driver.trip_position) / float(driver.trip_total())
+    elif obs_type == DriverObsSpace.PERCENT_REMAINING_DISTANCE:
+        return 1 - float(driver.trip_position) / float(driver.trip_total())
     else:
         raise TypeError(f'unsupported driver space feature {obs_type}')
 
 
-def compose_observation_fn(features: List[DriverObsSpace]) -> Callable[[Driver, int], list[float]]:
+def compose_observation_fn(
+    features: List[DriverObsSpace],
+    max_karma: int
+) -> Callable[[Driver, int], list[float]]:
     def _fn(d: Driver, sampled_delay: int) -> list[float]:
-        return [get_driver_obs(o, d, sampled_delay) for o in features]
+        return [get_driver_obs(o, d, sampled_delay, max_karma) for o in features]
     return _fn

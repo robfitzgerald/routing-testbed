@@ -20,14 +20,14 @@ MEAN_DELAY_DISTANCE = (MAX_TRIP_DISTANCE -
 
 Lafayette = Scenario(
     name="Lafayette, CO",
-    free_flow_drivers_threshold=100,
-    half_speed_drivers_threshold=300,
+    free_flow_drivers_threshold=500,
+    half_speed_drivers_threshold=1000,
     mean_step_distance=MEAN_STEP_DISTANCE,
-    mean_delay_distance=MEAN_DELAY_DISTANCE * 8,
+    mean_delay_distance=MEAN_DELAY_DISTANCE,
     mean_trip_distance=MEAN_TRIP_DISTANCE,
     stdev_trip_distance=STDEV_TRIP_DISTANCE,
     min_trip_distance=STDEV_TRIP_DISTANCE,
     max_trip_distance=MAX_TRIP_DISTANCE,
-    zones_of_control=40,
-    zones_coverage_percent=0.1
+    zones_of_control=80,
+    zones_coverage_percent=0.20
 )

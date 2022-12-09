@@ -12,16 +12,17 @@ def resolve_winner_pay_all_auction(
         bids: Dict[str, int],
         network_signal_fn: Callable[[List[Driver]], int],
         delay_fn: Callable[[Driver], Driver],
-        max_balance: int) -> List[Driver]:
+        max_balance: int) -> Tuple[List[Driver], int]:
     """
-    resolve a given winner-pay-all driver auction
+    resolve a given winner-pay-all driver auction, returning the 
+    updated Drivers and the count of losers for this auction.
     """
     # for each auction, sample the # of winners/losers
     auction_size = len(auction)
     n_winners = network_signal_fn(auction)
     n_losers = auction_size - n_winners
     if n_losers == 0:
-        return []
+        return [], 0
 
     # pick winners via reservoir sampling, using bids as the weight vector
     a_ids, a_bids = extract_bids_by_id(auction, bids)
@@ -45,14 +46,14 @@ def resolve_winner_pay_all_auction(
     finalized_auction.extend(losers_updated)
     if overflow_pool == 0:
         # nothing more to do
-        return finalized_auction
+        return finalized_auction, n_losers
     else:
         # redistribute the un-allocated overflow funds to all agents in a
         # round robin fashion
         return redistribute_overflow(
             finalized_auction,
             overflow_pool,
-            max_balance)
+            max_balance), n_losers
 
 
 def extract_bids_by_id(

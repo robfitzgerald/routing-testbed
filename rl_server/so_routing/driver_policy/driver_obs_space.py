@@ -14,16 +14,18 @@ MAX_UO_SO_OFFSET = 4
 
 class DriverObsSpace(Enum):
     BALANCE = 0
-    BATCH_SIZE = 1
-    REPLANNING_EVENTS = 2
-    AUCTION_WIN_RATE = 3
+    KARMA_HEADROOM = 2
+    BATCH_SIZE = 3
+    REPLANNING_EVENTS = 4
+    AUCTION_WIN_RATE = 5
 
     ORIGINAL_DISTANCE = 10
     EXPERIENCED_DISTANCE = 11
     REMAINING_DISTANCE = 12
     PERCENT_DISTANCE = 13
-    MARGINAL_UO_DISTANCE = 14
-    MARGINAL_WORST_SO_DISTANCE = 15
+    PERCENT_REMAINING_DISTANCE = 14
+    MARGINAL_UO_DISTANCE = 15
+    MARGINAL_WORST_SO_DISTANCE = 16
 
     ORIGINAL_TRAVEL_TIME_ESTIMATE = 20
     EXPERIENCED_TRAVEL_TIME = 21
@@ -63,6 +65,7 @@ class DriverObsSpace(Enum):
         """
         _OBSERVATION_SPACE_MAPPING = {
             DriverObsSpace.BALANCE: [0, max_karma],
+            DriverObsSpace.KARMA_HEADROOM: [0, max_karma],
             DriverObsSpace.BATCH_SIZE: [0, np.Inf],
             DriverObsSpace.REPLANNING_EVENTS: [0, np.Inf],
             DriverObsSpace.AUCTION_WIN_RATE: [0, 1],
@@ -71,6 +74,7 @@ class DriverObsSpace(Enum):
             DriverObsSpace.EXPERIENCED_DISTANCE: [0, np.Inf],
             DriverObsSpace.REMAINING_DISTANCE: [0, np.Inf],
             DriverObsSpace.PERCENT_DISTANCE: [0, 1],
+            DriverObsSpace.PERCENT_REMAINING_DISTANCE: [0, 1],
             DriverObsSpace.MARGINAL_UO_DISTANCE: [np.NINF, np.Inf],
             DriverObsSpace.MARGINAL_WORST_SO_DISTANCE: [np.NINF, np.Inf],
 

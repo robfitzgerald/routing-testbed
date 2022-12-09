@@ -11,13 +11,20 @@ class DriverState(Enum):
     DONE = 3
 
 
+class AgentType(Enum):
+    PARTICIPANT = 0
+    NON_PARTICIPANT = 1
+
+
 @dataclass(frozen=True)
 class Driver:
     driver_id: int
+    agent_type: AgentType
     balance: int
     original_balance: int
     trip_start_time: int
     original_trip_total: int
+    luck: int
     trip_position: int = 0
     delay: int = 0
     replannings: int = 0
@@ -25,13 +32,15 @@ class Driver:
     state: DriverState = DriverState.INACTIVE
 
     @classmethod
-    def build(cls, d_id, bal, start_time, trip_total) -> Driver:
+    def build(cls, d_id, agent_type, bal, start_time, trip_total, luck) -> Driver:
         return cls(
             driver_id=d_id,
+            agent_type=agent_type,
             balance=bal,
             original_balance=bal,
             trip_start_time=start_time,
             original_trip_total=trip_total,
+            luck=luck,
             trip_position=0,
             delay=0,
             replannings=0,
@@ -47,6 +56,10 @@ class Driver:
 
     ###################
     ### DRIVER STATE ###
+
+    def is_participant(self):
+        return self.agent_type == AgentType.PARTICIPANT
+
     @property
     def inactive(self):
         return self.state == DriverState.INACTIVE
@@ -86,6 +99,14 @@ class Driver:
         numer = float(self.trip_total() - self.original_trip_total)
         denom = float(self.original_trip_total)
         return numer / denom
+
+    def apply_luck_factor(self, delay: int) -> float:
+        """
+        if luck == 0, return 0
+        if luck > 0: return x < 0 delay (driver gets some time back)
+        if luck < 0: return x > 0 delay (unlucky gets added delay)
+        """
+        return int(-self.luck * delay)
 
     def remaining_delay_headroom(self, max_increase_pct: float) -> int:
         """

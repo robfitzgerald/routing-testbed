@@ -1,5 +1,5 @@
 import math
-from rl_server.so_routing.env.toy_driver_env.driver import Driver, DriverState
+from rl_server.so_routing.env.toy_driver_env.driver import AgentType, Driver, DriverState
 from rl_server.so_routing.env.toy_driver_env.auction import resolve_winner_pay_all_auction
 from rl_server.so_routing.env.toy_driver_env.efraimidis_spirakis_sampling import reservoir_sampling
 from rl_server.so_routing.env.toy_driver_env.reward import jain_user_fairness
@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 report_fieldnames = [
     'iteration',
     'n_drivers',
+    'n_participants',
     'sum_initial_balance',
     'sum_final_balance',
     'mean_balance',
@@ -47,17 +48,25 @@ class ToyDriverEnv(MultiAgentEnv):
         self,
         config: EnvContext
     ):
+
+        seed = config.get('seed')
+        if seed is not None:
+            random.seed(seed)
+
         # OPENAI GYM ARGUMENTS
         self.action_space = config['action_space']
         self.observation_space = config['observation_space']
 
         # ENVIRONMENT-SPECIFIC ARGUMENTS
         self.scenario: Scenario = config['scenario']
+        self.adoption_rate = config['adoption_rate']
         self.max_balance = config['max_balance']
         self.min_start_time = config['min_start_time']
         self.max_start_time = config['max_start_time']
         self.max_replannings = config['max_replannings']
         self.max_trip_increase_pct = config['max_trip_increase_pct']
+        self.pct_unlucky = config['pct_unlucky']
+        self.luck_factor = config['luck_factor']
         self.timestep_size = 1
         # Callable[[int], int]  from iteration # to population size
         self.population_fn = config['population_fn']
@@ -66,17 +75,24 @@ class ToyDriverEnv(MultiAgentEnv):
         # Callable[[List[Driver]], int]
         self.network_signal_fn = config['network_signal_fn']
         # Union[int,str]
-        self.balance_initialization = config.get('balance_initialization', 'uniform')
-        
+        self.balance_initialization = config.get(
+            'balance_initialization', 'uniform')
+
         # input validation
-        assert self.max_trip_increase_pct >= 0.0, "max_trip_increase_pct must be in [0,1]"
-        assert self.max_trip_increase_pct <= 1.0, "max_trip_increase_pct must be in [0,1]"
+        assert self.max_trip_increase_pct >= 0.0, "max_trip_increase_pct must be non-negative"
+        if self.max_trip_increase_pct > 3.0:
+            print(
+                f'warning: max trip increase value of {self.max_trip_increase_pct*100:.2f}% '
+                f'is very large and may lead to unrealistic results'
+            )
+        # assert self.max_trip_increase_pct <= 1.0, "max_trip_increase_pct must be in [0,1]"
 
         # set up optional logging
         log_filename = config.get('log_filename')
         if log_filename is not None:
             self.f = open(log_filename, 'w')
-            self.report_logger = csv.DictWriter(self.f, fieldnames=report_fieldnames)
+            self.report_logger = csv.DictWriter(
+                self.f, fieldnames=report_fieldnames)
             self.report_logger.writeheader()
         else:
             self.report_logger = None
@@ -129,7 +145,8 @@ class ToyDriverEnv(MultiAgentEnv):
         """
 
         # (t) - update routes and step forward in time
-        self.resolve_auctions(action)
+        p_cnt, d_cnt = self.resolve_auctions(action)
+        del_msg = self.report_pct_delayed(p_cnt, d_cnt)
         self.move_active_trips()
         self.current_time += self.timestep_size
         self.activate_new_trips()
@@ -140,7 +157,6 @@ class ToyDriverEnv(MultiAgentEnv):
         done = self.generate_dones()  # side-effect: advance driver state
         rew, allocs = self.generate_rewards(done['__all__'])
 
-
         # (t+1) - set up auctions to resolve in (t+2), and generate observations
         #         for the drivers that are participating in auctions
         self.clear_auctions()
@@ -149,7 +165,8 @@ class ToyDriverEnv(MultiAgentEnv):
 
         report = self.report_state()
         auctions = [len(a) for a in self.auctions]
-        print(f"TIME: {str(self.current_time).ljust(3)} {report} AUCTIONS: {auctions}")
+        print(
+            f"TIME: {str(self.current_time).ljust(3)} {report} DELAYED: {del_msg} AUCTIONS: {auctions}")
 
         if done['__all__']:
             self.append_final_stats(rew, allocs)
@@ -189,6 +206,7 @@ class ToyDriverEnv(MultiAgentEnv):
             }
         """
         self.iteration = self.iteration + 1
+        n_drivers = self.population_fn(self.iteration)
 
         def init_balance():
             if self.balance_initialization == "uniform":
@@ -203,16 +221,32 @@ class ToyDriverEnv(MultiAgentEnv):
                 msg = f"unknown balance initialization type {self.balance_initialization}"
                 raise Exception(msg)
 
+        num_participants = int(math.floor(n_drivers * self.adoption_rate))
+        self.assigned_participants = 0
+
+        def init_agent_type():
+            if self.assigned_participants <= num_participants:
+                self.assigned_participants += 1
+                return AgentType.PARTICIPANT
+            else:
+                return AgentType.NON_PARTICIPANT
+
         def init_start():
             return random.randint(self.min_start_time, self.max_start_time)
 
         def init_trip():
             return self.scenario.sample_initial_trip_distance(self.rng)
 
+        def init_luck():
+            if random.random() < self.pct_unlucky:
+                return self.luck_factor
+            else:
+                return 0
+
         # create drivers and activate trips that start at time zero
-        n_drivers = self.population_fn(self.iteration)
         self.drivers: List[Driver] = [
-            Driver.build(i, init_balance(), init_start(), init_trip())
+            Driver.build(i, init_agent_type(), init_balance(),
+                         init_start(), init_trip(), init_luck())
             for i in range(n_drivers)]
         self.current_time = 0
         self.sampled_delays: Dict[str, int] = {}
@@ -223,7 +257,8 @@ class ToyDriverEnv(MultiAgentEnv):
         self.stats = {
             'iteration': self.iteration,
             'n_drivers': n_drivers,
-            'sum_initial_balance': sum([d.balance for d in self.drivers])
+            'n_participants': len([d for d in self.drivers if d.is_participant()]),
+            'sum_initial_balance': sum([d.balance for d in self.drivers if d.is_participant()])
         }
 
         msg = (
@@ -273,7 +308,8 @@ class ToyDriverEnv(MultiAgentEnv):
     def create_auctions(self) -> Tuple[int, float]:
         # create batches from active drivers
         active = [d for d in self.drivers
-                  if d.active and not d.replannings >= self.max_replannings]
+                  if d.is_participant() and d.active and
+                  not d.replannings >= self.max_replannings]
         n_active = len(active)
         if n_active < 2:
             return 0, 0.0
@@ -303,7 +339,13 @@ class ToyDriverEnv(MultiAgentEnv):
         n_auctions = len(self.auctions)
         return n_auctions, auction_pct
 
-    def resolve_auctions(self, bids: Dict[str, int]):
+    def resolve_auctions(self, bids: Dict[str, int]) -> Tuple[int, int]:
+        """
+        resolves the auctions, assigning delays to loser drivers
+        and distributing funds from winners to losers based on bids
+        """
+        n_participating = 0
+        n_delayed = 0
 
         def delay_fn(d: Driver) -> Driver:
             delay = self.sampled_delays.get(d.driver_id)
@@ -312,15 +354,20 @@ class ToyDriverEnv(MultiAgentEnv):
 
         # resolve each auction and store the resulting driver states
         for auction in self.auctions:
-            auction_result = resolve_winner_pay_all_auction(
-                auction, 
-                bids, 
-                self.network_signal_fn, 
-                delay_fn, 
+            auction_result, n_losers = resolve_winner_pay_all_auction(
+                auction,
+                bids,
+                self.network_signal_fn,
+                delay_fn,
                 self.max_balance)
+
+            n_participating += len(auction)
+            n_delayed += n_losers
 
             for driver_update in auction_result:
                 self.drivers[driver_update.driver_id] = driver_update
+
+        return n_participating, n_delayed
 
     def clear_auctions(self):
         self.auctions = []
@@ -333,7 +380,7 @@ class ToyDriverEnv(MultiAgentEnv):
         since they are in an auction, they should have had a sampled_delay generated
         in the create_auctions method.
         """
-        return {d.driver_id_str: self.observation_fn(d, self.sampled_delays.get(d.driver_id)) 
+        return {d.driver_id_str: self.observation_fn(d, self.sampled_delays.get(d.driver_id))
                 for a in self.auctions for d in a}
 
     def generate_rewards(self, done: bool):
@@ -341,7 +388,12 @@ class ToyDriverEnv(MultiAgentEnv):
             r = {d.driver_id_str: 0.0 for a in self.auctions for d in a}
             return r, []
         else:
-            allocations = [d.pct_original_of_final() for d in self.drivers]
+            # an allocation is the percentage that the original trip is of the final trip
+            # an agent that has not been replanned gets an allocation of 100%
+            # an agent that has been replanned a ton gets an allocation closer to 0%
+            # this is a surrogate for free flow difference, but, not exactly the same concept
+            allocations = [d.pct_original_of_final()
+                           for d in self.drivers if d.is_participant()]
             fairness = jain_user_fairness(allocations)
             rewards = {d.driver_id_str: f for d,
                        f in zip(self.drivers, fairness)}
@@ -360,54 +412,74 @@ class ToyDriverEnv(MultiAgentEnv):
         done_msg = {}
         for driver in self.drivers:
             if driver.arrived:
-                done_msg[driver.driver_id] = True
+                # update Driver to be done
                 self.drivers[driver.driver_id] = driver.report_done()
+                # if participating, also report done to RL policy
+                if driver.is_participant() and driver.arrived:
+                    done_msg[driver.driver_id] = True
         done_msg['__all__'] = self.done()
         return done_msg
+
+    def report_pct_delayed(self, participating, delayed) -> str:
+        p_str = str(participating).ljust(4)
+        del_cnt_str = str(delayed).rjust(4)
+        if participating == 0:
+            del_pct_str = "00.00%".rjust(6)
+        else:
+            del_pct = (float(delayed) / float(participating)) * 100.0
+            del_pct_str = f"{del_pct:.2f}%".rjust(6)
+        del_msg = f"{del_cnt_str}/{p_str} ({del_pct_str})"
+        return del_msg
 
     def report_state(self):
         states = [
             DriverState.INACTIVE,
             DriverState.ACTIVE,
-            DriverState.DONE,
+            DriverState.DONE
         ]
         acc = {s.name: 0 for s in states}
         for d in self.drivers:
-            acc[d.state.name] = acc[d.state.name] + 1
+            if not d.arrived:
+                acc[d.state.name] = acc[d.state.name] + 1
         report = [k + ": " + str(v).ljust(5) for k, v in acc.items()]
         return ' '.join(report)
 
     def append_final_stats(self, rewards, allocations):
 
+        dr_part = [d for d in self.drivers if d.is_participant()]
+        # dr_nonpart = [d for d in self.drivers if not d.is_participant()]
+
         # karma stats
-        sum_balance = sum([d.balance for d in self.drivers])
-        mean_balance = stats.mean([d.balance for d in self.drivers])
-        mean_balance_diff = stats.mean([d.balance_diff() for d in self.drivers])
-        std_balance_diff = stats.stdev([d.balance_diff() for d in self.drivers])
+        sum_balance = sum([d.balance for d in dr_part])
+        mean_balance = stats.mean([d.balance for d in dr_part])
+        mean_balance_diff = stats.mean([d.balance_diff() for d in dr_part])
+        std_balance_diff = stats.stdev([d.balance_diff() for d in dr_part])
 
         # reward stats
         mean_allocation = stats.mean(allocations)
         std_allocation = stats.stdev(allocations)
-        mean_alloc_replanned = stats.mean([d.pct_original_of_final()
-                                            for d in self.drivers
-                                            if d.replannings > 0])
+        alloc_replanned = [d.pct_original_of_final()
+                           for d in dr_part
+                           if d.replannings > 0]
+        mean_alloc_replanned = stats.mean(
+            alloc_replanned) if len(alloc_replanned) > 0 else 0
         mean_reward = stats.mean(rewards.values())
-        
+
         # trip stats
         mean_orig_trip = stats.mean(
-            [d.original_trip_total for d in self.drivers])
-        mean_exp_trip = stats.mean([d.trip_total() for d in self.drivers])
-        mean_replannings = stats.mean([d.replannings for d in self.drivers])
-        mean_delay = stats.mean([d.delay for d in self.drivers])
-        mean_delay_pct = stats.mean([d.delay_pct() for d in self.drivers])
-        std_delay_pct = stats.stdev([d.delay_pct() for d in self.drivers])
-        mean_increase = stats.mean([d.delay_offset_pct() for d in self.drivers])
-        
+            [d.original_trip_total for d in dr_part])
+        mean_exp_trip = stats.mean([d.trip_total() for d in dr_part])
+        mean_replannings = stats.mean([d.replannings for d in dr_part])
+        mean_delay = stats.mean([d.delay for d in dr_part])
+        mean_delay_pct = stats.mean([d.delay_pct() for d in dr_part])
+        std_delay_pct = stats.stdev([d.delay_pct() for d in dr_part])
+        mean_increase = stats.mean([d.delay_offset_pct() for d in dr_part])
+
         self.stats['sum_final_balance'] = sum_balance
         self.stats['mean_balance'] = mean_balance
         self.stats['mean_balance_diff'] = mean_balance_diff
         self.stats['std_balance_diff'] = std_balance_diff
-        
+
         self.stats['mean_allocation'] = mean_allocation
         self.stats['std_allocation'] = std_allocation
         self.stats['mean_allocation_replanned_only'] = mean_alloc_replanned
@@ -420,4 +492,3 @@ class ToyDriverEnv(MultiAgentEnv):
         self.stats['mean_delay_pct'] = mean_delay_pct
         self.stats['std_delay_pct'] = std_delay_pct
         self.stats['mean_increase'] = mean_increase
-        

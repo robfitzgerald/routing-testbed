@@ -292,14 +292,18 @@ def run():
 
         config['env_config'] = {
             "scenario": Lafayette,
+            "adoption_rate": 0.2,
+            "seed": args.seed,
             "max_balance": args.max_account,
             "min_start_time": 0,
-            "max_start_time": 50,  # 1h in 30s increments
+            "max_start_time": 60,  # 1h in 30s increments
             "max_replannings": 20,
-            "max_trip_increase_pct": 1.0,  # 100%
-            "population_fn": lambda x: 500,  # random.randint(100, 500),
-            "network_signal_fn": NetworkSignalFunctionType.UNIFORM.create_fn(),
-            "observation_fn": compose_observation_fn(o_names),
+            "max_trip_increase_pct": 3,  # 200%
+            "pct_unlucky": 0.1,  # 10%
+            "luck_factor": -4,
+            "population_fn": lambda x: random.randint(1000, 9000),
+            "network_signal_fn": NetworkSignalFunctionType.THRESH_TEN_DRIVERS.create_fn(),
+            "observation_fn": compose_observation_fn(o_names, args.max_account),
             "observation_space": obs_space,
             "action_space": act_space,
             "log_filename": "log.csv"
@@ -329,8 +333,12 @@ def run():
 
             for i in range(algo.iteration, args.stop_iters):
                 print(f"running driver server training iteration {i}")
+
                 results = algo.train()
-                # print(results)
+                save_checkpoint = i != 0 and i % args.checkpoint_interval == 0
+                if save_checkpoint:
+                    checkpoint = algo.save()
+
                 met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
                 met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
                 if met_reward_condition or met_ts_condition:
