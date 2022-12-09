@@ -86,6 +86,12 @@ parser.add_argument(
     action="store_true",
     help="Init Ray in local mode for easier debugging.",
 )
+parser.add_argument(
+    "--seed",
+    type=int,
+    required=False,
+    help="random seed value"
+)
 
 
 # parser.add_argument("--run", type=str, choices=["DQN", "PPO"], default="DQN")
@@ -108,6 +114,11 @@ parser.add_argument(
     "--checkpoint-path",
     help="location of checkpoint directory",
     default=None
+)
+parser.add_argument(
+    "--checkpoint-interval",
+    help="number of iterations between checkpoints",
+    default=100
 )
 
 # SO TESTBED ARGUMENTS
