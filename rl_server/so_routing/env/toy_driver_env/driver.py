@@ -1,7 +1,7 @@
 from __future__ import annotations
 from enum import Enum
 from dataclasses import dataclass, replace, asdict
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 class DriverState(Enum):
@@ -100,6 +100,9 @@ class Driver:
         denom = float(self.original_trip_total)
         return numer / denom
 
+     #######################################
+    ### OPERATIONS BASED ON DRIVER STATE ###
+
     def apply_luck_factor(self, delay: int) -> float:
         """
         if luck == 0, return 0
@@ -123,7 +126,7 @@ class Driver:
     def balance_diff(self) -> int:
         return self.original_balance - self.balance
 
-    def observation(self):
+    def observation(self) -> List[float]:
         pct_finished = self.trip_pct()
         pct_delay = self.delay_pct()
         return [self.balance, pct_finished, pct_delay]
