@@ -307,14 +307,15 @@ class ToyDriverEnv(MultiAgentEnv):
 
     def create_auctions(self) -> Tuple[int, float]:
         # create batches from active drivers
-        active = [d for d in self.drivers
-                  if d.is_participant() and d.active and
-                  not d.replannings >= self.max_replannings]
-        n_active = len(active)
-        if n_active < 2:
+        active_participants = [d for d in self.drivers
+                               if d.is_participant() and d.active and
+                               not d.replannings >= self.max_replannings]
+        n_active = len([d for d in self.drivers if d.active])
+        n_active_participants = len(active_participants)
+        if n_active_participants < 2:
             return 0, 0.0
 
-        batches = self.scenario.create_batches(active, self.rng)
+        batches = self.scenario.create_batches(active_participants, self.rng)
 
         # place batches into auctions where there are at least 2 drivers
         self.auctions = []
@@ -325,17 +326,24 @@ class ToyDriverEnv(MultiAgentEnv):
                 self.auction_lookup.update(ids)
                 self.auctions.append(batch)
 
+        # reduce the "congestion" based on the amount of replanning that
+        # is impacting the current set of agents
+        active_replanning_counts = sum(
+            [d.replannings for b in batches for d in b])
+        congestion = max(0, n_active - active_replanning_counts)
+
         # dish out delays to each driver that made it into an auction
         self.sampled_delays = {}
         for driver in [d for batch in batches for d in batch]:
+            # reduce the effect of "active trips"
             delay = self.scenario.sample_delay_increment(
-                n_active, driver, self.max_trip_increase_pct, self.rng
+                congestion, driver, self.max_trip_increase_pct, self.rng
             )
             self.sampled_delays.update({driver.driver_id: delay})
 
         # report number of auctions and percent of active agents placed in auctions
         in_auction = len([d for a in self.auctions for d in a])
-        auction_pct = in_auction / n_active
+        auction_pct = in_auction / n_active_participants
         n_auctions = len(self.auctions)
         return n_auctions, auction_pct
 
@@ -435,12 +443,15 @@ class ToyDriverEnv(MultiAgentEnv):
         states = [
             DriverState.INACTIVE,
             DriverState.ACTIVE,
-            DriverState.DONE
+            DriverState.DONE,
         ]
         acc = {s.name: 0 for s in states}
+        acc['REPLAN'] = 0
         for d in self.drivers:
             if not d.arrived:
                 acc[d.state.name] = acc[d.state.name] + 1
+            if d.active:
+                acc["REPLAN"] = acc["REPLAN"] + d.replannings
         report = [k + ": " + str(v).ljust(5) for k, v in acc.items()]
         return ' '.join(report)
 
