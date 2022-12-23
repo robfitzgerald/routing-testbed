@@ -25,14 +25,26 @@ sealed trait DriverPolicySpace
 
 object DriverPolicySpace {
 
-  // when computing offsets, truncate at this value, where anything beyond
-  // this value is an extreme outlier in travel time increase
-  val MaxOffset: Double = 4.0
-
   /**
     * encode the agent's karma balance as a feature
     */
   case object Balance extends DriverPolicySpace
+
+  /**
+    * encodes the headroom of karma an agent could have
+    * as MaxKarma - Balance
+    */
+  case object KarmaHeadroom extends DriverPolicySpace
+
+  /**
+    * normalized balance into [0, 1] where MaxBalance -> 1
+    */
+  case object BalancePct extends DriverPolicySpace
+
+  /**
+    * normalized headroom into [0, 1] where MaxBalance -> 0
+    */
+  case object KarmaHeadroomPct extends DriverPolicySpace
 
   /**
     * encode the number of agents in this batch as a feature
@@ -55,19 +67,24 @@ object DriverPolicySpace {
   case object OriginalDistance extends DriverPolicySpace
 
   /**
-    * remaining travel distance along the current path
-    */
-  case object RemainingDistance extends DriverPolicySpace
-
-  /**
     * experienced distance for the currently-assigned route
     */
   case object ExperiencedDistance extends DriverPolicySpace
 
   /**
+    * remaining travel distance along the current path
+    */
+  case object RemainingDistance extends DriverPolicySpace
+
+  /**
     * the percentage of distance along the current path
     */
   case object PercentDistance extends DriverPolicySpace
+
+  /**
+    * the percentage of distance remaining along the current path
+    */
+  case object PercentRemainingDistance extends DriverPolicySpace
 
   /**
     * at a replanning event, captures the marginal change in
@@ -80,12 +97,6 @@ object DriverPolicySpace {
     * distance due to selecting the worst SO route (aka losing)
     */
   case object MarginalWorstSODistance extends DriverPolicySpace
-
-  /**
-    * travel time estimate for the complete (experienced|remaining)
-    * current trip
-    */
-  case object CurrentOverallTravelTimeEstimate extends DriverPolicySpace
 
   /**
     * while observing other values, keep in perspective the original travel time estimate
@@ -103,6 +114,12 @@ object DriverPolicySpace {
   case object RemainingTravelTimeEstimate extends DriverPolicySpace
 
   /**
+    * travel time estimate for the complete (experienced|remaining)
+    * current trip
+    */
+  case object CurrentOverallTravelTimeEstimate extends DriverPolicySpace
+
+  /**
     * at a replanning event, captures the marginal change in
     * distance due to selecting the UO route (aka winning)
     */
@@ -115,10 +132,14 @@ object DriverPolicySpace {
   case object MarginalWorstSOTravelTime extends DriverPolicySpace
 
   /**
-    * at a replanning event, captures the diff from free flow
-    * for the
+    * the diff from free flow for the experienced part of the trip
     */
   case object FreeFlowDiffExperiencedTravelTime extends DriverPolicySpace
+
+  /**
+    * the percent diff from free flow for the experienced part of the trip
+    */
+  case object FreeFlowDiffExperiencedTravelTimePct extends DriverPolicySpace
 
   /**
     * at a replanning event, captures the diff from free flow
@@ -148,12 +169,14 @@ object DriverPolicySpace {
   /**
     * offset as (so - uo) / uo
     */
-  case object MarginalUOToSOOffset extends DriverPolicySpace
+  case class MarginalUOToSOOffset(maxOffset: Double) extends DriverPolicySpace
 
   /**
     * offset as ((so-ff) - (uo-ff)) / (uo-ff)
     */
-  case object MarginalFreeFlowUOToSOOffset extends DriverPolicySpace
+  case class MarginalFreeFlowUOToSOOffset(maxOffset: Double) extends DriverPolicySpace
+
+  case object BatchUnfairnessExternalities extends DriverPolicySpace
 
   /**
     * pass along the network signal so we understand better what we are fighting for
@@ -299,7 +322,7 @@ object DriverPolicySpace {
           } yield List(maxFreeFlowDiffSoTravelTime)
         case OriginalTravelTimeDiff =>
           ObservationOps.travelTimeDiffFromInitialTrip(history).map { u => List(u) }
-        case MarginalUOToSOOffset =>
+        case MarginalUOToSOOffset(maxOffset) =>
           for {
             soList <- WorstAlternative.encodeObservation(
               request,
@@ -322,10 +345,10 @@ object DriverPolicySpace {
             so <- IO.fromOption(soList.headOption)(new Error(s"missing obs value"))
             uo <- IO.fromOption(uoList.headOption)(new Error(s"missing obs value"))
           } yield {
-            val offset = if (uo == 0.0) MaxOffset else (so - uo) / uo
-            List(math.max(0.0, math.min(MaxOffset, offset)))
+            val offset = if (uo == 0.0) maxOffset else (so - uo) / uo
+            List(math.max(0.0, math.min(maxOffset, offset)))
           }
-        case MarginalFreeFlowUOToSOOffset =>
+        case MarginalFreeFlowUOToSOOffset(maxOffset) =>
           for {
             soList <- FreeFlowDiffWorstSOTravelTime.encodeObservation(
               request,
@@ -348,9 +371,12 @@ object DriverPolicySpace {
             so <- IO.fromOption(soList.headOption)(new Error(s"missing obs value"))
             uo <- IO.fromOption(uoList.headOption)(new Error(s"missing obs value"))
           } yield {
-            val offset = if (uo == 0.0) MaxOffset else (so - uo) / uo
-            List(math.max(0.0, math.min(MaxOffset, offset)))
+            val offset = if (uo == 0.0) maxOffset else (so - uo) / uo
+            List(math.max(0.0, math.min(maxOffset, offset)))
           }
+        case BatchUnfairnessExternalities =>
+          // for this batch, take the 0th path and last path and
+          ???
         case NetworkSignal =>
           networkSignal match {
             case NetworkPolicySignal.BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) =>
@@ -435,10 +461,12 @@ object DriverPolicySpace {
         IO.pure(List(diff))
       case WorstAlternative =>
         IO.pure(List(0.0))
-      case MarginalUOToSOOffset =>
+      case _: MarginalUOToSOOffset =>
         IO.pure(List(0.0))
-      case MarginalFreeFlowUOToSOOffset =>
+      case _: MarginalFreeFlowUOToSOOffset =>
         IO.pure(List(0.0))
+      case BatchUnfairnessExternalities =>
+        ???
       case NetworkSignal =>
         // generally here, we just want to make sure that the number of feature matches what
         // would be encoded into each observation throughout the day; it should clearly be
