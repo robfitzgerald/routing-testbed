@@ -76,9 +76,9 @@ class DriverTest(TestCase):
         # 0 / (6 + 4) = 0
         self.assertEqual(d1.trip_pct(), 0)
         # 4/10 = 0.4
-        self.assertEqual(d1.delay_pct(), 0.4)
+        self.assertEqual(d1.replanning_delay_pct(), 0.4)
         # (10-6)/6 = 0.6666...
-        self.assertAlmostEqual(d1.delay_offset_pct(), 0.6667, places=4)
+        self.assertAlmostEqual(d1.replanning_delay_offset_pct(), 0.6667, places=4)
         # 6 / 10 = 0.6
         self.assertEqual(d1.pct_original_of_final(), 0.6)
 
