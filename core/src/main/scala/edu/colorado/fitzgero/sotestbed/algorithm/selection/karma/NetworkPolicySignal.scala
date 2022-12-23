@@ -101,6 +101,26 @@ object NetworkPolicySignal extends LazyLogging {
   implicit class NetworkPolicySignalOps(sig: NetworkPolicySignal) {
 
     /**
+      * estimates the expected number of "winners" of an auction ahead of the
+      * actual auction assignment.
+      *
+      * @param batchSize number of agents in the batch
+      * @return an estimate on the number of winners
+      */
+    def estimatedWinners(batchSize: Int): Int = {
+      val pctLosers = sig match {
+        case UserOptimal                                                       => 0.0
+        case WeightedSampleWithoutReplacement(thresholdPercent, random)        => thresholdPercent
+        case ThresholdSampling(thresholdPercent, random)                       => thresholdPercent
+        case BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) => thresholdPercent
+        case BetaDistributionSampling(dist)                                    => throw new NotImplementedError
+      }
+      val losers  = percentToDiscreteRange(pctLosers, batchSize)
+      val winners = batchSize - losers
+      winners
+    }
+
+    /**
       * gets the coefficients for this network signal as a comma-delimited string for logging
       * @return
       */

@@ -60,6 +60,8 @@ object AgentBatchData {
     lastReplanningTime: Option[SimTime]
   ) extends AgentBatchData {
 
+    def route: List[EdgeData] = this.experiencedRoute ::: this.remainingRoute
+
     def experiencedDistance: Meters = {
       val experiencedDistance = experiencedRoute.foldLeft(0.0) { _ + _.linkDistance }
       Meters(experiencedDistance)
