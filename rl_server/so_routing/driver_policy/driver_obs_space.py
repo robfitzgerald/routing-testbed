@@ -14,10 +14,12 @@ MAX_UO_SO_OFFSET = 4
 
 class DriverObsSpace(Enum):
     BALANCE = 0
-    KARMA_HEADROOM = 2
-    BATCH_SIZE = 3
-    REPLANNING_EVENTS = 4
-    AUCTION_WIN_RATE = 5
+    KARMA_HEADROOM = 1
+    BALANCE_PCT = 2
+    KARMA_HEADROOM_PCT = 3
+    BATCH_SIZE = 4
+    REPLANNING_EVENTS = 5
+    AUCTION_WIN_RATE = 6
 
     ORIGINAL_DISTANCE = 10
     EXPERIENCED_DISTANCE = 11
@@ -40,6 +42,7 @@ class DriverObsSpace(Enum):
     WORST_ALTERNATIVE = 30
     MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO = 31
     MARGINAL_OFFSET_UO_TO_SO = 32
+    BATCH_UNFAIRNESS_EXTERNALITIES = 33
 
     # maybe other network signals?
     THRESHOLD_NETWORK_SIGNAL = 40
@@ -66,6 +69,8 @@ class DriverObsSpace(Enum):
         _OBSERVATION_SPACE_MAPPING = {
             DriverObsSpace.BALANCE: [0, max_karma],
             DriverObsSpace.KARMA_HEADROOM: [0, max_karma],
+            DriverObsSpace.BALANCE_PCT: [0, 1],
+            DriverObsSpace.KARMA_HEADROOM_PCT: [0, 1],
             DriverObsSpace.BATCH_SIZE: [0, np.Inf],
             DriverObsSpace.REPLANNING_EVENTS: [0, np.Inf],
             DriverObsSpace.AUCTION_WIN_RATE: [0, 1],
@@ -91,6 +96,7 @@ class DriverObsSpace(Enum):
             DriverObsSpace.WORST_ALTERNATIVE: [np.NINF, np.Inf],
             DriverObsSpace.MARGINAL_OFFSET_FREE_FLOW_UO_TO_SO: [0, MAX_UO_SO_OFFSET],
             DriverObsSpace.MARGINAL_OFFSET_UO_TO_SO: [0, MAX_UO_SO_OFFSET],
+            DriverObsSpace.BATCH_UNFAIRNESS_EXTERNALITIES: [0, 1],
 
             DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
         }

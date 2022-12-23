@@ -24,17 +24,6 @@ parser.add_argument(
     help="The number of workers to use. Each worker will create "
     "its own listening socket for incoming experiences.",
 )
-parser.add_argument(
-    "--no-restore",
-    action="store_true",
-    help="Do not restore from a previously saved checkpoint (location of "
-    "which is saved in `last_checkpoint_[algo-name].out`).",
-)
-parser.add_argument(
-    "--checkpoint",
-    default=None,
-    help="checkpoint location, or none if no checkpoint to load"
-)
 
 # General args.
 parser.add_argument(

@@ -24,9 +24,10 @@ class Driver:
     original_balance: int
     trip_start_time: int
     original_trip_total: int
-    luck: int
+    luck: float
     trip_position: int = 0
-    delay: int = 0
+    congestion_delay: int = 0
+    replanning_delay: int = 0
     replannings: int = 0
     most_recent_route_assignment_time: Optional[int] = None
     state: DriverState = DriverState.INACTIVE
@@ -42,7 +43,8 @@ class Driver:
             original_trip_total=trip_total,
             luck=luck,
             trip_position=0,
-            delay=0,
+            congestion_delay=0,
+            replanning_delay=0,
             replannings=0,
             most_recent_route_assignment_time=None,
             state=DriverState.INACTIVE)
@@ -80,7 +82,7 @@ class Driver:
     ### TRIP STATISTICS AND REPORTING ###
     def trip_total(self) -> int:
         """total distance of a trip including delay"""
-        return self.original_trip_total + self.delay
+        return self.original_trip_total + self.overall_delay()
 
     def trip_remaining(self) -> int:
         """remaining distance of the trip to cover"""
@@ -90,26 +92,49 @@ class Driver:
         """percent of trip (original + delay) that has been traversed"""
         return float(self.trip_position) / float(self.trip_total())
 
-    def delay_pct(self) -> float:
-        """percent of the total trip which is due to delay"""
-        return float(self.delay) / float(self.trip_total())
+    def overall_delay(self) -> int:
+        """include all delays encurred"""
+        return self.replanning_delay + self.congestion_delay
 
-    def delay_offset_pct(self) -> float:
-        """increase in the trip distance due to delay (percent)"""
+    def replanning_delay_pct(self) -> float:
+        """percent of the total trip which is due to delay"""
+        return float(self.replanning_delay) / float(self.trip_total())
+
+    def congestion_delay_pct(self) -> float:
+        """percent of the total trip which is due to delay"""
+        return float(self.congestion_delay) / float(self.trip_total())
+
+    def overall_delay_pct(self) -> float:
+        """
+        percent of the total trip which is due to delay. this is divided
+        by the overall trip total. this can be thought of as the percent
+        increase over free flow travel.
+        """
+        return float(self.overall_delay()) / float(self.trip_total())
+
+    def trip_total_over_original(self) -> float:
+        return float(self.trip_total()) / float(self.original_trip_total)
+
+    def replanning_delay_offset_pct(self) -> float:
+        """increase in the trip distance due to replanning delay (percent)"""
         numer = float(self.trip_total() - self.original_trip_total)
         denom = float(self.original_trip_total)
         return numer / denom
 
+    def experienced_delay_offset_pct(self) -> float:
+        """what percent of the current trip is delay"""
+        return float(self.overall_delay()) / float(self.trip_position())
+
      #######################################
     ### OPERATIONS BASED ON DRIVER STATE ###
 
-    def apply_luck_factor(self, delay: int) -> float:
-        """
-        if luck == 0, return 0
-        if luck > 0: return x < 0 delay (driver gets some time back)
-        if luck < 0: return x > 0 delay (unlucky gets added delay)
-        """
-        return int(-self.luck * delay)
+    # def apply_luck_factor(self, delay: int) -> float:
+    #     """
+    #     if luck == 0, return 0
+    #     if luck > 0: return x < 0 delay (driver gets some time back)
+    #     if luck < 0: return x > 0 delay (unlucky gets added delay)
+    #     """
+    #     return int(-self.luck * delay)
 
     def remaining_delay_headroom(self, max_increase_pct: float) -> int:
         """
@@ -123,12 +148,15 @@ class Driver:
     def pct_original_of_final(self) -> float:
         return float(self.original_trip_total) / float(self.trip_total())
 
+    def pct_final_of_original(self) -> float:
+        return 1 - self.pct_original_of_final()
+
     def balance_diff(self) -> int:
         return self.original_balance - self.balance
 
     def observation(self) -> List[float]:
         pct_finished = self.trip_pct()
-        pct_delay = self.delay_pct()
+        pct_delay = self.replanning_delay_pct()
         return [self.balance, pct_finished, pct_delay]
 
      ####################
@@ -152,16 +180,16 @@ class Driver:
 
     def move(self, distance):
         next_pos = min(self.trip_total(), self.trip_position + distance)
-        updated = replace(
-            self,
-            trip_position=next_pos
-        )
+        updated = replace(self, trip_position=next_pos)
         return updated
+
+    def add_congestion_delay(self, delay) -> Driver:
+        return replace(self, congestion_delay=self.congestion_delay + delay)
 
     def reroute(self, delay, current_time):
         updated = replace(
             self,
-            delay=self.delay + delay,
+            replanning_delay=self.replanning_delay + delay,
             replannings=self.replannings + 1,
             most_recent_route_assignment_time=current_time
         )

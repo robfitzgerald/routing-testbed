@@ -39,28 +39,21 @@ class NetworkSignalFunctionType(Enum):
 
 
 def create_random_network_signal_fn():
-    def _fn(drivers: List[Driver]) -> int:
-        n_drivers = len(drivers)
-        sig = random.randint(0, n_drivers)
-        return sig
+    def _fn(drivers: List[Driver]) -> float:
+        return random.random()
     return _fn
 
 
 def create_fixed_50_signal_fn():
-    def _fn(drivers: List[Driver]) -> int:
-        n_drivers = len(drivers)
-        sig = int(math.floor(float(n_drivers) / 2.0))
-        return sig
+    def _fn(drivers: List[Driver]) -> float:
+        return 0.5
     return _fn
 
 
 def create_thresh_signal_fn(thresh):
     assert thresh > 0, f"thresh must be positive, found {thresh}"
 
-    def _fn(drivers: List[Driver]) -> int:
-        n_drivers = len(drivers)
-        pct_sig = float(n_drivers) / thresh
-        losers = int(math.floor(n_drivers * pct_sig))
-        winners = n_drivers - losers
-        return max(0, min(len(drivers), winners))
+    def _fn(drivers: List[Driver]) -> float:
+        pct_sig = min(1.0, float(len(drivers)) / thresh)
+        return pct_sig
     return _fn

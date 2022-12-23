@@ -10,7 +10,7 @@ import json
 def resolve_winner_pay_all_auction(
         auction: List[Driver],
         bids: Dict[str, int],
-        network_signal_fn: Callable[[List[Driver]], int],
+        network_signal: float,
         delay_fn: Callable[[Driver], Driver],
         max_balance: int) -> Tuple[List[Driver], int]:
     """
@@ -19,8 +19,8 @@ def resolve_winner_pay_all_auction(
     """
     # for each auction, sample the # of winners/losers
     auction_size = len(auction)
-    n_winners = network_signal_fn(auction)
-    n_losers = auction_size - n_winners
+    n_losers = int(math.floor(network_signal * auction_size))
+    n_winners = auction_size - n_losers
     if n_losers == 0:
         return [], 0
 

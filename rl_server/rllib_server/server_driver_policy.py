@@ -38,6 +38,7 @@ from ray.rllib.models.catalog import MODEL_DEFAULTS
 from ray.tune.logger import pretty_print
 from ray.rllib.policy.policy import PolicySpec
 from rl_server.so_routing.env.toy_driver_env.scenario.lafayette import Lafayette
+from rl_server.so_routing.env.toy_driver_env.scenario.test_scenario import TestScenario
 
 # from ray.rllib.env.policy_server_input import PolicyServerInput
 from rl_server.so_routing.policy_server_no_pickle_v4 import PolicyServerInput
@@ -291,23 +292,28 @@ def run():
         #     max_pop = 1000
 
         config['env_config'] = {
-            "scenario": Lafayette,
-            "adoption_rate": 0.2,
+            "scenario": Lafayette,  # TestScenario,
             "seed": args.seed,
             "max_balance": args.max_account,
-            "min_start_time": 0,
-            "max_start_time": 60,  # 1h in 30s increments
-            "max_replannings": 20,
-            "max_trip_increase_pct": 3,  # 200%
-            "pct_unlucky": 0.1,  # 10%
-            "luck_factor": -4,
-            "population_fn": lambda x: random.randint(1000, 9000),
+            "population_fn": lambda i: random.randint(1000, 9000),
             "network_signal_fn": NetworkSignalFunctionType.THRESH_TEN_DRIVERS.create_fn(),
             "observation_fn": compose_observation_fn(o_names, args.max_account),
             "observation_space": obs_space,
             "action_space": act_space,
             "log_filename": "log.csv"
         }
+
+        # config['env_config'] = {
+        #     "scenario": TestScenario,  # TestScenario,
+        #     "seed": args.seed,
+        #     "max_balance": args.max_account,
+        #     "population_fn": lambda i: random.randint(50, 300),
+        #     "network_signal_fn": NetworkSignalFunctionType.THRESH_FIVE_DRIVERS.create_fn(),
+        #     "observation_fn": compose_observation_fn(o_names, args.max_account),
+        #     "observation_space": obs_space,
+        #     "action_space": act_space,
+        #     "log_filename": "log.csv"
+        # }
 
         ser_conf = config.copy()
         for k, v in ser_conf.items():
@@ -330,8 +336,9 @@ def run():
             print(results)
 
         else:
-
-            for i in range(algo.iteration, args.stop_iters):
+            iterations = range(algo.iteration, args.stop_iters)
+            print(f"running {len(iterations)} iterations")
+            for i in iterations:
                 print(f"running driver server training iteration {i}")
 
                 results = algo.train()

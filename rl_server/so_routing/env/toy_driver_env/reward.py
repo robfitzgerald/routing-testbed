@@ -1,8 +1,10 @@
 from typing import List
+import numpy as np
 
 
 def jain_index(values) -> float:
-    var_coef = values.std() / values.mean()
+    v_np = values if isinstance(values, np.ndarray) else np.array(values)
+    var_coef = v_np.std() / v_np.mean()
     return 1 / (1 + (var_coef ** 2))
 
 
