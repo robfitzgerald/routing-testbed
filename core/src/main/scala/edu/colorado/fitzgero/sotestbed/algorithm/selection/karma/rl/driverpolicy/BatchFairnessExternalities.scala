@@ -20,9 +20,7 @@ object BatchFairnessExternalities {
     val diffResult = for {
       ub <- JainFairnessMath.fairness(best)
       lb <- JainFairnessMath.fairness(worst)
-      diff          = ub - lb
-      diffTruncated = math.min(1.0, math.max(0.0, diff))
-    } yield BatchExternalitiesResult(diff, diffTruncated, lb, ub)
+    } yield BatchExternalitiesResult(ub - lb, lb, ub)
     IO.fromOption(diffResult)(new Error(s"unable to compute fairness of batch"))
   }
 
@@ -31,10 +29,9 @@ object BatchFairnessExternalities {
   }
 
   final case class BatchExternalitiesResult(
-    difference: Double,
-    differenceTruncated: Double,
-    lowerBoundFairness: Double,
-    upperBoundFairness: Double
+    value: Double,
+    lowerBoundValue: Double,
+    upperBoundValue: Double
   )
 
   def calculate(
@@ -58,7 +55,9 @@ object BatchFairnessExternalities {
           IO.fromOption(bestWorstOpt)(new Error(s"agent ${req.agent} needs 2 paths, only has ${paths.length}"))
       }
     // evaluate the "allocation" for each, which is the free flow over travel
-    // time percent value
+    // time percent value. these values are 1.0 if free flow equals travel time
+    // and approach 0.0 as travel time increases, which make them suitable to be
+    // used directly as allocation metrics.
     val bestWorstCostsResult =
       bestWorstPathsResult
         .flatMap {
@@ -76,15 +75,22 @@ object BatchFairnessExternalities {
     val calculatedResult =
       bestWorstCostsResult
         .flatMap { costs =>
-          val numWinners = sig.estimatedWinners(costs.length)
-          // todo: build agent_ub, agent_lb
+          val num        = costs.length
+          val numWinners = sig.estimatedWinners(num)
+          val numLosers  = num - numWinners
+
+          // create two collections, one where we assign most fairly
+          // (upper bound fairness assignment) and one that is least
+          // fairly assigned (lower bound). we sort ascending by the
+          // worst allocations, so as we go, first $numWinners entries
+          // would win most unfairly (lower bound).
           val (upperBound, lowerBound) = costs
             .sortBy { case (_, worst) => worst }
             .zipWithIndex
             .foldLeft((List.empty[Double], List.empty[Double])) {
-              case ((ubAcc, lbAcc), ((b, w), idx)) =>
-                val nextUb = if (idx < numWinners) b else w
-                val nextLb = if (idx >= numWinners) b else w
+              case ((ubAcc, lbAcc), ((best, worst), idx)) =>
+                val nextUb = if (idx < numLosers) worst else best
+                val nextLb = if (idx < numWinners) best else worst
                 (nextUb +: ubAcc, nextLb +: lbAcc)
             }
 

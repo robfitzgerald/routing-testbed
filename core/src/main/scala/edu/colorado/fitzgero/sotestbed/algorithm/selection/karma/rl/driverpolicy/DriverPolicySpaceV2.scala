@@ -26,24 +26,58 @@ object DriverPolicySpaceV2 {
   final case class Combined(features: List[DriverPolicySpaceV2]) extends DriverPolicySpaceV2
 
   /**
+    * the distance experienced divided by the expected overall distance
+    *
+    * @param invertResult if true, invert the result so that 1 is best instead
+    *                     ("percent distance remaining")
+    */
+  final case class ExperiencedDistancePercent(invertResult: Boolean) extends DriverPolicySpaceV2
+
+  /**
+    * ff/t for travel time estimate _t_ and free flow travel time _ff_, both
+    * for the current trip plan. _t_ assumed to be greater than or equal to _ff_
+    * but we still limit the result to [0, 1] to omit edge cases.
+    *
+    * if the result is 1, it means there has been little delay over the free
+    * flow travel time. if it's nearer to 0, then there has been lots of delay.
+    *
+    * @param invertResult if true, invert the result so that 0 is best instead
+    */
+  final case class FreeFlowOverTravelTimePercent(invertResult: Boolean) extends DriverPolicySpaceV2
+
+  /**
+    * the risk to this driver as the offset of the UO vs SO trip assignment.
+    * these values are divided by the freeflow travel time to scale them so
+    * that the risk is "lower" as both outcomes are closer to free flow speed.
+    *
+    * @param invertResult if true, invert the result so that 1 is best instead
+    * @param minOffset in the case that SO < UO, offset can be negative. this sets
+    *                  a min value to limit by, default 0.0
+    * @param maxOffset offset is unbounded; this max value is used to limit results.
+    *                  by default the value is 1.0
+    */
+  final case class RiskOffset(
+    invertResult: Boolean,
+    minOffset: Double = 0.0,
+    maxOffset: Double = 1.0
+  ) extends DriverPolicySpaceV2
+
+  /**
+    * this is a batch-level observation that is the same for each member of the batch.
+    *
     * diff between the fairness of the most unfair result and the most fair result.
     * when there is no difference, the value is 0 (best), and when the value is
     * high (approaching 1), it is a bad time for all.
     *
     * @param invertResult if true, invert the result so that 1 is best instead
+    * @param minRisk limit risk to at least this value, default 0.0
+    * @param maxRisk limit risk to as most this value, default 0.0
     */
-  final case class BatchUnfairnessExternalities(invertResult: Boolean) extends DriverPolicySpaceV2
-
-  /**
-    * ff/t for travel time estimate _t_ and free flow travel time _ff_, both
-    * for the current trip plan. _t_ assumed to be greater than or equal to _ff_
-    * but we still truncate the result to [0, 1].
-    * if the result is 0, it means there has been little delay over the free
-    * flow travel time. if it's nearer to 1, then there has been lots of delay.
-    *
-    * @param invertResult if true, invert the result so that 1 is best instead
-    */
-  final case class FreeFlowOverTravelTimePercent(invertResult: Boolean) extends DriverPolicySpaceV2
+  final case class BatchRisk(
+    invertResult: Boolean,
+    minRisk: Double = 0.0,
+    maxRisk: Double = 1.0
+  ) extends DriverPolicySpaceV2
 
   implicit class DPSV2Extensions(dps: DriverPolicySpaceV2) {
 
@@ -76,12 +110,12 @@ object DriverPolicySpaceV2 {
       case Combined(features) =>
         features.flatTraverse { _.encodeObservation(req, bal, rn, hists, paths, alts, sig) }
 
-      case BatchUnfairnessExternalities(invertResult) =>
-        val fn = BatchFairnessExternalities.jainDiff
+      case ExperiencedDistancePercent(invertResult) =>
         for {
-          extResult <- BatchFairnessExternalities.calculate(rn, alts, sig, hists, fn)
-          obsTrunc = extResult.differenceTruncated
-          obs      = if (invertResult) 1.0 - obsTrunc else obsTrunc
+          hist <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
+          req  <- IO.fromEither(hist.currentRequest)
+          dist = req.experiencedDistance.value / req.overallDistance.value
+          obs  = if (invertResult) 1.0 - dist else dist
         } yield List(obs)
 
       case FreeFlowOverTravelTimePercent(invertResult) =>
@@ -91,6 +125,28 @@ object DriverPolicySpaceV2 {
           obsResult  <- freeFlowOverTravelTimePercent(rn, hist, currentReq.remainingRoute)
           obs = if (invertResult) 1.0 - obsResult else obsResult
         } yield List(obs)
+
+      case RiskOffset(invertResult, minOffset, maxOffset) =>
+        for {
+          hist   <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
+          uoSpur <- getUoPathAlternative(req, alts)
+          soSpur <- getSoPathAlternative(req, alts)
+          uoTime <- pathAlternativeTravelTimeEstimate(hist, uoSpur)
+          soTime <- pathAlternativeTravelTimeEstimate(hist, soSpur)
+          offset        = if (uoTime == 0.0) 0.0 else (soTime - uoTime) / uoTime
+          offsetLimited = math.max(minOffset, math.min(maxOffset, offset))
+          obs           = if (invertResult) 1.0 - offsetLimited else offsetLimited
+        } yield List(obs)
+
+      case BatchRisk(invertResult, minRisk, maxRisk) =>
+        // could be a config parameter if we explore alternatives like t-test
+        val fn = BatchFairnessExternalities.jainDiff
+        for {
+          extResult <- BatchFairnessExternalities.calculate(rn, alts, sig, hists, fn)
+          obsLimited = math.max(minRisk, math.min(maxRisk, extResult.value))
+          obs        = if (invertResult) 1.0 - obsLimited else obsLimited
+        } yield List(obs)
+
     }
   }
 }

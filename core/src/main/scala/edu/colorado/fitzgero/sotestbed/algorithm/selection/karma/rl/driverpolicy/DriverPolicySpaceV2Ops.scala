@@ -24,6 +24,18 @@ object DriverPolicySpaceV2Ops {
   // - if a remaining route was recorded in the past, we may want to update the costs
   //   by sampling the RoadNetwork to update them
 
+  def getUoPathAlternative(req: Request, alts: Map[Request, List[Path]]): IO[Path] =
+    for {
+      paths  <- IO.fromOption(alts.get(req))(new Error(s"alts missing agent ${req.agent}"))
+      uoPath <- IO.fromOption(paths.headOption)(new Error(s"alts missing paths ${req.agent}"))
+    } yield uoPath
+
+  def getSoPathAlternative(req: Request, alts: Map[Request, List[Path]]): IO[Path] =
+    for {
+      paths  <- IO.fromOption(alts.get(req))(new Error(s"alts missing agent ${req.agent}"))
+      soPath <- IO.fromOption(paths.lastOption)(new Error(s"alts missing paths ${req.agent}"))
+    } yield soPath
+
   def currentRoute(history: AgentHistory): IO[List[EdgeData]] =
     IO.fromEither(history.currentRequest.map { _.route })
 
@@ -54,17 +66,6 @@ object DriverPolicySpaceV2Ops {
     * @param path
     * @return
     */
-  // def freeFlowOverTravelTimePercent(
-  //   rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-  //   history: AgentHistory,
-  //   spur: Path
-  // ): IO[Double] = {
-  //   for {
-  //     spurEdges <- spur.traverse(_.toEdgeData(rn))
-  //     obs       <- freeFlowOverTravelTimePercent(rn, history, spurEdges)
-  //   } yield obs
-  // }
-
   def freeFlowOverTravelTimePercent(
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     history: AgentHistory,
