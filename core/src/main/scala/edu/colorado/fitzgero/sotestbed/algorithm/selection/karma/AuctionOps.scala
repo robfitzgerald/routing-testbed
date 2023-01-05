@@ -3,6 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 import scala.annotation.tailrec
 import scala.math.Numeric.Implicits.infixNumericOps
 import scala.math.Ordering.Implicits.infixOrderingOps
+import scala.annotation.nowarn
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.RouteRequestData
 import edu.colorado.fitzgero.sotestbed.algorithm.batching._
@@ -70,7 +71,7 @@ object AuctionOps extends LazyLogging {
       }
       .map {
         case b1 :: b2 :: Nil => (b1, b2)
-      }
+      }: @nowarn
     resolveBidsUniformly(onlyWinnersPaying, agents, bank, maxKarma)
   }
 

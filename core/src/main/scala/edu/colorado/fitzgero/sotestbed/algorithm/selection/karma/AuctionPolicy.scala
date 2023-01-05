@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma
 
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
+import scala.annotation.nowarn
 
 sealed trait AuctionPolicy
 
@@ -29,7 +30,7 @@ object AuctionPolicy {
           val bids = bidsAndSelectedRoutes
             .map { case (bid, _, _) => bid }
             .combinations(2)
-            .map { case a :: b :: Nil => (a, b) }
+            .map { case a :: b :: Nil => (a, b) }: @nowarn
           val agents = bidsAndSelectedRoutes.map { case (bid, _, _) => bid.request.agent }
           AuctionOps.resolveBidsUniformly(bids, agents, bank, maxKarma)
         case WinnersPayAll =>
