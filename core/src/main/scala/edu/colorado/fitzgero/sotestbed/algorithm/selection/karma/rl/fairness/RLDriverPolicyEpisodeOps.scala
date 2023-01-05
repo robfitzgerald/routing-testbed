@@ -20,6 +20,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2
 
 object RLDriverPolicyEpisodeOps extends LazyLogging {
 
@@ -136,7 +137,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
 
   def finalObservations(
     tripLogs: List[TripLogRow],
-    space: DriverPolicySpace,
+    space: DriverPolicySpaceV2,
     networkPolicyConfig: NetworkPolicyConfig,
     finalBank: Map[String, Karma]
   ): IO[List[(String, List[Double])]] = {

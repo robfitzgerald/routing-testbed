@@ -47,6 +47,12 @@ class DriverObsSpace(Enum):
     # maybe other network signals?
     THRESHOLD_NETWORK_SIGNAL = 40
 
+    # DriverPolicySpaceV2
+    EXPERIENCED_DISTANCE_PERCENT = 50
+    FREE_FLOW_OVER_TRAVEL_TIME_PERCENT = 51
+    RISK_OFFSET = 52
+    BATCH_RISK = 53
+
     def __str__(self):
         return self.name.lower()
 
@@ -99,6 +105,11 @@ class DriverObsSpace(Enum):
             DriverObsSpace.BATCH_UNFAIRNESS_EXTERNALITIES: [0, 1],
 
             DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
+
+            DriverObsSpace.EXPERIENCED_DISTANCE_PERCENT: [0, 1],
+            DriverObsSpace.FREE_FLOW_OVER_TRAVEL_TIME_PERCENT: [0, 1],
+            DriverObsSpace.RISK_OFFSET: [0, 1],
+            DriverObsSpace.BATCH_RISK: [0, 1]
         }
         return _OBSERVATION_SPACE_MAPPING.get(driver_obs_space)
 

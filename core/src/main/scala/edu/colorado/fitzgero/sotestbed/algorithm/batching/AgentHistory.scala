@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.batching
 
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData._
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 /**
   * tracks the request data associated with an agent, noting which requests were served
@@ -19,7 +20,7 @@ final case class AgentHistory(
   replanningEvents: Int = 0,
   uoPathsAssigned: Int = 0,
   hasRlTrainingEpisodeStarted: Boolean = false,
-  finalized: Boolean = false
+  arrivalTime: Option[SimTime] = None
 ) {
 
   def uoAssignmentRate: Double =
@@ -123,7 +124,8 @@ final case class AgentHistory(
 
   def orderedEntryHistory: List[AgentHistory.Entry] = this.history.reverse
 
-  def catalogHistory: AgentHistory = this.copy(finalized = true, history = this.history.take(1))
+  def catalogHistory(arrival: SimTime): AgentHistory =
+    this.copy(arrivalTime = Some(arrival), history = this.history.take(1))
 }
 
 object AgentHistory {

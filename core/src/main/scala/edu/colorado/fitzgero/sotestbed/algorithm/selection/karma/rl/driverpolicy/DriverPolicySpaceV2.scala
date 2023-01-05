@@ -19,6 +19,25 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 import java.sql.Driver
 
+/**
+  * an ADT representing the different observation features for a driver agent
+  * which may contribute to choosing a Bid.
+  *
+  * - [[Combined]]
+  *   - allows specifying more than one feature
+  * - [[ExperiencedDistancePercent]]
+  *   - from no distance (0) to reaching destination (1)
+  *   - "about how much longer do we have to make bids"
+  * - [[FreeFlowOverTravelTimePercent]]
+  *   - from same (1) to travel time >> free flow (~0)
+  *   - "how much delay have we accrued"
+  * - [[RiskOffset]]
+  *   - from no risk (min) to high risk (~max), default [0,1]
+  *   - "what's the risk *to us* for losing this auction"
+  * - [[BatchRisk]]
+  *   - from no risk (min) to high risk (~max), default [0,1]
+  *   - "what's the risk *to the batch* for choosing poorly"
+  */
 sealed trait DriverPolicySpaceV2
 
 object DriverPolicySpaceV2 {
@@ -31,7 +50,7 @@ object DriverPolicySpaceV2 {
     * @param invertResult if true, invert the result so that 1 is best instead
     *                     ("percent distance remaining")
     */
-  final case class ExperiencedDistancePercent(invertResult: Boolean) extends DriverPolicySpaceV2
+  final case class ExperiencedDistancePercent(invertResult: Boolean = false) extends DriverPolicySpaceV2
 
   /**
     * ff/t for travel time estimate _t_ and free flow travel time _ff_, both
@@ -43,7 +62,7 @@ object DriverPolicySpaceV2 {
     *
     * @param invertResult if true, invert the result so that 0 is best instead
     */
-  final case class FreeFlowOverTravelTimePercent(invertResult: Boolean) extends DriverPolicySpaceV2
+  final case class FreeFlowOverTravelTimePercent(invertResult: Boolean = false) extends DriverPolicySpaceV2
 
   /**
     * the risk to this driver as the offset of the UO vs SO trip assignment.
@@ -57,7 +76,7 @@ object DriverPolicySpaceV2 {
     *                  by default the value is 1.0
     */
   final case class RiskOffset(
-    invertResult: Boolean,
+    invertResult: Boolean = false,
     minOffset: Double = 0.0,
     maxOffset: Double = 1.0
   ) extends DriverPolicySpaceV2
@@ -74,7 +93,7 @@ object DriverPolicySpaceV2 {
     * @param maxRisk limit risk to as most this value, default 0.0
     */
   final case class BatchRisk(
-    invertResult: Boolean,
+    invertResult: Boolean = false,
     minRisk: Double = 0.0,
     maxRisk: Double = 1.0
   ) extends DriverPolicySpaceV2
@@ -147,6 +166,50 @@ object DriverPolicySpaceV2 {
           obs        = if (invertResult) 1.0 - obsLimited else obsLimited
         } yield List(obs)
 
+    }
+
+    def encodeFinalObservation(
+      originalTravelTimeEstimate: SimTime,
+      finalTravelTime: SimTime,
+      freeFlowTravelTime: SimTime,
+      finalDistance: Meters,
+      finalBankBalance: Karma,
+      finalReplannings: Int,
+      finalUoRoutesAssigned: Int,
+      networkPolicyConfig: NetworkPolicyConfig
+    ): IO[List[Double]] = dps match {
+
+      case Combined(ls) =>
+        ls.flatTraverse(
+          _.encodeFinalObservation(
+            originalTravelTimeEstimate,
+            finalTravelTime,
+            freeFlowTravelTime,
+            finalDistance,
+            finalBankBalance,
+            finalReplannings,
+            finalUoRoutesAssigned,
+            networkPolicyConfig
+          )
+        )
+
+      case ExperiencedDistancePercent(invertResult) =>
+        val obs = if (invertResult) 0.0 else 1.0
+        IO.pure(List(obs))
+
+      case FreeFlowOverTravelTimePercent(invertResult) =>
+        val pct      = freeFlowTravelTime.value / finalTravelTime.value
+        val pctLimit = math.max(0.0, math.min(1.0, pct))
+        val obs      = if (invertResult) 1.0 - pctLimit else pctLimit
+        IO.pure(List(obs))
+
+      case RiskOffset(invertResult, minOffset, maxOffset) =>
+        val obs = if (invertResult) 0.0 else 1.0
+        IO.pure(List(obs))
+
+      case BatchRisk(invertResult, minRisk, maxRisk) =>
+        val obs = if (invertResult) 0.0 else 1.0
+        IO.pure(List(obs))
     }
   }
 }

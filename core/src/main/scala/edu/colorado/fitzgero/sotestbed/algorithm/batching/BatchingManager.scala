@@ -273,7 +273,10 @@ object BatchingManager extends LazyLogging {
                 }.toEither.left.map { t => new Error(t) }
               } yield b.copy(
                 batchData = b.batchData - data.agentId,
-                storedHistory = b.storedHistory.processArrivalFor(data.agentId)
+                storedHistory = b.storedHistory.processArrivalFor(
+                  data.agentId,
+                  data.arrivalTime
+                )
               )
 
               result match {

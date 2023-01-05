@@ -54,7 +54,7 @@ object AllocationMetric extends LazyLogging {
       experimentDirectory: JavaNioPath,
       agentsWithEpisodes: Set[String],
       allocationTransform: AllocationTransform,
-      driverPolicySpace: DriverPolicySpace,
+      driverPolicySpace: DriverPolicySpaceV2,
       networkPolicyConfig: NetworkPolicyConfig,
       roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
       finalBank: Map[String, Karma]

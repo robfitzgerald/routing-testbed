@@ -25,13 +25,13 @@ sealed trait DriverPolicyStructure
 
 object DriverPolicyStructure extends BankOps {
 
-  case class SingleAgentPolicy(space: DriverPolicySpace) extends DriverPolicyStructure
+  case class SingleAgentPolicy(space: DriverPolicySpaceV2) extends DriverPolicyStructure
 
-  case class MultiAgentPolicy(space: DriverPolicySpace, groupingFile: Option[String]) extends DriverPolicyStructure
+  case class MultiAgentPolicy(space: DriverPolicySpaceV2, groupingFile: Option[String]) extends DriverPolicyStructure
 
   implicit class DriverPolicyExt(dp: DriverPolicyStructure) {
 
-    def space: DriverPolicySpace = dp match {
+    def space: DriverPolicySpaceV2 = dp match {
       case SingleAgentPolicy(space)   => space
       case MultiAgentPolicy(space, _) => space
     }
@@ -61,8 +61,7 @@ object DriverPolicyStructure extends BankOps {
     ): IO[List[Double]] =
       for {
         balance  <- IO.fromEither(bank.getOrError(req.agent))
-        thisHist <- IO.fromEither(hist.observedRouteRequestData.getOrError(req.agent))
-        features <- dp.space.encodeObservation(req, balance, rn, thisHist, paths, batch, signal)
+        features <- dp.space.encodeObservation(req, balance, rn, hist, paths, batch, signal)
       } yield features
 
     /**

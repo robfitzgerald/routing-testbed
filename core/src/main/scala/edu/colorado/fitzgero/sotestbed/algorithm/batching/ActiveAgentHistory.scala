@@ -122,11 +122,12 @@ final case class ActiveAgentHistory(
     * @param agentId the arriving agent
     * @return the updated history with this agent removed
     */
-  def processArrivalFor(agentId: String): ActiveAgentHistory = {
+  def processArrivalFor(agentId: String, arrivalTime: SimTime): ActiveAgentHistory = {
     this.observedRouteRequestData.get(agentId) match {
       case None => this
       case Some(agentHistory) =>
-        val updated = this.observedRouteRequestData.updated(agentId, agentHistory.catalogHistory)
+        val finalized = agentHistory.catalogHistory(arrivalTime)
+        val updated   = this.observedRouteRequestData.updated(agentId, finalized)
         this.copy(
           observedRouteRequestData = updated
         )

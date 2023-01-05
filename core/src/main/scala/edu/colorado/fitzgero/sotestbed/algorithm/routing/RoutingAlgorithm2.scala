@@ -265,12 +265,12 @@ object RoutingAlgorithm2 {
                 for {
                   req <- structure.generateLogReturnsRequest(epId, roadNetwork, lastBatch, space)
                   _   <- client.sendOne(req)
-                  _ = k.networkClientPw.write(req.asJson.noSpaces.toString + "\n")
+                  _ = k.networkClientPw.write(req.toBase.asJson.noSpaces.toString + "\n")
                 } yield ()
               // get action for this time step
               actReq <- structure.generateGetActionRequest(epId, roadNetwork, zoneLookup, space)
               actRes <- client.sendOne(actReq)
-              _ = k.networkClientPw.write(actReq.asJson.noSpaces.toString + "\n")
+              _ = k.networkClientPw.write(actReq.toBase.asJson.noSpaces.toString + "\n")
               _ = k.networkClientPw.write(actRes.asJson.noSpaces.toString + "\n")
               act  <- actRes.getAction
               sigs <- structure.extractActions(act, space, k.gen, lastBatch.keys.toList)
