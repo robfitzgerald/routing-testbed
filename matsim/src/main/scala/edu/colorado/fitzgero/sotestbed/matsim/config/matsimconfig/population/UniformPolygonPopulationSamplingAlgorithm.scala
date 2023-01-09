@@ -29,7 +29,7 @@ case class UniformPolygonPopulationSamplingAlgorithm(
   workActivityMinTime: LocalTime,
   workActivityMaxTime: LocalTime,
   workDurationHours: Int,
-  seedOption: Option[Long],
+  seedOption: Option[Long]
 ) extends PopSamplingAlgorithm {
 
   val random: Random = seedOption match {
@@ -46,12 +46,20 @@ case class UniformPolygonPopulationSamplingAlgorithm(
 
     val transform: MathTransform = CRS.findMathTransform(sourceCRS, targetCRS);
 
-    def randomEdge: EdgeId = {
+    @tailrec
+    def randomEdge(ignoreEdge: Option[EdgeId] = None): EdgeId = {
 
       val result: Either[Exception, EdgeId] = for {
-        point <- UniformPolygonPopulationSamplingAlgorithm.samplePointInGeometry(mapBoundingGeometry, geometryFactory, random)
+        point <- UniformPolygonPopulationSamplingAlgorithm.samplePointInGeometry(
+          mapBoundingGeometry,
+          geometryFactory,
+          random
+        )
         pointTransformed = JTS.transform(point, transform)
-        nearestLink      = NetworkUtils.getNearestLink(matsimNetwork, new Coord(pointTransformed.getCoordinate.getX, pointTransformed.getCoordinate.getY))
+        nearestLink = NetworkUtils.getNearestLink(
+          matsimNetwork,
+          new Coord(pointTransformed.getCoordinate.getX, pointTransformed.getCoordinate.getY)
+        )
       } yield {
         EdgeId(nearestLink.getId.toString)
       }
@@ -59,21 +67,22 @@ case class UniformPolygonPopulationSamplingAlgorithm(
       result match {
         case Left(e) =>
           throw e
-        case Right(linkId) =>
-          linkId
+        case Right(linkId) if ignoreEdge.exists(_ == linkId) => randomEdge(ignoreEdge)
+        case Right(linkId)                                   => linkId
       }
     }
 
-    val secondsBetweenMinAndMaxWorkTime: Int = workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
-    def sampleWorkTime: LocalTime            = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
+    val secondsBetweenMinAndMaxWorkTime: Int =
+      workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
+    def sampleWorkTime: LocalTime = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
 //    def isSoAgent: Boolean                   = random.nextDouble < percentSOAgents
 
     val agents: Seq[Agent] = for {
       uniqueId <- 1 to populationSize
-      homeLocation = randomEdge
+      homeLocation = randomEdge()
       homeNode <- links.get(Id.createLinkId(homeLocation.value))
       homeCoord    = homeNode.getCoord
-      workLocation = randomEdge
+      workLocation = randomEdge(ignoreEdge = Some(homeLocation))
       workNode <- links.get(Id.createLinkId(workLocation.value))
       workCoord = workNode.getCoord
       agentId   = s"$uniqueId-$homeLocation-$workLocation"
@@ -140,16 +149,18 @@ object UniformPolygonPopulationSamplingAlgorithm {
     *         box for the geometry has an area which is much greater than the area of the geometry itself,
     *         for example, a slim, diagonal areal region.
     */
-  def samplePointInGeometry(geometry: Geometry,
-                            geometryFactory: GeometryFactory,
-                            random: Random,
-                            retryLimit: Int = 1000): Either[Exception, Point] = {
+  def samplePointInGeometry(
+    geometry: Geometry,
+    geometryFactory: GeometryFactory,
+    random: Random,
+    retryLimit: Int = 1000
+  ): Either[Exception, Point] = {
 
     val (minx, maxx, miny, maxy) = (
       geometry.getEnvelopeInternal.getMinX,
       geometry.getEnvelopeInternal.getMaxX,
       geometry.getEnvelopeInternal.getMinY,
-      geometry.getEnvelopeInternal.getMaxY,
+      geometry.getEnvelopeInternal.getMaxY
     )
 
     @tailrec
