@@ -182,7 +182,10 @@ object MATSimPopConfig {
     sealed trait PopSamplingFailure
 
     object PopSamplingFailure {
-      final case class BuildPopSamplingAlgorithmFailure(msg: String) extends PopSamplingFailure
+
+      final case class BuildPopSamplingAlgorithmFailure(msg: String) extends PopSamplingFailure {
+        override def toString = f"failure building population sampling algorithm: $msg"
+      }
     }
   }
 }

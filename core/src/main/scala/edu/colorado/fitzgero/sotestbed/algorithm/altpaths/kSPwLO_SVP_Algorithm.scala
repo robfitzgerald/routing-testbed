@@ -16,6 +16,9 @@ object kSPwLO_SVP_Algorithm {
 
   val ExhaustiveSearchTerminationFunction: KSPAlgorithm.AltPathsState => Boolean = _ => false
 
+  /**
+    * @param theta each new path can have no more than $theta % in common with all previous solutions
+    */
   def generateAltsForRequest[F[_]: Monad, V, E](
     request: Request,
     roadNetwork: RoadNetwork[F, V, E],
