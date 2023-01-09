@@ -14,13 +14,18 @@ object RequestClass {
   case class SO(group: String = "") extends RequestClass {
     override def toString: String = if (group.isEmpty) "so" else s"so-$group"
   }
-  val SORegex: Regex = """so-(\w+)""".r.unanchored
+  val SORegex: Regex = """so(-\w+)?""".r.unanchored
 
   def apply(string: String): Option[RequestClass] = {
     string.toLowerCase match {
-      case x: String if x == UE.toString => Some { UE }
-      case SORegex(group)                => Some { SO(group) }
-      case _                             => None
+      case x: String if x == UE.toString => Some(UE)
+      case SORegex(groupOrNull) =>
+        val rc = Option(groupOrNull) match {
+          case None              => SO()
+          case Some(groupString) => SO(groupString.drop(1)) // remove leading hyphen
+        }
+        Some(rc)
+      case _ => None
     }
   }
 
