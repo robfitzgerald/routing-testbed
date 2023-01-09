@@ -1,4 +1,4 @@
-package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
+package edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.batchexternalities
 
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.Path
@@ -10,39 +10,20 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness.Jai
 import cats.effect.IO
 import cats.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
+import com.typesafe.scalalogging.LazyLogging
+import io.circe.syntax._
 
-object BatchFairnessExternalities {
-
-  // (UpperBounds, LowerBounds) => Result
-  type BatchExternalitiesMetric = (List[Double], List[Double]) => IO[BatchExternalitiesResult]
-
-  val jainDiff: BatchExternalitiesMetric = (best: List[Double], worst: List[Double]) => {
-    val diffResult = for {
-      ub <- JainFairnessMath.fairness(best)
-      lb <- JainFairnessMath.fairness(worst)
-    } yield BatchExternalitiesResult(ub - lb, lb, ub)
-    IO.fromOption(diffResult)(new Error(s"unable to compute fairness of batch"))
-  }
-
-  val studentsTTest: BatchExternalitiesMetric = (best: List[Double], worst: List[Double]) => {
-    ???
-  }
-
-  final case class BatchExternalitiesResult(
-    value: Double,
-    lowerBoundValue: Double,
-    upperBoundValue: Double
-  )
+object BatchFairnessExternalities extends LazyLogging {
 
   def calculate(
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     alts: Map[Request, List[Path]],
     sig: NetworkPolicySignal,
     hists: ActiveAgentHistory,
-    calcFn: BatchExternalitiesMetric = jainDiff
+    calcFn: BatchExternalitiesMetric = BatchExternalitiesMetric.jainDiff
   ): IO[BatchExternalitiesResult] = {
 
-    import DriverPolicySpaceV2Ops._
+    import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2Ops._
 
     // extract the best and worst path alternative for each agent in this batch
     val bestWorstPathsResult = alts.toList
@@ -51,6 +32,7 @@ object BatchFairnessExternalities {
           val bestWorstOpt = for {
             best  <- paths.headOption
             worst <- paths.lastOption
+            if best != worst
           } yield (req, best, worst)
           IO.fromOption(bestWorstOpt)(new Error(s"agent ${req.agent} needs 2 paths, only has ${paths.length}"))
       }
@@ -69,7 +51,12 @@ object BatchFairnessExternalities {
                 hist       <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
                 bestCost   <- freeFlowOverTravelTimePercent(rn, hist, bestEdges)
                 worstCost  <- freeFlowOverTravelTimePercent(rn, hist, worstEdges)
-              } yield (bestCost, worstCost)
+              } yield {
+                logger.whenInfoEnabled {
+                  logger.info(f"  AGENT ${req.agent} BEST: $bestCost WORST: $worstCost")
+                }
+                (bestCost, worstCost)
+              }
           }
         }
     val calculatedResult =
@@ -94,7 +81,22 @@ object BatchFairnessExternalities {
                 (nextUb +: ubAcc, nextLb +: lbAcc)
             }
 
-          calcFn(upperBound, lowerBound)
+          val result = for {
+            r <- calcFn(upperBound, lowerBound)
+          } yield {
+            logger.whenInfoEnabled {
+              val ubStr = upperBound.map(v => f"$v%.4f").mkString("[", ", ", "]")
+              val lbStr = lowerBound.map(v => f"$v%.4f").mkString("[", ", ", "]")
+              logger.info("BATCH FAIRNESS")
+              logger.info(f"UPPER BOUND DATASET: $ubStr")
+              logger.info(f"LOWER BOUND DATASET: $lbStr")
+              logger.info("RESULT")
+              logger.info(r.asJson.spaces2)
+            }
+            r
+          }
+
+          result
         }
 
     calculatedResult

@@ -19,6 +19,8 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 import java.sql.Driver
 
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.batchexternalities._
+
 /**
   * an ADT representing the different observation features for a driver agent
   * which may contribute to choosing a Bid.
@@ -159,7 +161,7 @@ object DriverPolicySpaceV2 {
 
       case BatchRisk(invertResult, minRisk, maxRisk) =>
         // could be a config parameter if we explore alternatives like t-test
-        val fn = BatchFairnessExternalities.jainDiff
+        val fn = BatchExternalitiesMetric.jainDiff
         for {
           extResult <- BatchFairnessExternalities.calculate(rn, alts, sig, hists, fn)
           obsLimited = math.max(minRisk, math.min(maxRisk, extResult.value))
