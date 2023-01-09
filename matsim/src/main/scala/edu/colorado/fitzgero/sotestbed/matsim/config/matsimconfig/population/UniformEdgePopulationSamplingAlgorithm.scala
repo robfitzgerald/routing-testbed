@@ -1,4 +1,5 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population
+
 import java.time.LocalTime
 
 import scala.collection.JavaConverters._
@@ -11,6 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
+import scala.annotation.tailrec
 
 case class UniformEdgePopulationSamplingAlgorithm(
   roadNetwork: LocalAdjacencyListFlowNetwork,
@@ -19,7 +21,7 @@ case class UniformEdgePopulationSamplingAlgorithm(
   workActivityMinTime: LocalTime,
   workActivityMaxTime: LocalTime,
   workDurationHours: Int,
-  seedOption: Option[Long],
+  seedOption: Option[Long]
 ) extends PopSamplingAlgorithm {
 
   val random: Random = seedOption match {
@@ -31,17 +33,24 @@ case class UniformEdgePopulationSamplingAlgorithm(
 
     val links: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
     val edgesArray: Array[EdgeId]  = roadNetwork.edgesMap.keys.toArray
-    def randomEdge: EdgeId         = edgesArray(random.nextInt(edgesArray.length))
 
-    val secondsBetweenMinAndMaxWorkTime: Int = workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
-    def sampleWorkTime: LocalTime            = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
+    @tailrec
+    def randomEdge(ignoreEdge: Option[EdgeId] = None): EdgeId = {
+      val e = edgesArray(random.nextInt(edgesArray.length))
+      if (ignoreEdge.exists(_ == e)) randomEdge(ignoreEdge)
+      else e
+    }
+
+    val secondsBetweenMinAndMaxWorkTime: Int =
+      workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
+    def sampleWorkTime: LocalTime = workActivityMinTime.plusSeconds(random.nextInt(secondsBetweenMinAndMaxWorkTime))
 
     val agents: Seq[Agent] = for {
       uniqueId <- 1 to populationSize
-      homeLocation = randomEdge
+      homeLocation = randomEdge()
       homeNode <- links.get(Id.createLinkId(homeLocation.value))
       homeCoord    = homeNode.getCoord
-      workLocation = randomEdge
+      workLocation = randomEdge(Some(homeLocation))
       workNode <- links.get(Id.createLinkId(workLocation.value))
       workCoord   = workNode.getCoord
       agentId     = s"$uniqueId-$homeLocation-$workLocation"

@@ -12,6 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import org.matsim.api.core.v01.Id
 import org.matsim.api.core.v01.network.{Link, Network}
+import scala.annotation.tailrec
 
 case class UniformEdgePopSamplingSingleTrip(
   roadNetwork: LocalAdjacencyListFlowNetwork,
@@ -32,7 +33,13 @@ case class UniformEdgePopSamplingSingleTrip(
 
     val links: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
     val edgesArray: Array[EdgeId]  = roadNetwork.edgesMap.keys.toArray
-    def randomEdge: EdgeId         = edgesArray(random.nextInt(edgesArray.length))
+
+    @tailrec
+    def randomEdge(ignoreEdge: Option[EdgeId] = None): EdgeId = {
+      val e = edgesArray(random.nextInt(edgesArray.length))
+      if (ignoreEdge.exists(_ == e)) randomEdge(ignoreEdge)
+      else e
+    }
 
     val secondsBetweenMinAndMaxWorkTime: Int =
       workActivityMaxTime.minusSeconds(workActivityMinTime.toSecondOfDay).toSecondOfDay
@@ -40,10 +47,10 @@ case class UniformEdgePopSamplingSingleTrip(
 
     val agents: Seq[Seq[Agent]] = for {
       uniqueId <- 1 to populationSize
-      homeLocation = randomEdge
+      homeLocation = randomEdge()
       homeNode <- links.get(Id.createLinkId(homeLocation.value))
       homeCoord    = homeNode.getCoord
-      workLocation = randomEdge
+      workLocation = randomEdge(Some(homeLocation))
       workNode <- links.get(Id.createLinkId(workLocation.value))
       workCoord     = workNode.getCoord
       baseAgentId   = s"$uniqueId-$homeLocation-$workLocation"
