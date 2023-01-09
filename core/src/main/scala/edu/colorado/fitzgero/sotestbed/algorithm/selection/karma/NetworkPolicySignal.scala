@@ -115,7 +115,7 @@ object NetworkPolicySignal extends LazyLogging {
         case BernoulliDistributionSampling(thresholdPercent, bernoulliPercent) => thresholdPercent
         case BetaDistributionSampling(dist)                                    => throw new NotImplementedError
       }
-      val losers  = percentToDiscreteRange(pctLosers, batchSize)
+      val losers  = percentToDiscreteValue(pctLosers, batchSize)
       val winners = batchSize - losers
       winners
     }
@@ -145,7 +145,7 @@ object NetworkPolicySignal extends LazyLogging {
             pickPaths(bids, alts, uoPathSelection)
 
           case WeightedSampleWithoutReplacement(thresh, rng) =>
-            val numAgentsSo = percentToDiscreteRange(thresh, alts.size)
+            val numAgentsSo = percentToDiscreteValue(thresh, alts.size)
             val bidsWithBidValue = for {
               bid <- bids
             } yield (bid, bid.value.value.toDouble)
@@ -156,14 +156,14 @@ object NetworkPolicySignal extends LazyLogging {
 
           case sop: ThresholdSampling =>
             val bidsLowestToHighest = bids.sortBy { _.value }
-            val numAgentsSo         = percentToDiscreteRange(sop.thresholdPercent, alts.size)
+            val numAgentsSo         = percentToDiscreteValue(sop.thresholdPercent, alts.size)
             val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
             val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
             pickPathsForWinnersAndLosers(bidsUo, bidsSo, alts, sop.random)
 
           case sopad: BernoulliDistributionSampling =>
             val bidsLowestToHighest = bids.sortBy { _.value }
-            val numAgentsSo         = percentToDiscreteRange(sopad.thresholdPercent, alts.size)
+            val numAgentsSo         = percentToDiscreteValue(sopad.thresholdPercent, alts.size)
             val bidsSo              = bidsLowestToHighest.take(numAgentsSo)
             val bidsUo              = bidsLowestToHighest.drop(numAgentsSo)
 
@@ -172,7 +172,7 @@ object NetworkPolicySignal extends LazyLogging {
               bidsSo,
               alts,
               (bid, paths) => {
-                val selectedPathIdx = percentToDiscreteRange(sopad.bernoulliPercent, paths.length)
+                val selectedPathIdx = percentToDiscreteValue(sopad.bernoulliPercent, paths.length)
                 val path            = paths(selectedPathIdx)
                 (bid, selectedPathIdx, path)
               }
@@ -193,7 +193,7 @@ object NetworkPolicySignal extends LazyLogging {
                 lookup.get(bid) match {
                   case None => throw new IllegalStateException()
                   case Some(sample) =>
-                    val selectedPathIdx = percentToDiscreteRange(sample, paths.length)
+                    val selectedPathIdx = percentToDiscreteValue(sample, paths.length)
                     val path            = paths(selectedPathIdx)
                     (bid, selectedPathIdx, path)
                 }
@@ -206,13 +206,21 @@ object NetworkPolicySignal extends LazyLogging {
 
   /**
     * maps some percentage value into a range of discrete values like [0, 1] => [0, max)
+    * by finding the closest integer (by distance) when multiplying the percentage by
+    * the max integer value.
+    *
     * @param pct percentage to map
     * @param max something like a collection size or count of classes in a classifier
     * @return the pct value as a discrete value
     */
-  def percentToDiscreteRange(pct: Double, max: Int): Int = {
-    val result = math.max(0.0, math.min(max, math.ceil(max * pct))).toInt
-    result
+  def percentToDiscreteValue(pct: Double, max: Int): Int = {
+    val target    = pct * max
+    val lower     = math.floor(target)
+    val upper     = math.ceil(target)
+    val lowerDist = target - lower
+    val upperDist = upper - target
+    val result    = if (lowerDist < upperDist) lower else upper
+    result.toInt
   }
 
   /**
