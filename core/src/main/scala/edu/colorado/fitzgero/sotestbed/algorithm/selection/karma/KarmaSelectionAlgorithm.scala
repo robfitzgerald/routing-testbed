@@ -265,6 +265,13 @@ case class KarmaSelectionAlgorithm(
           combineFlowsFunction,
           marginalCostFunction
         )
+      } else if (!networkPolicySignals.isDefinedAt(batchId)) {
+        logger.error(
+          f"""batch $batchId not present in network signals! 
+             |found ${networkPolicySignals.size} batchIds present""".stripMargin
+        )
+        val result = SelectionAlgorithm.SelectionAlgorithmResult(updatedBank = bank)
+        IO.pure(result)
       } else {
 
         // we may need to start some RL episodes. RLlib has undefined behavior when we

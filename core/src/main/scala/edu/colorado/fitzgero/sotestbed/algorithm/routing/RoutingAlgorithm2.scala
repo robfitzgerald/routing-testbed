@@ -95,8 +95,10 @@ case class RoutingAlgorithm2(
         batchingFunctionStartTime <- IO { System.currentTimeMillis }
         batchingResultOpt         <- batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime)
         batchingRuntime           <- IO { RunTime(System.currentTimeMillis - batchingFunctionStartTime) }
+        _ = logger.info(s"request batching computed via ${batchingFunction.getClass.getSimpleName}")
+
       } yield {
-        logger.info(s"request batching computed via ${batchingFunction.getClass.getSimpleName}")
+
         batchingResultOpt match {
           case None =>
             logger.info("no viable requests after applying batching function")
@@ -125,7 +127,10 @@ case class RoutingAlgorithm2(
                     }
                 }
 
-            // run alts path generator
+            // run alts path generator. this also has a few extra features included
+            // such as re-populating the result with network speeds when needed, removing
+            // looped paths, and re-sorting the result set based on their estimated
+            // travel time.
             val altPathsResult: IO[List[AltPathsAlgorithmRunner.AltPathsAlgorithmResult]] =
               preFilteredBatches.traverse {
                 case (batchId, batch) =>
