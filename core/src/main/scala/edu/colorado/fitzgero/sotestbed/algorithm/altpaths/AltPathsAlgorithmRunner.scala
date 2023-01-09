@@ -15,6 +15,8 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentHistory
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2Ops
 
 final case class AltPathsAlgorithmRunner(
   altPathsAlgorithm: KSPAlgorithm,
@@ -47,10 +49,12 @@ final case class AltPathsAlgorithmRunner(
         roadNetwork,
         costFunction
       )
+      altsNoLoop <- AltPathsAlgorithmRunner.removePathsWithLoops(altsWithCurrentCosts, activeAgentHistory, roadNetwork)
+      altsSorted <- AltPathsAlgorithmRunner.reSortPathsForBatch(altsNoLoop, activeAgentHistory)
     } yield {
 
       // apply the ksp filter function
-      val altsWithFilterApplied: Map[Request, List[Path]] = altsWithCurrentCosts.alternatives.flatMap {
+      val altsWithFilterApplied: Map[Request, List[Path]] = altsSorted.alternatives.flatMap {
         case (req, alts) =>
           activeAgentHistory.observedRouteRequestData.get(req.agent) match {
             case None =>
@@ -72,14 +76,14 @@ final case class AltPathsAlgorithmRunner(
         if (altsWithFilterApplied.isEmpty) None else Some(altsWithFilterApplied)
 
       val endOfKspTime = RunTime(System.currentTimeMillis) - startTime + altsResult.runtime
-      AltPathsAlgorithmResult(batchId, altsResult.alternatives, filteredAlts, endOfKspTime)
+      AltPathsAlgorithmResult(batchId, altsSorted.alternatives, filteredAlts, endOfKspTime)
     }
 
     result
   }
 }
 
-object AltPathsAlgorithmRunner {
+object AltPathsAlgorithmRunner extends LazyLogging {
 
   final case class AltPathsAlgorithmResult(
     batchId: String,
@@ -136,7 +140,80 @@ object AltPathsAlgorithmRunner {
     } else {
       Monad[F].pure(altPathsResult)
     }
+
     altsWithCurrentSpeeds
+  }
+
+  def removePathsWithLoops(
+    altsResult: KSPAlgorithm.AltPathsResult,
+    activeAgentHistory: ActiveAgentHistory,
+    rn: RoadNetwork[IO, Coordinate, EdgeBPR]
+  ): IO[KSPAlgorithm.AltPathsResult] = {
+    val removeLoopsResult = altsResult.alternatives.toList
+      .traverse {
+        case (req, alts) =>
+          for {
+            hist     <- IO.fromEither(activeAgentHistory.getAgentHistoryOrError(req.agent))
+            current  <- IO.fromEither(hist.currentRequest)
+            altEdges <- alts.traverse { alt => alt.traverse(_.toEdgeData(rn)).map { edges => (alt, edges) } }
+          } yield {
+            val (loopsRemoved, _) = altEdges.filter {
+              case (alt, edges) =>
+                val rem  = DriverPolicySpaceV2Ops.coalesceFuturePath(current.remainingRoute, edges)
+                val full = DriverPolicySpaceV2Ops.coalesceFuturePath(current.experiencedRoute, rem)
+                full.toSet.size == full.length
+            }.unzip
+
+            logger.whenInfoEnabled {
+              val nLoopy = alts.length - loopsRemoved.length
+              if (nLoopy > 0) {
+                logger.info(f"removed $nLoopy paths for agent ${req.agent} that had loops when coalesced")
+              }
+            }
+
+            (req, loopsRemoved)
+          }
+      }
+      .map { _.toMap }
+
+    removeLoopsResult.map { noLoops => altsResult.copy(alternatives = noLoops) }
+  }
+
+  /**
+    * after computing a batch of alternatives, we attach each to the current trip plan
+    * and find out the sort ordering. each cost should estimate the full path plus
+    * the path spur. the resulting sorted path lists make it so that the 0th path
+    * is the most user-optimal, and the remaining paths appear in increasing system-
+    * optimizing order, so that the last path is most-system-optimizing.
+    *
+    * @param altsResult the path alternatives to sort
+    * @param activeAgentHistory dataset providing the current trip estimate for each agent
+    * @return the path alternatives re-sorted
+    */
+  def reSortPathsForBatch(
+    altsResult: KSPAlgorithm.AltPathsResult,
+    activeAgentHistory: ActiveAgentHistory
+  ): IO[KSPAlgorithm.AltPathsResult] = {
+    val sortResult = altsResult.alternatives.toList
+      .traverse {
+        case (req, alts) =>
+          IO.fromEither(activeAgentHistory.getAgentHistoryOrError(req.agent))
+            .flatMap { hist =>
+              alts
+                .traverse { path =>
+                  DriverPolicySpaceV2Ops
+                    .pathAlternativeTravelTimeEstimate(hist, path)
+                    .map { cost => (path, cost) }
+                }
+                .map { pathsWithCosts =>
+                  val sorted = pathsWithCosts.sortBy { case (_, cost) => cost }.map { case (path, _) => path }
+                  (req, sorted)
+                }
+            }
+      }
+      .map { _.toMap }
+
+    sortResult.map { sortedAlts => altsResult.copy(alternatives = sortedAlts) }
   }
 
   case class AltsResultData(
