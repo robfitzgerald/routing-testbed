@@ -51,7 +51,10 @@ object RepeaterApp
             val itConf = prepareRunConfig(config, iteration)
             val runner = MATSimExperimentRunner3(itConf, random.nextLong)
             println(s"--- running training repeater iteration $iteration")
-            runner.run().map { _ => iteration + 1 }
+            for {
+              _ <- buildPopulationIfMissing(itConf, random)
+              _ <- runner.run()
+            } yield iteration + 1
           }
         }
     }
@@ -91,5 +94,27 @@ object RepeaterApp
       scenarioParameters = Map.empty
     )
     MATSimRunConfig(updatedConf, scenarioData)
+  }
+
+  def buildPopulationIfMissing(matsimRunConfig: MATSimRunConfig, rng: Random): IO[Unit] = {
+    val exists = matsimRunConfig.io.populationFile.isFile
+    if (exists) IO.pure(())
+    else {
+      val result = MATSimPopulationRunner
+        .generateUniformPopulation(
+          networkFile = matsimRunConfig.io.matsimNetworkFile,
+          polygonFileOption = matsimRunConfig.io.populationPolygonFile,
+          popFileDestination = matsimRunConfig.io.populationFile,
+          popSize = matsimRunConfig.population.size,
+          adoptionRate = matsimRunConfig.routing.adoptionRate,
+          workActivityMinTime = matsimRunConfig.population.workActivityMinTime,
+          workActivityMaxTime = matsimRunConfig.population.workActivityMaxTime,
+          workDurationHours = matsimRunConfig.population.workDurationHours,
+          seed = Some { rng.nextInt }
+        )
+        .left
+        .map { msg => new Throwable(msg.toString) }
+      IO.fromEither(result)
+    }
   }
 }
