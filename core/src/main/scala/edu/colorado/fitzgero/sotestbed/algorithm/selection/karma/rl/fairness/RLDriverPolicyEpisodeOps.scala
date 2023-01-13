@@ -21,6 +21,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RewardOps
 
 object RLDriverPolicyEpisodeOps extends LazyLogging {
 
@@ -117,14 +118,9 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
       if (t == 0.0 || ff == 0.0) {
         (row.agentId, InvalidTravelTimeReward)
       } else {
-        val dist = row.finalDistance.value
-        // this may be a bit too careful
-        val speed   = if (t == 0.0) dist / AlmostZero else dist / t
-        val speedFF = if (ff == 0.0) dist / AlmostZero else dist / ff
-        // results in values in the range [0, inf] where 1.0 means the observed travel time
-        // matches free flow. values should typically be less than 1 and occasionally greater than 1.
-        val pDiff = if (speed == 0.0) 0.0 else speedFF / speed
-        (row.agentId, pDiff)
+        val dist       = row.finalDistance.value
+        val allocation = RewardOps.freeFlowSpeedDiffAllocation(t, ff, dist)
+        (row.agentId, allocation)
       }
     }
     val (agentIds, allocations) = result.unzip

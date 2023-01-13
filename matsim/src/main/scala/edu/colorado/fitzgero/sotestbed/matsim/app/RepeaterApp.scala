@@ -52,6 +52,7 @@ object RepeaterApp
             val runner = MATSimExperimentRunner3(itConf, random.nextLong)
             println(s"--- running training repeater iteration $iteration")
             for {
+              _ <- mkDirsFromFile(itConf.io.populationFile)
               _ <- buildPopulationIfMissing(itConf, random)
               _ <- runner.run()
             } yield iteration + 1
@@ -96,8 +97,19 @@ object RepeaterApp
     MATSimRunConfig(updatedConf, scenarioData)
   }
 
+  /**
+    * https://stackoverflow.com/a/4040667/4803266
+    */
+  def mkDirsFromFile(file: File): IO[Unit] = {
+    val parent = file.getParentFile
+    if (parent != null && !parent.exists() && !parent.mkdirs()) {
+      IO.raiseError(new IllegalStateException("Couldn't create dir: " + parent))
+    } else IO.unit
+  }
+
   def buildPopulationIfMissing(matsimRunConfig: MATSimRunConfig, rng: Random): IO[Unit] = {
     val exists = matsimRunConfig.io.populationFile.isFile
+    println(f"required population file already exist? $exists")
     if (exists) IO.pure(())
     else {
       val result = MATSimPopulationRunner

@@ -4,6 +4,7 @@ import java.io.InputStream
 
 import cats.effect.IO
 import cats.implicits._
+import io.circe.syntax._
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.implicits._
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
@@ -20,6 +21,7 @@ import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest._
 import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientResponse._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.rllib.Action
+import java.io.PrintWriter
 
 final case class RayRLlibClient(
   host: String,
@@ -49,5 +51,23 @@ final case class RayRLlibClient(
     logFn: Option[(PolicyClientRequest, PolicyClientResponse) => IO[Unit]] = None
   ): IO[PolicyClientResponse] =
     PolicyClientOps.send(req, host, port, failOnServerError, logFn)
+
+}
+
+object RayRLlibClient {
+
+  def standardSendOneLogFn(pw: PrintWriter): (PolicyClientRequest, PolicyClientResponse) => IO[Unit] =
+    (req, res) =>
+      IO {
+        pw.write(req.asJson.noSpaces.toString + "\n")
+        pw.write(res.asJson.noSpaces.toString + "\n")
+      }
+
+  def standardSendManyLogFn(pw: PrintWriter): (List[PolicyClientRequest], List[PolicyClientResponse]) => IO[Unit] =
+    (reqs, ress) =>
+      IO {
+        reqs.foreach { req => pw.write(req.asJson.noSpaces.toString + "\n") }
+        ress.foreach { res => pw.write(res.asJson.noSpaces.toString + "\n") }
+      }
 
 }

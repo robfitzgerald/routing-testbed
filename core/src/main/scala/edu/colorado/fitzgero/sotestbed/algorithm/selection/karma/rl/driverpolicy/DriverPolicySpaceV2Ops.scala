@@ -84,11 +84,20 @@ object DriverPolicySpaceV2Ops {
       obsTruncated = math.max(0.0, math.min(1.0, observation))
     } yield obsTruncated
 
-  def coalesceFuturePath(remaining: List[EdgeData], alternative: List[EdgeData]): List[EdgeData] = {
-    alternative match {
-      case Nil => remaining
+  /**
+    * takes a path and some future path spur and coalesces it into a single path.
+    * steps through the current path until we find the first link of the spur and
+    * attaches the spur at that point.
+    *
+    * @param path the path that we attach a spur to
+    * @param spur the spur to append
+    * @return a coalesced path from both inputs
+    */
+  def coalesceFuturePath(path: List[EdgeData], spur: List[EdgeData]): List[EdgeData] = {
+    spur match {
+      case Nil => path
       case spurOrigin :: _ =>
-        remaining.takeWhile(_.edgeId != spurOrigin.edgeId) ::: alternative
+        path.takeWhile(_.edgeId != spurOrigin.edgeId) ::: spur
     }
   }
 
@@ -116,6 +125,36 @@ object DriverPolicySpaceV2Ops {
     val remainingCost = remainingEdges.flatMap { _.estimatedTimeAtEdge }.foldLeft(0.0) { _ + _.value.toDouble }
 
     remainingCost + pathAltCost
+  }
+
+  /**
+    * the travel time for a route. this includes observed travel times
+    * during the 'experienced' phase of the route and estimated travel
+    * times for the 'remaining' phase.
+    *
+    * @param rn road network
+    * @param experienced experienced route
+    * @param remaining remaining route
+    * @return effect of putting experienced + remaining travel time values
+    * together in a list
+    */
+  def travelTime(
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    experienced: List[EdgeData],
+    remaining: List[EdgeData]
+  ): IO[List[Double]] = {
+
+    val expTT = experienced.flatMap(_.estimatedTimeAtEdge.map(_.value.toDouble))
+
+    def _tt(ed: EdgeData) =
+      for {
+        eaOpt <- rn.edge(ed.edgeId)
+        ea    <- IO.fromOption(eaOpt)(new Error(s"edge ${ed.edgeId} missing attr"))
+      } yield ea.attribute.observedTravelTime.value
+
+    for {
+      remTT <- remaining.traverse(_tt)
+    } yield expTT ::: remTT
   }
 
   /**

@@ -37,6 +37,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyCo
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionThreshold
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.CongestionWeightedSampling
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicyConfig.ScaledProportionalThreshold
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
@@ -49,7 +50,8 @@ case class KarmaSelectionAlgorithm(
   seed: Option[Long],
   experimentDirectory: java.nio.file.Path,
   allocationMetric: AllocationMetric,
-  allocationTransform: AllocationTransform
+  allocationTransform: AllocationTransform,
+  useStepWiseRewards: Boolean
 ) extends SelectionAlgorithm
     with LazyLogging {
 
@@ -172,12 +174,7 @@ case class KarmaSelectionAlgorithm(
                 roadNetwork,
                 agentsWithEpisodes.toSet,
                 finalBank,
-                Some((req, res) =>
-                  IO {
-                    driverClientPw.write(req.asJson.noSpaces.toString + "\n")
-                    driverClientPw.write(res.asJson.noSpaces.toString + "\n")
-                  }
-                )
+                Some(RayRLlibClient.standardSendOneLogFn(driverClientPw))
               )
             } yield ()
 
@@ -193,12 +190,7 @@ case class KarmaSelectionAlgorithm(
               agentsWithEpisodes.toSet,
               finalBank,
               episodePrefix,
-              Some((reqs, ress) =>
-                IO {
-                  reqs.foreach { req => driverClientPw.write(req.asJson.noSpaces.toString + "\n") }
-                  ress.foreach { res => driverClientPw.write(res.asJson.noSpaces.toString + "\n") }
-                }
-              )
+              Some(RayRLlibClient.standardSendManyLogFn(driverClientPw))
             )
         }
 
@@ -337,12 +329,7 @@ case class KarmaSelectionAlgorithm(
             roadNetwork,
             episodePrefix,
             multiAgentDriverPolicyEpisodeId,
-            Some((req, res) =>
-              IO {
-                driverClientPw.write(req.asJson.noSpaces.toString + "\n")
-                driverClientPw.write(res.asJson.noSpaces.toString + "\n")
-              }
-            )
+            Some(RayRLlibClient.standardSendOneLogFn(driverClientPw))
           )
 
         // run the driver policy and network policy, and use the result to select
@@ -398,31 +385,75 @@ case class KarmaSelectionAlgorithm(
             ratioOfSearchSpaceExplored = 0.0
           )
 
+          // handle logging of stepwise rewards if requested. mvp: assumes we are in a multi-agent environment
+          val logReturnsResult =
+            if (!useStepWiseRewards || selections.isEmpty) IO.unit
+            else
+              driverPolicy match {
+                case RLBasedDriverPolicy(structure, client) =>
+                  val episodeIdResult =
+                    IO.fromOption(multiAgentDriverPolicyEpisodeId)(
+                      new Error("missing EpisodeId for multiagent policy")
+                    )
+
+                  // create a batch-wise allocation for each agent
+                  val allocationsResult = alts.toList.zip(selections).traverse {
+                    case (((req, _), (_, _, path))) =>
+                      allocationMetric.batchWiseAllocation(
+                        request = req,
+                        selectedPathSpur = path,
+                        aah = activeAgentHistory,
+                        rn = roadNetwork
+                      )
+                  }
+
+                  // compute rewards from allocations
+                  // log rewards to the RLlib server for this batch
+                  // this is done at the same time step but is an estimate of the reward value
+                  // due to the action chosen and outcome of the bidding process.
+                  for {
+                    episodeId   <- episodeIdResult
+                    allocations <- allocationsResult
+                    rewards <- IO.fromOption(JainFairnessMath.userFairness(allocations))(
+                      new Error(s"should not be called on empty batch")
+                    )
+                    _              = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
+                    _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
+                    rewardsByAgent = alts.keys.toList.map(r => AgentId(r.agent)).zip(rewards).toMap
+                    req = PolicyClientRequest
+                      .LogReturnsRequest(episodeId, Reward.MultiAgentReward(rewardsByAgent))
+                    _ <- client.sendOne(req, logFn = Some(RayRLlibClient.standardSendOneLogFn(driverClientPw)))
+                  } yield ()
+                case _ => IO.unit
+              }
+
           // log info about the karma selection process
           val bidLookup = bids.map { b => b.request.agent -> b }.toMap
-          val loggingOrError = responses.traverse { response =>
-            val agent = response.request.agent
-            for {
-              bid            <- IO.fromEither(bidLookup.getOrError(agent))
-              startBalance   <- IO.fromEither(bank.getOrError(agent))
-              endBalance     <- IO.fromEither(updatedBank.getOrError(agent))
-              currentReqData <- IO.fromEither(activeAgentHistory.getNewestDataOrError(response.request.agent))
-              currentTime = currentReqData.timeOfRequest
-              selectionLogTimes <- findSelectionLogTimes(response, activeAgentHistory, alts, roadNetwork)
-            } yield {
-              val selectionRow = KarmaSelectionLogRow(
-                batchId = batchId,
-                agentId = agent,
-                requestTime = currentTime.value,
-                startBalance = startBalance,
-                endBalance = endBalance,
-                bidValue = bid.value,
-                route = response.pathIndex,
-                requestTimeEstimateSeconds = selectionLogTimes.currentEst.value,
-                afterSelectionEstimateSeconds = selectionLogTimes.revisedEst.value
-              )
+          val loggingOrError = logReturnsResult.flatMap { _ =>
+            responses.traverse { response =>
+              val agent = response.request.agent
+              for {
+                bid            <- IO.fromEither(bidLookup.getOrError(agent))
+                startBalance   <- IO.fromEither(bank.getOrError(agent))
+                endBalance     <- IO.fromEither(updatedBank.getOrError(agent))
+                currentReqData <- IO.fromEither(activeAgentHistory.getNewestDataOrError(response.request.agent))
+                currentTime = currentReqData.timeOfRequest
+                selectionLogTimes <- findSelectionLogTimes(response, activeAgentHistory, alts, roadNetwork)
+              } yield {
+                val selectionRow = KarmaSelectionLogRow(
+                  batchId = batchId,
+                  agentId = agent,
+                  requestTime = currentTime.value,
+                  startBalance = startBalance,
+                  endBalance = endBalance,
+                  bidValue = bid.value,
+                  route = response.pathIndex,
+                  requestTimeEstimateSeconds = selectionLogTimes.currentEst.value,
+                  afterSelectionEstimateSeconds = selectionLogTimes.revisedEst.value
+                )
 
-              selectionRow
+                selectionRow
+              }
             }
           }
 
