@@ -51,7 +51,7 @@ case class KarmaSelectionAlgorithm(
   experimentDirectory: java.nio.file.Path,
   allocationMetric: AllocationMetric,
   allocationTransform: AllocationTransform,
-  useStepWiseRewards: Boolean
+  batchWiseAllocationMetric: BatchWiseAllocationMetric
 ) extends SelectionAlgorithm
     with LazyLogging {
 
@@ -291,6 +291,8 @@ case class KarmaSelectionAlgorithm(
               // update local information about active RL agents (Single or MultiAgent)
               val sizeBefore = agentsWithEpisodes.size
               agentsWithEpisodes.addAll(newReqs.map { _.agent })
+              val sizeAfter    = agentsWithEpisodes.size
+              val newResponses = sizeAfter - sizeBefore
 
               // log newly-activated SingleAgent episodes
               if (responses.nonEmpty) {
@@ -304,8 +306,9 @@ case class KarmaSelectionAlgorithm(
                 logger.info(sendMsg)
               }
 
-              val sizeAfter = agentsWithEpisodes.size
-              logger.info(s"now tracking $sizeAfter RL agents up from $sizeBefore")
+              if (newResponses > 0) {
+                logger.info(s"now tracking $newResponses new RL agents, total $sizeAfter")
+              }
             }
 
           case _ => IO.unit
@@ -387,7 +390,7 @@ case class KarmaSelectionAlgorithm(
 
           // handle logging of stepwise rewards if requested. mvp: assumes we are in a multi-agent environment
           val logReturnsResult =
-            if (!useStepWiseRewards || selections.isEmpty) IO.unit
+            if (selections.isEmpty) IO.unit
             else
               driverPolicy match {
                 case RLBasedDriverPolicy(structure, client) =>
@@ -397,33 +400,40 @@ case class KarmaSelectionAlgorithm(
                     )
 
                   // create a batch-wise allocation for each agent
-                  val allocationsResult = alts.toList.zip(selections).traverse {
-                    case (((req, _), (_, _, path))) =>
-                      allocationMetric.batchWiseAllocation(
-                        request = req,
-                        selectedPathSpur = path,
-                        aah = activeAgentHistory,
-                        rn = roadNetwork
-                      )
+                  val allocationsResult = alts.toList
+                    .zip(selections)
+                    .traverse {
+                      case (((req, _), (_, _, path))) =>
+                        batchWiseAllocationMetric.batchWiseAllocation(
+                          request = req,
+                          selectedPathSpur = path,
+                          aah = activeAgentHistory,
+                          rn = roadNetwork
+                        )
+                    }
+                    .map(_.flatten)
+
+                  allocationsResult.flatMap {
+                    case Nil         => IO.unit // when 'selections' is empty
+                    case allocations =>
+                      // compute rewards from allocations
+                      // log rewards to the RLlib server for this batch
+                      // this is done at the same time step but is an estimate of the reward value
+                      // due to the action chosen and outcome of the bidding process.
+                      for {
+                        episodeId <- episodeIdResult
+                        rewards <- IO.fromOption(JainFairnessMath.userFairness(allocations))(
+                          new Error(s"should not be called on empty batch")
+                        )
+                        _              = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
+                        _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
+                        rewardsByAgent = alts.keys.toList.map(r => AgentId(r.agent)).zip(rewards).toMap
+                        req = PolicyClientRequest
+                          .LogReturnsRequest(episodeId, Reward.MultiAgentReward(rewardsByAgent))
+                        _ <- client.sendOne(req, logFn = Some(RayRLlibClient.standardSendOneLogFn(driverClientPw)))
+                      } yield ()
                   }
 
-                  // compute rewards from allocations
-                  // log rewards to the RLlib server for this batch
-                  // this is done at the same time step but is an estimate of the reward value
-                  // due to the action chosen and outcome of the bidding process.
-                  for {
-                    episodeId   <- episodeIdResult
-                    allocations <- allocationsResult
-                    rewards <- IO.fromOption(JainFairnessMath.userFairness(allocations))(
-                      new Error(s"should not be called on empty batch")
-                    )
-                    _              = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
-                    _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
-                    rewardsByAgent = alts.keys.toList.map(r => AgentId(r.agent)).zip(rewards).toMap
-                    req = PolicyClientRequest
-                      .LogReturnsRequest(episodeId, Reward.MultiAgentReward(rewardsByAgent))
-                    _ <- client.sendOne(req, logFn = Some(RayRLlibClient.standardSendOneLogFn(driverClientPw)))
-                  } yield ()
                 case _ => IO.unit
               }
 

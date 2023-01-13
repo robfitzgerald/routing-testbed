@@ -152,7 +152,7 @@ object SelectionAlgorithmConfig {
     bankConfig: BankConfig,
     allocationMetric: AllocationMetric,
     allocationTransform: AllocationTransform,
-    useStepWiseRewards: Boolean,
+    batchWiseAllocationMetric: BatchWiseAllocationMetric,
     seed: Option[Long]
   ) extends SelectionAlgorithmConfig {
 
@@ -173,7 +173,7 @@ object SelectionAlgorithmConfig {
             outDir,
             allocationMetric,
             allocationTransform,
-            useStepWiseRewards
+            batchWiseAllocationMetric
           )
       }
     }
