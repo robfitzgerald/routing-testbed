@@ -20,8 +20,9 @@ import org.matsim.core.router.util.TravelTime
 import org.matsim.vehicles.Vehicle
 import org.matsim.withinday.trafficmonitoring.WithinDayTravelTime
 import scala.annotation.tailrec
-import scala.collection.immutable
 import org.matsim.api.core.v01.Scenario
+
+import cats.implicits._
 
 object MATSimRouteOps extends LazyLogging {
 
@@ -516,10 +517,8 @@ object MATSimRouteOps extends LazyLogging {
     *
     * assuming that the new path has been created based on a link in the old path.
     *
-    * invariant: the current link should occur at the same index as it did in the previous path
-    *
     * @param oldPath     the path that MATSim currently has stored for this agent
-    * @param newPath     the routing result
+    * @param newPath     the routing result, a path spur that originates at some point in the future along the old path
     * @param currentLink the agent's current link
     * @return o-[currentPath]->o-[newPath]-> concatenated, or a message why that failed; along with the index of the current link
     */
@@ -528,34 +527,61 @@ object MATSimRouteOps extends LazyLogging {
     newPath: List[Id[Link]],
     currentLink: Id[Link]
   ): Either[String, List[Id[Link]]] = {
-    if (oldPath.isEmpty) {
-      Left(s"invariant failed: old path is empty though agent is on network at $currentLink (how did it get there?)")
-    } else if (newPath.isEmpty) {
-      Left("new path is empty")
-    } else if (newPath.last != oldPath.last) {
-      Left(s"new path doesn't end at the same destination as the old path (${newPath.last} != ${oldPath.last})")
-    } else if (newPath.head == oldPath.head && newPath.last == oldPath.last) {
-      // we can swap in this new path entirely
-      Right(newPath)
-    } else {
 
-      // construct the path prefix using everything in the old path before we see the head of the new path
-      oldPath.takeWhile(_ != newPath.head) match {
-        case tookTheWholeThing if tookTheWholeThing == oldPath =>
-          Left(s"new path origin '${newPath.head}' not found on old path")
-        case pathPrefix =>
-          val coalescedPath: List[Id[Link]] = pathPrefix ++ newPath
-          if (!coalescedPath.contains(currentLink)) {
-            Left(
-              s"old path and new path when combined at root of new path no longer contain the current link '$currentLink'"
-            )
-          } else if (coalescedPath.lengthCompare(coalescedPath.toSet.size) != 0) {
-            Left("coalesced path contains a loop")
+    // validate the state of the old and new path, extracting the first link of the path spur in the process
+    val spurOriginResult = (oldPath.headOption, oldPath.lastOption, newPath.headOption, newPath.lastOption) match {
+
+      case (None, None, _, _) =>
+        Left(f"invariant failed, old path is empty (but agent is at link $currentLink, how can it be?)")
+
+      case (_, _, None, None) =>
+        Left(f"invariant failed, incoming path is empty")
+
+      case (Some(oldSrc), Some(oldDst), Some(newSrc), Some(newDst)) if oldDst != newDst =>
+        val msg =
+          f"new path doesn't end at the same destination as the old path ($oldDst != $newDst)"
+        Left(msg)
+
+      case (Some(oldSrc), Some(oldDst), Some(newSrc), Some(newDst)) =>
+        Right(newSrc)
+
+      case other =>
+        // we ignore a few other match conditions that are *possible* here, but because
+        // they are only possible if there are bugs in the scala collections library's headOption/lastOption methods
+        val msg =
+          f"invariant failed, both old and new path are empty (but agent is at link $currentLink, how can it be?)"
+        Left(msg)
+    }
+
+    // combine the old and new paths at the spur origin, validate the result
+    val coalescedPathResult = spurOriginResult.flatMap { spurOrigin =>
+      oldPath.takeWhile(_ != spurOrigin) match {
+
+        case prefixPath if prefixPath.lengthCompare(oldPath) == 0 =>
+          Left(s"new path spur origin '$spurOrigin' not found on old path")
+
+        case prefixPath =>
+          val coalescedPath: List[Id[Link]] = prefixPath ++ newPath
+          val doesNotContainCurrentLink     = !coalescedPath.contains(currentLink)
+          val containsALoop                 = coalescedPath.lengthCompare(coalescedPath.toSet.size) != 0
+
+          if (doesNotContainCurrentLink) {
+            Left(s"path no longer contains the current link '$currentLink' after adding path spur")
+          } else if (containsALoop) {
+            val pathStr = coalescedPath.map { _.toString }.mkString("[", ", ", "]")
+            val revisited = coalescedPath
+              .groupBy(identity)
+              .filter { case (_, ids) => ids.length > 1 }
+              .map { case (id, _) => id }
+              .mkString("[", ", ", "]")
+            Left(f"coalescePath failed: path contains a loop. revisited links: $revisited; path: $pathStr")
           } else {
             Right(coalescedPath)
           }
       }
     }
+
+    coalescedPathResult
   }
 
   /**
