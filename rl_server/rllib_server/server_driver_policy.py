@@ -208,10 +208,15 @@ def run():
         # The dataflow here can vary per algorithm. For example, PPO further
         # divides the train batch into minibatches for multi-epoch SGD.
         "rollout_fragment_length": 200,
+
         # Training batch size, if applicable. Should be >= rollout_fragment_length.
         # Samples batches will be concatenated together to a batch of this size,
         # which is then passed to SGD.
+
+        # RJF: 8000 agents, 2 trips, 20% adoption, avg 7 replannings -> 22,400
+        # agent observation/action/reward tuples to train from?
         "train_batch_size": 1000,
+
         # Number of environments to evaluate vector-wise per worker. This enables
         # model inference batching, which can improve performance for inference
         # bottlenecked workloads.
@@ -225,6 +230,7 @@ def run():
         # Set to INFO so we'll see the server's actual address:port.
         "log_level": "DEBUG",
         "model": {},
+
         # === Evaluation Settings ===
         # Evaluate with every `evaluation_interval` training iterations.
         # The evaluation stats will be reported under the "evaluation" metric key.
@@ -268,8 +274,9 @@ def run():
                     "initial_epsilon": 1.0,
                     "final_epsilon": 0.02,
                     "warmup_timesteps": 14000,
-                    # Timesteps over which to anneal epsilon.
-                    "epsilon_timesteps": 70000,
+                    # (agent) Timesteps over which to anneal epsilon.
+                    #
+                    "epsilon_timesteps": 140000,
                 }
             }
         )
@@ -336,7 +343,7 @@ def run():
             print(results)
 
         else:
-            iterations = range(algo.iteration, args.stop_iters)
+            iterations = range(algo.iteration, args.stop_iters + 1)
             print(f"running {len(iterations)} iterations")
             for i in iterations:
                 print(f"running driver server training iteration {i}")
@@ -370,7 +377,7 @@ def run():
         else:
             # Serving and training loop.
             ts = 0
-            for i in range(algo.iteration, args.stop_iters):
+            for i in range(algo.iteration, args.stop_iters + 1):
 
                 print(f"begin training iteration #{i}")
                 results = algo.train()
