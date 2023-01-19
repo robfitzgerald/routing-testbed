@@ -17,6 +17,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2Ops
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 
 final case class AltPathsAlgorithmRunner(
   altPathsAlgorithm: KSPAlgorithm,
@@ -50,7 +51,7 @@ final case class AltPathsAlgorithmRunner(
         costFunction
       )
       altsNoLoop <- AltPathsAlgorithmRunner.removePathsWithLoops(altsWithCurrentCosts, activeAgentHistory, roadNetwork)
-      altsSorted <- AltPathsAlgorithmRunner.reSortPathsForBatch(altsNoLoop, activeAgentHistory)
+      altsSorted <- AltPathsAlgorithmRunner.reSortPathsForBatch(altsNoLoop, activeAgentHistory, roadNetwork)
     } yield {
 
       // apply the ksp filter function
@@ -64,6 +65,9 @@ final case class AltPathsAlgorithmRunner(
               kspFilterFunction(agentHistory, req, alts, rng) match {
                 case None =>
                   logger.debug(f"ksp filter fn removed agent ${req.agent}")
+                  None
+                case Some((req, Nil)) =>
+                  logger.debug(f"ksp filter returned request with no paths for agent ${req.agent}")
                   None
                 case Some(filtered) =>
                   logger.debug(f"ksp filter processed agent ${req.agent}")
@@ -152,6 +156,10 @@ object AltPathsAlgorithmRunner extends LazyLogging {
     val removeLoopsResult = altsResult.alternatives.toList
       .traverse {
         case (req, alts) =>
+          // extract our agent's most recent trip from the agent history and use it
+          // to reconstruct what we expect the underlying simulation will assign as the
+          // modified route plan.
+          // transform our Path into a List[EdgeData] to leverage the coalesceFuturePath method
           for {
             hist     <- IO.fromEither(activeAgentHistory.getAgentHistoryOrError(req.agent))
             current  <- IO.fromEither(hist.currentRequest)
@@ -159,13 +167,15 @@ object AltPathsAlgorithmRunner extends LazyLogging {
           } yield {
             val (loopsRemoved, _) = altEdges.filter {
               case (alt, edges) =>
-                val rem  = DriverPolicySpaceV2Ops.coalesceFuturePath(current.remainingRoute, edges)
-                val full = DriverPolicySpaceV2Ops.coalesceFuturePath(current.experiencedRoute, rem)
-                full.toSet.size == full.length
+                val rem     = DriverPolicySpaceV2Ops.coalesceFuturePath(current.remainingRoute, edges)
+                val full    = DriverPolicySpaceV2Ops.coalesceFuturePath(current.experiencedRoute, rem)
+                val fullIds = full.map { _.edgeId }
+                val noLoop  = fullIds.toSet.size == fullIds.length
+                noLoop
             }.unzip
 
             logger.whenInfoEnabled {
-              val nLoopy = alts.length - loopsRemoved.length
+              val nLoopy = altEdges.length - loopsRemoved.length
               if (nLoopy > 0) {
                 logger.info(f"removed $nLoopy paths for agent ${req.agent} that had loops when coalesced")
               }
@@ -192,7 +202,8 @@ object AltPathsAlgorithmRunner extends LazyLogging {
     */
   def reSortPathsForBatch(
     altsResult: KSPAlgorithm.AltPathsResult,
-    activeAgentHistory: ActiveAgentHistory
+    activeAgentHistory: ActiveAgentHistory,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
   ): IO[KSPAlgorithm.AltPathsResult] = {
     val sortResult = altsResult.alternatives.toList
       .traverse {
@@ -202,7 +213,7 @@ object AltPathsAlgorithmRunner extends LazyLogging {
               alts
                 .traverse { path =>
                   DriverPolicySpaceV2Ops
-                    .pathAlternativeTravelTimeEstimate(hist, path)
+                    .pathAlternativeTravelTimeEstimate(rn, hist, path)
                     .map { cost => (path, cost) }
                 }
                 .map { pathsWithCosts =>
