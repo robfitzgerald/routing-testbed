@@ -45,11 +45,18 @@ object DriverPolicySpaceV2Ops {
       overall <- IO.fromEither(current.overallTravelTimeEstimate)
     } yield overall.value
 
-  def pathAlternativeTravelTimeEstimate(history: AgentHistory, path: Path): IO[Double] =
+  def pathAlternativeTravelTimeEstimate(
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    history: AgentHistory,
+    pathSpur: Path
+  ): IO[Double] =
     for {
-      current <- IO.fromEither(history.currentRequest)
-      remainingCost = costOfRemainingWithAlternative(current.remainingRoute)(path)
-    } yield current.experiencedTravelTime.value + remainingCost
+      current   <- IO.fromEither(history.currentRequest)
+      edgesSpur <- pathSpur.traverse { _.toEdgeData(rn) }
+      remWithSpur = coalesceFuturePath(current.remainingRoute, edgesSpur)
+      tt <- travelTime(rn, current.experiencedRoute, remWithSpur).map { _.foldLeft(0.0) { _ + _ } }
+      // remainingCost = costOfRemainingWithAlternative(current.remainingRoute)(path)
+    } yield tt
 
   /**
     * divides free flow travel time by the experienced + estimated travel time for a route
@@ -63,24 +70,27 @@ object DriverPolicySpaceV2Ops {
     *
     * @param rn
     * @param history
-    * @param path
+    * @param spurEdges if included, provides a path spur with origin that is present in the
+    *                  current remaining trip and with destination that matches the destination
+    *                  of the remaining trip
     * @return
     */
   def freeFlowOverTravelTimePercent(
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     history: AgentHistory,
-    spurEdges: List[EdgeData]
+    spurEdges: List[EdgeData] = List.empty
   ): IO[Double] =
     for {
       currentHist <- IO.fromEither(history.currentRequest)
-      // build the proposed (complete) route
       experiencedRoute = currentHist.experiencedRoute
       remWithSpur      = coalesceFuturePath(currentHist.remainingRoute, spurEdges)
       totalRoute       = coalesceFuturePath(experiencedRoute, remWithSpur)
-      // estimate travel time and free flow travel time of this (total) route
-      travelTime = totalRoute.map { _.estimatedTimeAtEdge }.flatten.foldLeft(0.0) { _ + _.value }
+      // estimate travel time over experienced and remaining routes with optional route spur
+      tt <- travelTime(rn, experiencedRoute, remWithSpur).map { _.foldLeft(0.0) { _ + _ } }
+      // travelTime = totalRoute.flatMap { _.estimatedTimeAtEdge }.foldLeft(0.0) { _ + _.value }
+      // get the free flow travel time for the same route
       fftt <- freeFlowTravelTime(rn, totalRoute).map { _.foldLeft(0.0) { _ + _ } }
-      observation  = if (fftt == 0.0) 0.0 else travelTime / fftt
+      observation  = if (tt == 0.0) 0.0 else fftt / tt
       obsTruncated = math.max(0.0, math.min(1.0, observation))
     } yield obsTruncated
 
@@ -100,6 +110,8 @@ object DriverPolicySpaceV2Ops {
         path.takeWhile(_.edgeId != spurOrigin.edgeId) ::: spur
     }
   }
+
+  // def coalesce
 
   /**
     * a path alternative may exit the remaining trip plan at some point in the future.
@@ -158,11 +170,10 @@ object DriverPolicySpaceV2Ops {
   }
 
   /**
-    * find the diffs by edge between observed
-    * travel time and the free flow travel time, and sums them.
+    * computes the free flow travel time for each edge
     *
     * @param rn road network state
-    * @param route list of edges we have traversed with their travel time
+    * @param route list of edges to get free flow travel time for
     * @return the free flow travel time of each edge in the route
     */
   def freeFlowTravelTime(

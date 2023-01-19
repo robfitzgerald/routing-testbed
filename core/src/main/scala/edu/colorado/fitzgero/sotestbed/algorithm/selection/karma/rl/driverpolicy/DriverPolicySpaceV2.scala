@@ -143,7 +143,7 @@ object DriverPolicySpaceV2 {
         for {
           hist       <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
           currentReq <- IO.fromEither(hist.currentRequest)
-          obsResult  <- freeFlowOverTravelTimePercent(rn, hist, currentReq.remainingRoute)
+          obsResult  <- freeFlowOverTravelTimePercent(rn, hist)
           obs = if (invertResult) 1.0 - obsResult else obsResult
         } yield List(obs)
 
@@ -152,8 +152,8 @@ object DriverPolicySpaceV2 {
           hist   <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
           uoSpur <- getUoPathAlternative(req, alts)
           soSpur <- getSoPathAlternative(req, alts)
-          uoTime <- pathAlternativeTravelTimeEstimate(hist, uoSpur)
-          soTime <- pathAlternativeTravelTimeEstimate(hist, soSpur)
+          uoTime <- pathAlternativeTravelTimeEstimate(rn, hist, uoSpur)
+          soTime <- pathAlternativeTravelTimeEstimate(rn, hist, soSpur)
           offset        = if (uoTime == 0.0) 0.0 else (soTime - uoTime) / uoTime
           offsetLimited = math.max(minOffset, math.min(maxOffset, offset))
           obs           = if (invertResult) 1.0 - offsetLimited else offsetLimited
@@ -206,11 +206,11 @@ object DriverPolicySpaceV2 {
         IO.pure(List(obs))
 
       case RiskOffset(invertResult, minOffset, maxOffset) =>
-        val obs = if (invertResult) 0.0 else 1.0
+        val obs = if (invertResult) 1.0 else 0.0
         IO.pure(List(obs))
 
       case BatchRisk(invertResult, minRisk, maxRisk) =>
-        val obs = if (invertResult) 0.0 else 1.0
+        val obs = if (invertResult) 1.0 else 0.0
         IO.pure(List(obs))
     }
   }
