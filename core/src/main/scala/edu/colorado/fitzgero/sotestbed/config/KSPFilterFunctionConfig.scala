@@ -8,6 +8,10 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Meters, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import cats.effect.IO
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 
 /**
   * a filter function which occurs between generating a set of alternative paths and selecting
@@ -37,8 +41,14 @@ object KSPFilterFunctionConfig {
       * @return the request filtered
       */
     def build(): KSPFilterFunction =
-      (_: AgentHistory, request: Request, alts: List[Path], _: Random) => {
-        Some { (request, alts) }
+      (
+        _: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+        _: AgentHistory,
+        request: Request,
+        alts: List[Path],
+        _: Random
+      ) => {
+        IO.pure(Some((request, alts)))
       }
   }
 
@@ -59,7 +69,13 @@ object KSPFilterFunctionConfig {
       * @return the request filtered
       */
     def build(): KSPFilterFunction =
-      (history: AgentHistory, request: Request, alts: List[Path], _: Random) => {
+      (
+        _: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+        history: AgentHistory,
+        request: Request,
+        alts: List[Path],
+        _: Random
+      ) => {
 
         // a mapping from edges to the number of times those edges exist in the experienced route
         val experiencedRouteSet: Map[EdgeId, Int] =
@@ -81,8 +97,8 @@ object KSPFilterFunctionConfig {
             }
           }
 
-        if (acceptableAltPaths.isEmpty) None
-        else Some { (request, acceptableAltPaths) }
+        if (acceptableAltPaths.isEmpty) IO.pure(None)
+        else IO.pure(Some((request, acceptableAltPaths)))
       }
   }
 
@@ -101,13 +117,19 @@ object KSPFilterFunctionConfig {
       * @return the request filtered
       */
     def build(): KSPFilterFunction =
-      (history: AgentHistory, request: Request, alts: List[Path], random: Random) => {
+      (
+        _: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+        history: AgentHistory,
+        request: Request,
+        alts: List[Path],
+        random: Random
+      ) => {
         val originalDistance: Meters   = history.first.tripDistance
         val currentDistance: Meters    = history.currentRequest.toOption.map { _.remainingDistance }.getOrElse(Meters.Zero)
         val proportion: Double         = math.min(1.0, math.max(0.0, currentDistance.value / originalDistance.value))
         val allowSOReplanning: Boolean = random.nextDouble() < proportion
-        if (allowSOReplanning) Some { (request, alts) }
-        else Some { (request, alts.take(1)) }
+        if (allowSOReplanning) IO.pure(Some((request, alts)))
+        else IO.pure(Some((request, alts.take(1))))
       }
   }
 
@@ -123,11 +145,17 @@ object KSPFilterFunctionConfig {
       * @return the request filtered
       */
     def build(): KSPFilterFunction =
-      (history: AgentHistory, request: Request, alts: List[Path], random: Random) => {
-        for {
-          (limitReq, limitAlts) <- limitFn(history, request, alts, random)
-          result                <- sampleFn(history, limitReq, limitAlts, random)
-        } yield result
+      (
+        rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+        history: AgentHistory,
+        request: Request,
+        alts: List[Path],
+        random: Random
+      ) => {
+        limitFn(rn, history, request, alts, random).flatMap {
+          case None                        => IO.pure(None)
+          case Some((limitReq, limitAlts)) => sampleFn(rn, history, limitReq, limitAlts, random)
+        }
       }
   }
 
@@ -140,7 +168,13 @@ object KSPFilterFunctionConfig {
       * @return the request filtered
       */
     def build(): KSPFilterFunction =
-      (_: AgentHistory, req: Request, paths: List[Path], _: Random) => {
+      (
+        _: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+        _: AgentHistory,
+        req: Request,
+        paths: List[Path],
+        _: Random
+      ) => {
         val limitedPaths: List[Path] = for {
           path        <- paths
           limitedPath <- limitFunction.limitPath(path)
@@ -148,7 +182,7 @@ object KSPFilterFunctionConfig {
         val result: Option[(Request, List[Path])] =
           if (limitedPaths.isEmpty) None
           else Some { (req, limitedPaths) }
-        result
+        IO.pure(result)
       }
   }
 
@@ -195,6 +229,23 @@ object KSPFilterFunctionConfig {
       * @return the request filtered
       */
     def build(): KSPFilterFunction = KSPFilter.combine(fns)
+
+  }
+
+  final case class PickUoAndSoPath(targetIncrease: Double) extends KSPFilterFunctionConfig {
+
+    def build(): KSPFilterFunction =
+      (
+        rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+        hist: AgentHistory,
+        req: Request,
+        paths: List[Path],
+        rng: Random
+      ) => {
+        KSPFilter
+          .pickUoAndSoPathFromPathAlternates(hist, rn, paths, targetIncrease)
+          .map { _.map { filteredPaths => (req, filteredPaths) } }
+      }
 
   }
 }

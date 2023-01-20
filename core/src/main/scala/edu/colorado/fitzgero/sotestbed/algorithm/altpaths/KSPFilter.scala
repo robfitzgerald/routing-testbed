@@ -7,8 +7,16 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentHistory
 import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, TravelTimeSeconds}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, PathSegment}
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
+import cats.effect.IO
+import cats.implicits._
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2Ops
+import com.typesafe.scalalogging.LazyLogging
 
-object KSPFilter {
+object KSPFilter extends LazyLogging {
 
   /**
     * a filter function which occurs between generating a set of alternative paths and selecting
@@ -17,7 +25,13 @@ object KSPFilter {
     * any update to the alternative paths (such as removing long paths or only keeping the first 5
     * minutes of each path)
     */
-  type KSPFilterFunction = (AgentHistory, Request, List[Path], Random) => Option[(Request, List[Path])]
+  type KSPFilterFunction = (
+    RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    AgentHistory,
+    Request,
+    List[Path],
+    Random
+  ) => IO[Option[(Request, List[Path])]]
 
   private[this] final case class CombinedKSPFilterFunctionAccumulator(
     history: AgentHistory,
@@ -34,20 +48,43 @@ object KSPFilter {
     */
   def combine(kspFilterFunctions: List[KSPFilterFunction]): KSPFilterFunction = {
 
-    (history: AgentHistory, request: Request, alts: List[Path], random: Random) =>
+    (
+      rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+      history: AgentHistory,
+      request: Request,
+      alts: List[Path],
+      random: Random
+    ) =>
       {
 
-        val initialAccumulator: Option[(Request, List[Path])] = Some((request, alts))
+        val initialAccumulator: IO[Option[(Request, List[Path])]] = IO.pure(Some((request, alts)))
 
-        val result: Option[(Request, List[Path])] = kspFilterFunctions.foldLeft(initialAccumulator) { (acc, fn) =>
-          val filterFunctionResult: Option[(Request, List[Path])] = for {
-            (accReq, accAlts) <- acc
-            result            <- fn(history, accReq, accAlts, random)
-          } yield result
-          filterFunctionResult
-        }
+        // todo: stack-safe me
+        def _combine(
+          acc: Option[(Request, List[Path])] = Some((request, alts)),
+          remaining: List[KSPFilterFunction] = kspFilterFunctions
+        ): IO[Option[(Request, List[Path])]] =
+          acc match {
+            case None => IO.pure(None)
+            case Some((accReq, accPaths)) =>
+              remaining match {
+                case Nil => IO.pure(acc)
+                case fn :: rest =>
+                  fn(rn, history, accReq, accPaths, random)
+                    .flatMap { result => _combine(result, rest) }
+              }
+          }
 
-        result
+        _combine()
+        // val result: Option[(Request, List[Path])] = kspFilterFunctions.foldLeft(initialAccumulator) { (acc, fn) =>
+        //   val filterFunctionResult: Option[(Request, List[Path])] = for {
+        //     (accReq, accAlts) <- acc
+        //     result            <- fn(rn, history, accReq, accAlts, random)
+        //   } yield result
+        //   filterFunctionResult
+        // }
+
+        // result
       }
   }
 
@@ -103,5 +140,51 @@ object KSPFilter {
       }
     }
 
+  }
+
+  /**
+    * after computing a batch of alternatives, we attach each to the current trip plan
+    * and find out the sort ordering. each cost should estimate the full path plus
+    * the path spur. the resulting sorted path lists make it so that the 0th path
+    * is the most user-optimal, and the remaining paths appear in increasing system-
+    * optimizing order, so that the last path is most-system-optimizing.
+    *
+    * @param altsResult the path alternatives to sort
+    * @param activeAgentHistory dataset providing the current trip estimate for each agent
+    * @return the path alternatives re-sorted
+    */
+  def pickUoAndSoPathFromPathAlternates(
+    agentHistory: AgentHistory,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    paths: List[Path],
+    targetIncrease: Double
+  ): IO[Option[List[Path]]] = {
+    val pathsSortedByCostResult = paths
+      .traverse { path =>
+        DriverPolicySpaceV2Ops
+          .pathAlternativeTravelTimeEstimate(rn, agentHistory, path)
+          .map { cost => (path, cost) }
+      }
+      .map { _.sortBy { case (_, tt) => tt } }
+
+    val result: IO[Option[List[Path]]] = pathsSortedByCostResult.map {
+      case Nil                      => None
+      case uo :: Nil                => None
+      case (uoPath, uoCost) :: rest =>
+        // the head path is the "UO option"
+        // find the path alternative which is closest to the target increase from the UO option
+        val targetMagnitude = (1.0 + targetIncrease) * uoCost
+        val (soPath, soCost, distance) = rest
+          .map { case (p, c) => (p, c, math.abs(c - targetMagnitude)) }
+          .sortBy { case (p, c, dist) => dist }
+          .head
+        logger.info(
+          f"filtered alt paths to UO/SO pair with costs $uoCost, $soCost (target increase ${targetIncrease * 100}%%"
+        )
+        val filtered = List(uoPath, soPath)
+        Some(filtered)
+    }
+
+    result
   }
 }

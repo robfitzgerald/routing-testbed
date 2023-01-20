@@ -15,6 +15,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
+import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
 
 /**
   * as the underlying MCTS library enforces/misuses IO, this class accomodates for that
@@ -70,33 +71,40 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm(
 
       for {
         altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, costFunction)
+        altsFiltered <- AltPathsAlgorithmRunner.applyKspFilter(
+          altsResult.alternatives,
+          kspFilterFunction,
+          activeAgentHistory,
+          roadNetwork,
+          rng
+        )
         endOfKspTime = RunTime(System.currentTimeMillis)
         kspRuntime   = endOfKspTime - startTime
       } yield {
-        // first, apply the ksp filter function
-        val filteredAlts: Map[Request, List[Path]] = altsResult.alternatives.flatMap {
-          case (req, alts) =>
-            activeAgentHistory.observedRouteRequestData.get(req.agent) match {
-              case None =>
-                logger.warn(f"agent ${req.agent} with alts has no AgentHistory")
-                Some { req -> alts }
-              case Some(agentHistory) =>
-                kspFilterFunction(agentHistory, req, alts, rng) match {
-                  case None =>
-                    logger.debug(f"ksp filter fn removed agent ${req.agent}")
-                    None
-                  case Some(filtered) =>
-                    logger.debug(f"ksp filter processed agent ${req.agent}")
-                    Some { filtered }
-                }
-            }
-        }
+        // // first, apply the ksp filter function
+        // val filteredAlts: Map[Request, List[Path]] = altsResult.alternatives.flatMap {
+        //   case (req, alts) =>
+        //     activeAgentHistory.observedRouteRequestData.get(req.agent) match {
+        //       case None =>
+        //         logger.warn(f"agent ${req.agent} with alts has no AgentHistory")
+        //         Some { req -> alts }
+        //       case Some(agentHistory) =>
+        //         kspFilterFunction(roadNetwork, agentHistory, req, alts, rng) match {
+        //           case None =>
+        //             logger.debug(f"ksp filter fn removed agent ${req.agent}")
+        //             None
+        //           case Some(filtered) =>
+        //             logger.debug(f"ksp filter processed agent ${req.agent}")
+        //             Some { filtered }
+        //         }
+        //     }
+        // }
 
         val selectionResult: SelectionAlgorithm.SelectionAlgorithmResult =
           selectionAlgorithm
             .selectRoutes(
               "unbatched",
-              filteredAlts,
+              altsFiltered.getOrElse(Map.empty),
               roadNetwork,
               Map.empty,
               pathToMarginalFlowsFunction,
@@ -123,7 +131,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm(
 
           val result = RoutingAlgorithm.Result(
             altsResult.alternatives,
-            filteredAlts,
+            altsFiltered.getOrElse(Map.empty),
             selectionResultWithKSPPaths,
             activeAgentHistory,
             kspRuntime,

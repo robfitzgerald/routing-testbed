@@ -32,7 +32,7 @@ final case class AltPathsAlgorithmRunner(
     batchId: String,
     reqs: List[Request],
     activeAgentHistory: ActiveAgentHistory,
-    roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR]
+    rn: RoadNetwork[IO, Coordinate, EdgeBPR]
   ): IO[AltPathsAlgorithmResult] = {
 
     val rng: Random = new Random(seed)
@@ -42,45 +42,27 @@ final case class AltPathsAlgorithmRunner(
 
     // run the KSP algorithm. if required, re-populate the KSP result's link costs.
     val result = for {
-      altsResult <- altPathsAlgorithm.generateAlts(reqs, roadNetwork, overrideCostFunction)
+      altsResult <- altPathsAlgorithm.generateAlts(reqs, rn, overrideCostFunction)
       startTime  <- IO { RunTime(System.currentTimeMillis) }
       altsWithCurrentCosts <- AltPathsAlgorithmRunner.handleAltsResultNetworkCosts(
         useFreeFlowNetworkCostsInPathSearch,
         altsResult,
-        roadNetwork,
+        rn,
         costFunction
       )
-      altsNoLoop <- AltPathsAlgorithmRunner.removePathsWithLoops(altsWithCurrentCosts, activeAgentHistory, roadNetwork)
-      altsSorted <- AltPathsAlgorithmRunner.reSortPathsForBatch(altsNoLoop, activeAgentHistory, roadNetwork)
+      altsNoLoop <- AltPathsAlgorithmRunner.removePathsWithLoops(altsWithCurrentCosts, activeAgentHistory, rn)
+      altsSorted <- AltPathsAlgorithmRunner.reSortPathsForBatch(altsNoLoop, activeAgentHistory, rn)
+      altsFiltered <- AltPathsAlgorithmRunner.applyKspFilter(
+        altsSorted.alternatives,
+        kspFilterFunction,
+        activeAgentHistory,
+        rn,
+        rng
+      )
     } yield {
 
-      // apply the ksp filter function
-      val altsWithFilterApplied: Map[Request, List[Path]] = altsSorted.alternatives.flatMap {
-        case (req, alts) =>
-          activeAgentHistory.observedRouteRequestData.get(req.agent) match {
-            case None =>
-              logger.warn(f"agent ${req.agent} with alts has no AgentHistory")
-              Some(req -> alts)
-            case Some(agentHistory) =>
-              kspFilterFunction(agentHistory, req, alts, rng) match {
-                case None =>
-                  logger.debug(f"ksp filter fn removed agent ${req.agent}")
-                  None
-                case Some((req, Nil)) =>
-                  logger.debug(f"ksp filter returned request with no paths for agent ${req.agent}")
-                  None
-                case Some(filtered) =>
-                  logger.debug(f"ksp filter processed agent ${req.agent}")
-                  Some(filtered)
-              }
-          }
-      }
-
-      val filteredAlts: Option[Map[Request, List[Path]]] =
-        if (altsWithFilterApplied.isEmpty) None else Some(altsWithFilterApplied)
-
       val endOfKspTime = RunTime(System.currentTimeMillis) - startTime + altsResult.runtime
-      AltPathsAlgorithmResult(batchId, altsSorted.alternatives, filteredAlts, endOfKspTime)
+      AltPathsAlgorithmResult(batchId, altsSorted.alternatives, altsFiltered, endOfKspTime)
     }
 
     result
@@ -225,6 +207,48 @@ object AltPathsAlgorithmRunner extends LazyLogging {
       .map { _.toMap }
 
     sortResult.map { sortedAlts => altsResult.copy(alternatives = sortedAlts) }
+  }
+
+  def applyKspFilter(
+    alts: Map[Request, List[Path]],
+    kspFilterFunction: KSPFilterFunction,
+    activeAgentHistory: ActiveAgentHistory,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    rng: Random
+  ): IO[Option[Map[Request, List[Path]]]] = {
+
+    // filter the alts using the filter function
+    val filterResult = alts.toList.traverse {
+      case (req, alts) =>
+        activeAgentHistory.observedRouteRequestData.get(req.agent) match {
+          case None =>
+            IO.raiseError(new Error(f"agent ${req.agent} with alts has no AgentHistory"))
+          case Some(agentHistory) =>
+            kspFilterFunction(rn, agentHistory, req, alts, rng)
+        }
+    }
+
+    // find empty results and log/remove them
+    val cleanupResult = filterResult.map {
+      _.flatMap {
+        case None =>
+          logger.debug(f"ksp filter fn removed agent")
+          None
+        case Some((req, Nil)) =>
+          logger.debug(f"ksp filter returned request with no paths for agent ${req.agent}")
+          None
+        case Some((req, filtered)) =>
+          logger.debug(f"ksp filter processed agent ${req.agent}")
+          Some((req, filtered))
+      }
+    }
+
+    // if the resulting batch is empty, return None to signal that this batch has been removed
+    cleanupResult.map {
+      case Nil      => None
+      case nonEmpty => Some(nonEmpty.toMap)
+    }
+
   }
 
   case class AltsResultData(
