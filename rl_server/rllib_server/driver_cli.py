@@ -45,13 +45,19 @@ parser.add_argument(
     "--run=[IMPALA|PPO|R2D2]",
 )
 parser.add_argument(
-    "--stop-iters", type=int, default=6, help="Number of iterations to train."
+    "--stop-iters", type=int, default=1_000_000, help="Number of iterations to train."
 )
 parser.add_argument(
     "--stop-timesteps",
     type=int,
     help="Number of timesteps to train.",
 )
+parser.add_argument(
+    "--stop-agent-timesteps",
+    type=int,
+    help="Number of agent timesteps to train."
+)
+
 parser.add_argument(
     "--stop-reward",
     type=float,

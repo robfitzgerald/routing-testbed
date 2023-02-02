@@ -207,7 +207,7 @@ def run():
         #
         # The dataflow here can vary per algorithm. For example, PPO further
         # divides the train batch into minibatches for multi-epoch SGD.
-        "rollout_fragment_length": 200,
+        "rollout_fragment_length": 200,  # default
 
         # Training batch size, if applicable. Should be >= rollout_fragment_length.
         # Samples batches will be concatenated together to a batch of this size,
@@ -216,6 +216,7 @@ def run():
         # RJF: 8000 agents, 2 trips, 20% adoption, avg 7 replannings -> 22,400
         # agent observation/action/reward tuples to train from?
         "train_batch_size": 1000,
+        # "train_batch_size": 200,  # default
 
         # Number of environments to evaluate vector-wise per worker. This enables
         # model inference batching, which can improve performance for inference
@@ -389,16 +390,24 @@ def run():
                 checkpoint = algo.save()
                 print("Last checkpoint", checkpoint)
 
-                ts += results["timesteps_total"]
+                ts = results["timesteps_total"]
+                ats = results.get('agent_timesteps_total')
+
                 met_reward_condition = results["policy_reward_mean"]["driver"] >= args.stop_reward
                 met_ts_condition = ts >= args.stop_timesteps if args.stop_timesteps is not None else False
+                met_agent_ts_condition = ats >= args.stop_agent_timesteps if args.stop_agent_timesteps is not None else False
+
                 print(f"met reward stopping condition? {met_reward_condition}")
                 if args.stop_timesteps is not None:
                     print(
                         f"met timestep stopping condition? {met_ts_condition}")
+                if args.stop_agent_timesteps is not None:
+                    print(
+                        f"met agent timestep stopping condition? {met_agent_ts_condition}")
 
                 print(f"end of training iteration #{i}")
-                if met_reward_condition or met_ts_condition:
+                stop_plz = met_reward_condition or met_ts_condition or met_agent_ts_condition
+                if stop_plz:
                     break
 
             print('finished training, terminating server.')
