@@ -106,10 +106,11 @@ class DriverObsSpace(Enum):
 
             DriverObsSpace.THRESHOLD_NETWORK_SIGNAL: [0, 1],
 
+            # DriverObsSpaceV2
             DriverObsSpace.EXPERIENCED_DISTANCE_PERCENT: [0, 1],
             DriverObsSpace.FREE_FLOW_OVER_TRAVEL_TIME_PERCENT: [0, 1],
             DriverObsSpace.RISK_OFFSET: [0, 1],
-            DriverObsSpace.BATCH_RISK: [0, 1]
+            DriverObsSpace.BATCH_RISK: [-1, 1]
         }
         return _OBSERVATION_SPACE_MAPPING.get(driver_obs_space)
 

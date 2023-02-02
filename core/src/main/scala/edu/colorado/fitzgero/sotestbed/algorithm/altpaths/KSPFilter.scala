@@ -178,8 +178,10 @@ object KSPFilter extends LazyLogging {
           .map { case (p, c) => (p, c, math.abs(c - targetMagnitude)) }
           .sortBy { case (p, c, dist) => dist }
           .head
+        val incr    = if (uoCost == 0.0) 0.0 else (soCost - uoCost) / uoCost
+        val incrStr = f"${incr * 100.0}%.2f%%"
         logger.info(
-          f"filtered alt paths to UO/SO pair with costs $uoCost, $soCost (target increase ${targetIncrease * 100}%%"
+          f"filtered alt paths to UO/SO pair with costs $uoCost, $soCost ($incrStr difference)"
         )
         val filtered = List(uoPath, soPath)
         Some(filtered)

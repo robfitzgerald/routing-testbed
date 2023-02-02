@@ -77,11 +77,8 @@ object DriverPolicySpaceV2 {
     * @param maxOffset offset is unbounded; this max value is used to limit results.
     *                  by default the value is 1.0
     */
-  final case class RiskOffset(
-    invertResult: Boolean = false,
-    minOffset: Double = 0.0,
-    maxOffset: Double = 1.0
-  ) extends DriverPolicySpaceV2
+  final case class RiskOffset(invertResult: Boolean = false, minOffset: Double = 0.0, maxOffset: Double = 1.0)
+      extends DriverPolicySpaceV2
 
   /**
     * this is a batch-level observation that is the same for each member of the batch.
@@ -94,11 +91,8 @@ object DriverPolicySpaceV2 {
     * @param minRisk limit risk to at least this value, default 0.0
     * @param maxRisk limit risk to as most this value, default 0.0
     */
-  final case class BatchRisk(
-    invertResult: Boolean = false,
-    minRisk: Double = 0.0,
-    maxRisk: Double = 1.0
-  ) extends DriverPolicySpaceV2
+  final case class BatchRisk(invertResult: Boolean = false, minRisk: Double = 0.0, maxRisk: Double = 1.0)
+      extends DriverPolicySpaceV2
 
   implicit class DPSV2Extensions(dps: DriverPolicySpaceV2) {
 
@@ -156,16 +150,16 @@ object DriverPolicySpaceV2 {
           soTime <- pathAlternativeTravelTimeEstimate(rn, hist, soSpur)
           offset        = if (uoTime == 0.0) 0.0 else (soTime - uoTime) / uoTime
           offsetLimited = math.max(minOffset, math.min(maxOffset, offset))
-          obs           = if (invertResult) 1.0 - offsetLimited else offsetLimited
+          obs           = if (invertResult) maxOffset - offsetLimited else offsetLimited
         } yield List(obs)
 
       case BatchRisk(invertResult, minRisk, maxRisk) =>
         // could be a config parameter if we explore alternatives like t-test
         val fn = BatchExternalitiesMetric.jainDiff
         for {
-          extResult <- BatchFairnessExternalities.calculate(rn, alts, sig, hists, fn)
-          obsLimited = math.max(minRisk, math.min(maxRisk, extResult.value))
-          obs        = if (invertResult) 1.0 - obsLimited else obsLimited
+          batchRisk <- BatchFairnessExternalities.calculate(rn, alts, sig, hists, fn)
+          obsLimited = math.max(minRisk, math.min(maxRisk, batchRisk.value))
+          obs        = if (invertResult) maxRisk - obsLimited else obsLimited
         } yield List(obs)
 
     }
@@ -200,17 +194,20 @@ object DriverPolicySpaceV2 {
         IO.pure(List(obs))
 
       case FreeFlowOverTravelTimePercent(invertResult) =>
-        val pct      = freeFlowTravelTime.value / finalTravelTime.value
+        val pct      = freeFlowTravelTime.value.toDouble / finalTravelTime.value.toDouble
         val pctLimit = math.max(0.0, math.min(1.0, pct))
         val obs      = if (invertResult) 1.0 - pctLimit else pctLimit
         IO.pure(List(obs))
 
       case RiskOffset(invertResult, minOffset, maxOffset) =>
-        val obs = if (invertResult) 1.0 else 0.0
+        val obs = if (invertResult) maxOffset else minOffset
         IO.pure(List(obs))
 
       case BatchRisk(invertResult, minRisk, maxRisk) =>
-        val obs = if (invertResult) 1.0 else 0.0
+        // batch risk is non-monotonic, so a zero value is the observation of
+        // no risk. this allows the user to override zero with some other minimum value.
+        val zeroish = math.max(0.0, minRisk)
+        val obs     = if (invertResult) maxRisk else zeroish
         IO.pure(List(obs))
     }
   }

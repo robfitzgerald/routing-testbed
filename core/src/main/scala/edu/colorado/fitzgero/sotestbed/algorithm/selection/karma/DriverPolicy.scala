@@ -119,6 +119,8 @@ object DriverPolicy extends LazyLogging {
 
   implicit class DriverPolicyExtensionMethods(policy: DriverPolicy) {
 
+    import DriverPolicySpaceV2Ops._
+
     def header: String = policy match {
       case _: RandomPolicy          => "bid"
       case _: Fixed                 => "bid"
@@ -172,36 +174,57 @@ object DriverPolicy extends LazyLogging {
 
         case DelayProportional(maxBid) =>
           alts.keys.toList.traverse { req =>
-            val bidIO: IO[Bid] = for {
+            // rjf 2023-01-30: revised to use Driver Policy definition of "delay" as
+            // 1 - (free flow travel time / trip travel time)
+            val bidForRequest = for {
               karmaBalance <- IO.fromEither(
                 bank.get(req.agent).toRight(new Error(s"agent ${req.agent} not found in bank"))
               )
-              oldest     <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
-              latest     <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
-              oldestTime <- IO.fromEither(oldest.tripTravelTimeEstimate)
-              latestTime <- IO.fromEither(latest.overallTravelTimeEstimate)
-            } yield {
-              // as proportional increase, lower bounded by zero
-              // calculated in real numbers, then discretized back to Karma at the end
-              val oldestTimeD = oldestTime.value.toDouble
-              val latestTimeD = latestTime.value.toDouble
-              val delayProportion =
-                if (oldestTimeD == 0.0) 0.0
-                else math.min(1.0, math.max(0.0, (latestTimeD - oldestTimeD) / oldestTimeD))
-
-              val upperBidValue = maxBid match {
+              hist       <- IO.fromEither(activeAgentHistory.getAgentHistoryOrError(req.agent))
+              currentReq <- IO.fromEither(hist.currentRequest)
+              ffOverTt   <- freeFlowOverTravelTimePercent(roadNetwork, hist)
+              delay = 1.0 - ffOverTt
+              upperBidValue = maxBid match {
                 case Some(mb) => math.min(mb.value, karmaBalance.value)
                 case None     => karmaBalance.value
               }
-              val karmaBidTarget = delayProportion * upperBidValue
+              karmaBidTarget = delay * upperBidValue
+            } yield Bid(req, Karma(karmaBidTarget.toLong))
 
-              Bid(req, Karma(karmaBidTarget.toLong))
-            }
+            bidForRequest
 
-            bidIO
+            // val bidIO: IO[Bid] = for {
+            //   karmaBalance <- IO.fromEither(
+            //     bank.get(req.agent).toRight(new Error(s"agent ${req.agent} not found in bank"))
+            //   )
+            //   oldest     <- IO.fromEither(activeAgentHistory.getOldestDataOrError(req.agent))
+            //   latest     <- IO.fromEither(activeAgentHistory.getNewestDataOrError(req.agent))
+            //   oldestTime <- IO.fromEither(oldest.tripTravelTimeEstimate)
+            //   latestTime <- IO.fromEither(latest.overallTravelTimeEstimate)
+            // } yield {
+            //   // as proportional increase, lower bounded by zero
+            //   // calculated in real numbers, then discretized back to Karma at the end
+            //   val oldestTimeD = oldestTime.value.toDouble
+            //   val latestTimeD = latestTime.value.toDouble
+            //   val delayProportion =
+            //     if (oldestTimeD == 0.0) 0.0
+            //     else math.min(1.0, math.max(0.0, (latestTimeD - oldestTimeD) / oldestTimeD))
+
+            //   val upperBidValue = maxBid match {
+            //     case Some(mb) => math.min(mb.value, karmaBalance.value)
+            //     case None     => karmaBalance.value
+            //   }
+            //   val karmaBidTarget = delayProportion * upperBidValue
+
+            //   Bid(req, Karma(karmaBidTarget.toLong))
+            // }
+
+            // bidIO
           }
 
         case DelayWithKarmaMapping(unit, maxBid) =>
+          // this should probably be removed and "mapping" should just be
+          // an optional coefficient to multiply with, defaulting to 1 (or None)
           alts.keys.toList.traverse { req =>
             val bidIO: IO[Bid] = for {
               karmaBalance <- IO.fromEither(

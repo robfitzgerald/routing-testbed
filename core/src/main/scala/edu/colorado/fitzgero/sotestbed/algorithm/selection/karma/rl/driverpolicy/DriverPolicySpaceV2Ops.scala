@@ -73,7 +73,7 @@ object DriverPolicySpaceV2Ops {
     * @param spurEdges if included, provides a path spur with origin that is present in the
     *                  current remaining trip and with destination that matches the destination
     *                  of the remaining trip
-    * @return
+    * @return         ff / tt, which has it that 1.0 is NO delay, and 0.0 is close to infinite delays
     */
   def freeFlowOverTravelTimePercent(
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],

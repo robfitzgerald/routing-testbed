@@ -177,7 +177,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
       val agentExperienceFilePath: String = config.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
       agentExperiencePrintWriter = new PrintWriter(agentExperienceFilePath)
-      agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,distance,replannings\n")
+      agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,freeFlowTravelTime,distance,replannings\n")
 
       val agentPathFilePath: String = config.experimentLoggingDirectory.resolve(s"agentPath.csv").toString
       agentPathPrintWriter = new PrintWriter(agentPathFilePath)
@@ -468,7 +468,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                           MATSimRouteToLineString(agentExperiencedRoute, qSim).getOrElse("LINESTRING EMPTY")
 
                         val agentExperienceRow: String =
-                          s"$agentId,$requestClass,$departureTime,$travelTimeSeconds,$distance,$replannings\n"
+                          s"$agentId,$requestClass,$departureTime,$travelTimeSeconds,$freeFlowTravelTime,$distance,$replannings\n"
                         val agentPathRow: String = s"$agentId,$linestring\n"
 
                         agentExperiencePrintWriter.append(agentExperienceRow)

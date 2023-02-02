@@ -1,6 +1,6 @@
 import sbtassembly.MergeStrategy
 
-val packageVersion = "2.12.0"
+val packageVersion = "2.12.2"
 val sVersion       = "2.13.6"
 val circeVersion   = "0.14.1"
 
