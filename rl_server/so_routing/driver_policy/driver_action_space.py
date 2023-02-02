@@ -9,7 +9,7 @@ def build_action_space(space_idx: int, max_bid: int, agents: Optional[List[str]]
 
     _SPACE = [
         # DISCRETE SPACES
-        spaces.Discrete(max_bid),
+        spaces.Discrete(max_bid + 1),
         # CONTINUOUS SPACES
         spaces.Box(
             low=np.array([0.0]),
