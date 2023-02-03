@@ -79,6 +79,20 @@ def build_observation_space(
         return spaces.Dict(mapping)
 
 
+def build_marl_obs_space(
+        n_agents: int,
+        feature_names: List[NetworkObsSpace]
+) -> spaces.Space:
+    """
+    the implementation for QMIX in RLlib requires the observation space is a spaces.Tuple.
+    this makes sense; we flatten the separated agents into a Tuple of observations without
+    the agent id. 
+    see Grouping.
+    """
+    obs = build_observation_space(feature_names)
+    return spaces.Tuple([obs for _ in range(n_agents)])
+
+
 class NetworkObsSpaceEncoder(JSONEncoder):
     def default(self, o):
         return o.name

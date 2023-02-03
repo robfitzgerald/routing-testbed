@@ -41,6 +41,17 @@ def build_action_space(
         return spaces.Dict(mapping)
 
 
+def build_marl_act_space(n_agents: int) -> spaces.Space:
+    """
+    the implementation for QMIX in RLlib requires the action space is a spaces.Tuple.
+    this makes sense; we flatten the separated agents into a Tuple of observations without
+    the agent id. 
+    see Grouping.
+    """
+    obs = build_action_space(1)  # assumes NetworkActionSpace.CONTINUOUS
+    return spaces.Tuple([obs for _ in range(n_agents)])
+
+
 class NetworkActionSpace(Enum):
     DISCRETE = 0
     CONTINUOUS = 1

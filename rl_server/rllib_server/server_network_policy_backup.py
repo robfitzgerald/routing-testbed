@@ -32,12 +32,9 @@ import ray
 from ray import air, tune
 from ray.rllib.algorithms.registry import get_algorithm_class
 from ray.rllib.algorithms.qmix import QMixConfig
-# from ray.rllib.env import ExternalMultiAgentEnv
-from rl_server.so_routing.network_policy.grouping import Grouping
+from ray.rllib.env import ExternalMultiAgentEnv
 from rl_server.rllib_server.network_cli import parser
-from rl_server.so_routing.network_policy.network_obs_space import NetworkObsSpace
-import rl_server.so_routing.network_policy.network_obs_space as rsnnos
-import rl_server.so_routing.network_policy.network_act_space as rsnnas
+from rl_server.so_routing.network_policy.network_obs_space import NetworkObsSpace, build_observation_space
 
 from ray.rllib.examples.custom_metrics_and_callbacks import MyCallbacks
 from ray.tune.logger import pretty_print
@@ -92,44 +89,71 @@ def run():
             return None
 
     try:
-        feature_strings = args.feature_names.split(',')
-        features = list(map(lambda s: NetworkObsSpace[s], feature_strings))
+        feature_list = args.feature_names.split(',')
+        o_names = list(map(lambda s: NetworkObsSpace[s], feature_list))
     except Exception as e:
         raise Exception(f"failed parsing observation features") from e
 
-    grouping = Grouping.build(args.grouping_file)
-    obs_space = rsnnos.build_marl_obs_space(grouping.n_agents, features)
-    act_space = rsnnas.build_marl_act_space(grouping.n_agents)
-    # obs_space_instance = list(obs_space.values())[0]
-    # act_space_instance = list(act_space.values())[0]
+    # invariant: we sort agent ids within a batch grouping on both server + client
+    # side to ensure that the ordering of grouped {obs|act|rew} entries are idempotent
+    grouping = None
+    agents_list = None
 
-    # determine how to map agents to Policies (helpful if we have multiple policies)
+    if args.agents_grid is not None:
+        agents_list = pd.read_csv(args.agents_grid,
+                                  dtype={'grid_id': str}).grid_id.to_list()
+        grouping = {SINGLE_GROUP_NAME: agents_list}
+        print(
+            f'got {len(agents_list)} agent names from grid file {args.agents_grid}')
+
+    if args.grouping_file is not None:
+        with open(args.grouping_file, 'r') as f:
+            grouping = json.loads(f.read())
+            agents_list = [agent for group in grouping.values()
+                           for agent in group]
+        print(
+            f'grouping file with {len(agents_list)} agents in {len(grouping)} groups')
+
+    elif args.n_agents is not None:
+        # use an enumeration for the group name
+        agents_list = [str(i) for i in range(args.n_agents)]
+        grouping = {SINGLE_GROUP_NAME: agents_list}
+        print(
+            f'grouping enumeration with {len(agents_list)} agents in {len(grouping)} groups')
+
+    else:
+        print('no grouping provided, expecting single agent queries')
+
+    obs_space = build_observation_space(o_names, agents_list)
+    act_space = args.action_space.action_space(agents_list)
+    obs_space_instance = list(obs_space.values())[0]
+    act_space_instance = list(act_space.values())[0]
+
     if args.single_policy:
         print("building network agent with a single shared policy")
         policies = {
-            SINGLE_GROUP_NAME: PolicySpec(None, obs_space, act_space),
+            SINGLE_GROUP_NAME: PolicySpec(None, obs_space_instance, act_space_instance),
         }
         policy_mapping_fn = lambda agent_id, episode, worker, **kwargs: SINGLE_GROUP_NAME
-    # elif len(agents_list) == 0:
-    #     raise ValueError(
-    #         "use --single-policy if no agent list/grouping is provided")
+    elif len(agents_list) == 0:
+        raise ValueError(
+            "use --single-policy if no agent list/grouping is provided")
     else:
-        raise Exception(f'only single policy supported for now, fix this!')
-        # print(f"building network agent with {len(agents_list)} policies")
+        print(f"building network agent with {len(agents_list)} policies")
         # policy names are used as TensorFlow root scope names and have a restricted naming convention
         # https://stackoverflow.com/questions/72673927/valueerror-penguin-classifier-is-not-a-valid-root-scope-name
 
-        # def make_policy():
-        #     return PolicySpec(None, obs_space_instance, act_space_instance)
-        # policies = {agent.replace("#", "."): make_policy()
-        #             for agent in agents_list}
-        # policy_mapping_fn = lambda agent_id, episode, worker, **kwargs: agent_id.replace(
-        #     "#", ".")
+        def make_policy():
+            return PolicySpec(None, obs_space_instance, act_space_instance)
+        policies = {agent.replace("#", "."): make_policy()
+                    for agent in agents_list}
+        policy_mapping_fn = lambda agent_id, episode, worker, **kwargs: agent_id.replace(
+            "#", ".")
 
-    print("observation space")
-    print(obs_space)
-    print("action space")
-    print(act_space)
+    print("observation space example")
+    print(obs_space_instance)
+    print("action space example")
+    print(act_space_instance)
     print(f"policies: {len(policies)}")
 
     # print(json.dumps(policies, indent=4))

@@ -64,7 +64,7 @@ parser.add_argument(
     "--run=[IMPALA|PPO|R2D2]",
 )
 parser.add_argument(
-    "--stop-iters", type=int, default=6, help="Number of iterations to train."
+    "--stop-iters", type=int, default=100, help="Number of iterations to train."
 )
 parser.add_argument(
     "--stop-timesteps",
@@ -109,25 +109,26 @@ parser.add_argument(
 
 parser.add_argument(
     "--grouping-file",
-    type=str,
+    type=Path,
     help="file with list of agents under control used in multiagent RL",
-    default=None
+    # default=None
+    required=True
 )
-parser.add_argument(
-    "--n-agents",
-    type=int,
-    help=(
-        "in lieu of a grouping file, the number of network agents to build "
-        "an enumeration from"
-    ),
-    default=None
-)
-parser.add_argument(
-    '--agents-grid',
-    type=str,
-    help="a tabular grid file with grid_id column",
-    default=None
-)
+# parser.add_argument(
+#     "--n-agents",
+#     type=int,
+#     help=(
+#         "in lieu of a grouping file, the number of network agents to build "
+#         "an enumeration from"
+#     ),
+#     default=None
+# )
+# parser.add_argument(
+#     '--agents-grid',
+#     type=str,
+#     help="a tabular grid file with grid_id column",
+#     default=None
+# )
 
 parser.add_argument(
     '--action-space',
