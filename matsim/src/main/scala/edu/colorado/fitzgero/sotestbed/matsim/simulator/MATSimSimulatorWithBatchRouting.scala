@@ -10,6 +10,8 @@ import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
 
 import cats.effect.IO
+import cats.effect.unsafe.implicits.global // used within MATSim extensions for IO blocks
+import cats.implicits._
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching._
@@ -73,7 +75,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var matsimOverridingModuleAdded: Boolean             = false
   var observedMATSimIteration: Int                     = 0
   var observedHitMidnight: Boolean                     = false
-  var routingRequestsUpdatedToTimeStep: SimTime        = SimTime.Zero
   var soReplanningThisIteration: Boolean               = false
   var reachedDestination: Int                          = 0
   var selfishAgentRoutesAssigned: Int                  = 0
@@ -84,16 +85,13 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
   val completePathStore: collection.mutable.Map[Id[Person], Map[DepartureTime, List[Id[Link]]]] =
     collection.mutable.Map.empty
-  val departureTimeStore: collection.mutable.Map[Id[Person], DepartureTime]   = collection.mutable.Map.empty
-  val markForSOPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
-  val markForUEPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]] = collection.mutable.Map.empty
-  // var newSORouteRequests: Option[RouteRequests]                               = None
-  val newUERouteRequests: collection.mutable.ListBuffer[AgentBatchData]  = collection.mutable.ListBuffer.empty
-  val newSOAgentBatchData: collection.mutable.ListBuffer[AgentBatchData] = collection.mutable.ListBuffer.empty
-  val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]   = collection.mutable.Set.empty
+  val departureTimeStore: collection.mutable.Map[Id[Person], DepartureTime]              = collection.mutable.Map.empty
+  val markForSOPathOverwrite: collection.mutable.Map[Id[Vehicle], Id[Person]]            = collection.mutable.Map.empty
+  val markForUEPathOverwrite: collection.mutable.Map[Id[Vehicle], (Id[Person], SimTime)] = collection.mutable.Map.empty
+  val newSOAgentBatchData: collection.mutable.ListBuffer[AgentBatchData]                 = collection.mutable.ListBuffer.empty
+  val ueAgentAssignedDijkstraRoute: collection.mutable.Set[Id[Person]]                   = collection.mutable.Set.empty
 
-  // var agentLeftSimulationRequests: collection.mutable.ListBuffer[SOAgentArrivalData] =
-  // collection.mutable.ListBuffer.empty
+  // logging
   var runStatsPrintWriter: PrintWriter        = _
   var agentExperiencePrintWriter: PrintWriter = _
   var agentPathPrintWriter: PrintWriter       = _
@@ -104,8 +102,15 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var playPauseSimulationControl: PlayPauseControlSecondStepper = _
   var t: Thread                                                 = _
   var matsimThreadException: Option[Throwable]                  = None
-  // var travelTimeCalculatorModule: TravelTimeCalculatorModule    = _
-  var travelTimeCalculator: TravelTimeCalculator = _
+  var travelTimeCalculator: TravelTimeCalculator                = _
+
+  /**
+    * grab the current sim time according to MATSim. calling this method whenever checking
+    * the time ensures we are always up-to-date with MATSim. the value of the current time
+    * changes within the advance method of this trait; it is especially important to invoke
+    * this method rather than store it's result within the logic of that method.
+    */
+  def currentTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
 
   /**
     * initializes MATSim and registers handlers/listeners which store stateful information via mutable
@@ -128,10 +133,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       self.minimumReplanningLeadTime = config.routing.minimumReplanningLeadTime
       self.minimumRemainingRouteTimeForReplanning = config.routing.minimumReplanningLeadTime
       self.simulationTailTimeout = config.run.simulationTailTimeout
-//    self.onlySelfishAgents = config.algorithm match {
-//      case _: MATSimConfig.Algorithm.Selfish => true
-//      case _                                 => false
-//    }
 
       // MATSimProxy Selfish Routing Mode
       config.routing.selfish match {
@@ -165,10 +166,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       // start MATSim and capture object references to simulation in broader MATSimActor scope
       self.controler = new Controler(matsimConfig)
 
-      // //
-      // self.travelTimeCalculatorModule = new TravelTimeCalculatorModule()
-      // self.controler.addOverridingModule(travelTimeCalculatorModule)
-
       // needs to happen after the controler checks the experiment directory (20200125-is this still true?)
       val statsFilePath: String =
         config.experimentLoggingDirectory.resolve(s"stats-${config.algorithm.name}.txt").toString
@@ -177,7 +174,9 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
       val agentExperienceFilePath: String = config.experimentLoggingDirectory.resolve(s"agentExperience.csv").toString
       agentExperiencePrintWriter = new PrintWriter(agentExperienceFilePath)
-      agentExperiencePrintWriter.write("agentId,requestClass,departureTime,travelTime,freeFlowTravelTime,distance,replannings\n")
+      agentExperiencePrintWriter.write(
+        "agentId,requestClass,departureTime,travelTime,freeFlowTravelTime,distance,replannings\n"
+      )
 
       val agentPathFilePath: String = config.experimentLoggingDirectory.resolve(s"agentPath.csv").toString
       agentPathPrintWriter = new PrintWriter(agentPathFilePath)
@@ -236,24 +235,40 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       self.controler.addControlerListener(new IterationEndsListener with ShutdownListener {
         def notifyIterationEnds(event: IterationEndsEvent): Unit = {
 
-          logger.info(s"ending iteration ${event.getIteration}")
+          Try {
 
-          val iterationPrefix: String = s"it-${event.getIteration}"
-          val avgPaths: Double        = soAgentReplanningHandler.getAvgPathsAssigned
-          val avgFailed: Double       = soAgentReplanningHandler.getAvgFailedRoutingAttempts
-          val sumFailed: Int          = soAgentReplanningHandler.getSumFailedRoutingAttempts
+            logger.info(s"begin ending iteration ${event.getIteration}")
 
-          runStatsPrintWriter.append(s"$iterationPrefix.sum.selfish.assignments = $selfishAgentRoutesAssigned\n")
-          runStatsPrintWriter.append(s"$iterationPrefix.avg.paths.assigned = $avgPaths\n")
-          runStatsPrintWriter.append(s"$iterationPrefix.avg.failed.routing.attempts = $avgFailed\n")
-          runStatsPrintWriter.append(s"$iterationPrefix.sum.failed.routing.attempts = $sumFailed\n")
-          runStatsPrintWriter.append(s"$iterationPrefix.sum.reached_destination = ${self.reachedDestination}\n")
+            val iterationPrefix: String = s"it-${event.getIteration}"
+            val avgPaths: Double        = soAgentReplanningHandler.getAvgPathsAssigned
+            val avgFailed: Double       = soAgentReplanningHandler.getAvgFailedRoutingAttempts
+            val sumFailed: Int          = soAgentReplanningHandler.getSumFailedRoutingAttempts
+
+            runStatsPrintWriter.append(s"$iterationPrefix.sum.selfish.assignments = $selfishAgentRoutesAssigned\n")
+            runStatsPrintWriter.append(s"$iterationPrefix.avg.paths.assigned = $avgPaths\n")
+            runStatsPrintWriter.append(s"$iterationPrefix.avg.failed.routing.attempts = $avgFailed\n")
+            runStatsPrintWriter.append(s"$iterationPrefix.sum.failed.routing.attempts = $sumFailed\n")
+            runStatsPrintWriter.append(s"$iterationPrefix.sum.reached_destination = ${self.reachedDestination}\n")
+
+          } match {
+            case Failure(exception) =>
+              throw new Error(s"MATSim IterationEndsListener failure", exception)
+            case Success(_) =>
+              logger.info(s"finished ending iteration ${event.getIteration}")
+          }
         }
 
         def notifyShutdown(shutdownEvent: ShutdownEvent): Unit = {
-          runStatsPrintWriter.close()
-          agentExperiencePrintWriter.close()
-          agentPathPrintWriter.close()
+          Try {
+            runStatsPrintWriter.close()
+            agentExperiencePrintWriter.close()
+            agentPathPrintWriter.close()
+          } match {
+            case Failure(exception) =>
+              throw new Error(s"failure closing log files at shutdown", exception)
+            case Success(_) =>
+              logger.info("finished closing logging files")
+          }
         }
       })
 
@@ -302,7 +317,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                         // mark them to have dijkstra routing when they enter their
                         // first path edge
 
-                        self.markForUEPathOverwrite.update(vehicleId, personId)
+                        self.markForUEPathOverwrite.update(vehicleId, (personId, simTime))
                         self.ueAgentAssignedDijkstraRoute -= personId
                         logger.debug(s"agent $personId marked for routing")
 
@@ -316,18 +331,16 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                         self.completePathStore.remove(personId)
 
                         // let the routing algorithm know this agent has entered the system
-                        GenerateAgentData.generateEnterSimulation(
-                          self.qSim,
+                        val generateArgs = GenerateAgentData.GenerateEnterSimulation(
                           self.travelTimeCalculator.getLinkTravelTimes,
                           personId,
                           vehicleId,
                           simTime
-                        ) match {
-                          case Left(error) => throw error
-                          case Right(entersMessage) =>
-                            self.newSOAgentBatchData.prepend(entersMessage)
-
-                        }
+                        )
+                        val msg = GenerateAgentData
+                          .generateEnterSimulation(self.qSim, generateArgs)
+                          .unsafeRunSync
+                        self.newSOAgentBatchData.prepend(msg)
 
                       } else {
 
@@ -358,62 +371,22 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
                     Try {
 
-                      if (self.markForUEPathOverwrite.isDefinedAt(event.getVehicleId)) {
+                      val vehicleId = event.getVehicleId
 
-                        // request a Dijkstra's shortest path for this agent
-                        val optReqOrErr = for {
-                          personId <- self.markForUEPathOverwrite
-                            .get(event.getVehicleId)
-                            .toRight(new Error("inconsistent result between map.isDefinedAt and map.get"))
-                          request <- GenerateAgentData.generateRouteRequest(
-                            qSim = qSim,
-                            personId = personId,
-                            vehicleId = event.getVehicleId,
-                            requestClass = RequestClass.UE,
-                            timeEnteredVehicle = SimTime(event.getTime.toInt),
-                            travelTime = self.travelTimeCalculator.getLinkTravelTimes,
-                            agentData = None,
-                            mostRecentTimeReplanned = None,
-                            minimumReplanningLeadTime = self.minimumReplanningLeadTime,
-                            minimumRemainingRouteTimeForReplanning = self.minimumRemainingRouteTimeForReplanning
-                          )
-                        } yield request
+                      // remove marks for UE agents that received their route instructions
+                      self.markForUEPathOverwrite.get(vehicleId).foreach {
+                        case (personId, _) =>
+                          val wasAssigned = self.ueAgentAssignedDijkstraRoute(personId)
+                          if (wasAssigned) self.markForUEPathOverwrite.remove(vehicleId)
+                      }
 
-                        optReqOrErr match {
-                          case Left(error) => throw error
-                          case Right(Some(routeReqData)) =>
-                            self.newUERouteRequests.prepend(routeReqData)
-                            self.selfishAgentRoutesAssigned += 1
-                            logger.debug(s"added selfish routing request for UE agent ${routeReqData.request.agent}")
-                          case Right(None) => // noop
-                        }
-
-                        self.markForUEPathOverwrite.remove(event.getVehicleId)
-
-                      } else if (!soReplanningThisIteration && self.markForSOPathOverwrite
-                                   .isDefinedAt(event.getVehicleId)) {
-
-                        // if we are not replanning, then we want to copy any existing plans for this agent over to MATSim
-                        for {
-                          personId               <- self.markForSOPathOverwrite.get(event.getVehicleId)
-                          mobsimAgent            <- self.qSim.getAgents.asScala.get(personId)
-                          leg                    <- MATSimRouteOps.safeGetModifiableLeg(mobsimAgent)
-                          completePathsForPerson <- self.completePathStore.get(personId)
-                          departureTime          <- DepartureTime.getLegDepartureTime(leg)
-                          pathFromPathStore      <- completePathsForPerson.get(departureTime)
-
-                          // checks that there IS a path, and that it's reasonable to assign here
-                          if MATSimRouteOps.completePathHasAtLeastTwoLinks(pathFromPathStore)
-                        } {
-                          // grab stored route and apply it
-                          MATSimRouteOps.assignCompleteRouteToLeg(pathFromPathStore, leg)
-
-                          val currentTime: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
-                          logger.debug(
-                            s"$currentTime agent $personId: applying stored route with ${pathFromPathStore.length} edges"
-                          )
-
-                          self.markForSOPathOverwrite.remove(event.getVehicleId)
+                      // if we are affixing routes for SO agents, apply the stored route
+                      if (!soReplanningThisIteration) {
+                        // extract stored route and apply it to this agent, then remove the mark
+                        self.markForSOPathOverwrite.get(vehicleId).foreach { personId =>
+                          GenerateAgentDataOps
+                            .applyStoredRoute(qSim, vehicleId, personId, self.completePathStore)
+                            .unsafeRunSync
                         }
                       }
 
@@ -525,111 +498,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                   }
                   logger.debug("added person exits vehicle handler")
                 })
-
-                self.qSim.addQueueSimulationListeners(new MobsimBeforeSimStepListener {
-                  override def notifyMobsimBeforeSimStep(e: MobsimBeforeSimStepEvent[_ <: Mobsim]): Unit = {
-
-                    Try {
-
-                      if (soReplanningThisIteration) { // was !self.onlySelfishAgents && soReplanningThisIteration) {
-
-                        // FIND AGENTS FOR REPLANNING AND STORE REQUESTS FOR THEIR ROUTING
-
-                        val nextSimTime = SimTime(e.getSimulationTime.toInt + 1)
-                        if (endOfRoutingTime <= nextSimTime) {
-                          // noop
-                          logger.debug(
-                            s"time ${e.getSimulationTime} is beyond end of routing time ${endOfRoutingTime.toString} set in config - no routing will occur"
-                          )
-                        } else {
-                          // construct an SO batch
-
-                          logger.debug(s"finding agents for routing at time ${SimTime(e.getSimulationTime)}")
-
-                          // find the agents who are eligible for re-planning
-                          val agentsInSimulation: Map[Id[Person], MobsimAgent] = self.qSim.getAgents.asScala.toMap
-                          val currentSimTime: SimTime                          = SimTime(self.playPauseSimulationControl.getLocalTime)
-
-                          // convert eligable agents into requests
-                          val agentsForReplanning: List[AgentData] =
-                            soAgentReplanningHandler.getActiveAndEligibleForReplanning(currentSimTime)
-
-                          if (agentsForReplanning.isEmpty) {
-                            // noop
-                            routingRequestsUpdatedToTimeStep = SimTime(e.getSimulationTime)
-                            logger.debug(s"at time ${SimTime(e.getSimulationTime)} has no eligible agents for routing")
-                          } else {
-
-                            val currentTime = self.playPauseSimulationControl.getLocalTime.toLong
-                            val agentReplanningRequests: List[AgentBatchData] =
-                              agentsForReplanning
-                                .foldLeft(List.empty[AgentBatchData]) {
-                                  (mobsimAgents, agentData) =>
-                                    {
-
-                                      val lastReplanningTime: Option[SimTime] =
-                                        soAgentReplanningHandler
-                                          .getMostRecentTimePlannedForAgent(agentData.personId)
-
-                                      val result = GenerateAgentData.generateRouteRequest(
-                                        qSim = qSim,
-                                        personId = agentData.personId,
-                                        vehicleId = agentData.vehicleId,
-                                        requestClass = RequestClass.SO(),
-                                        timeEnteredVehicle = SimTime(agentData.timeEnteredVehicle.value),
-                                        travelTime = self.travelTimeCalculator.getLinkTravelTimes,
-                                        agentData = Some(agentData),
-                                        mostRecentTimeReplanned = lastReplanningTime,
-                                        minimumReplanningLeadTime = self.minimumReplanningLeadTime,
-                                        minimumRemainingRouteTimeForReplanning =
-                                          self.minimumRemainingRouteTimeForReplanning
-                                      )
-
-                                      // if a request was made, add it to this batch of agent requests
-                                      result match {
-                                        case Left(value) =>
-                                          throw value
-                                        case Right(value) =>
-                                          value match {
-                                            case None                     => mobsimAgents
-                                            case Some(thisAgentBatchData) => thisAgentBatchData +: mobsimAgents
-                                          }
-                                      }
-                                    }
-                                }
-
-                            // store any agent routing requests
-                            if (agentReplanningRequests.isEmpty) {
-
-                              // noop
-                              routingRequestsUpdatedToTimeStep = SimTime(e.getSimulationTime)
-                              logger.debug(s"at time ${SimTime(e.getSimulationTime)} has no (new) route requests")
-
-                            } else {
-
-                              // construct the payload for this routing request, replacing whatever route request is currently stored
-                              // val payload = RouteRequests(e.getSimulationTime, agentReplanningRequests)
-                              // self.newSORouteRequests = Some { payload }
-                              self.newSOAgentBatchData.prependAll(agentReplanningRequests)
-                              routingRequestsUpdatedToTimeStep = SimTime(e.getSimulationTime)
-                              logger.debug(
-                                s"at time ${SimTime(e.getSimulationTime)} storing ${agentReplanningRequests.length} new requests for batch route module"
-                              )
-                            }
-                          }
-                        }
-                      }
-
-                    } match {
-                      case util.Failure(e) =>
-                        logger.error("MobsimBeforeSimStepEvent failure (route requests)")
-                        throw e
-                      case util.Success(_) => ()
-                    }
-
-                  }
-                  logger.info("added overriding router as before simstep handler")
-                })
               }
             })
 
@@ -683,25 +551,37 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           // move one sim step forward, or, if "current time" exceeds end of day (from previous iteration),
           // then advance to zero and collect $200.00.
 
-          val currentTime: SimTime     = SimTime(self.playPauseSimulationControl.getLocalTime)
-          val advanceToSimTime: Double = currentTime.value.toDouble + 0.01 //+ SimTime(2) //+ matsimStepSize
+          // val currentTime: SimTime     = SimTime(self.playPauseSimulationControl.getLocalTime)
+          // a little magic to attempt to synchronize to the step size that the configuration specified and to not fall off
+          // roughly, the problem here is that MATSim is entirely event-driven and so there needs to be data on each time step
+          // in order to "land" on it from an external stepping mechanism. that, and, the timing of "doStep" doesn't
+          // seem straight-forward. to get reliable increments of 30 seconds, we need to
+          // 1. add the requested step size
+          // 2. compute any seconds we would be requesting over the requested self.matsimStepSize and remove them
+          // 3. remove 0.99 from this; strangely, we get a more reliable result if we request 0.01 seconds after the
+          //    previous second than if we request landing on the exact second set by our self.matsimStepSize.
+          val rawStep = currentTime + self.matsimStepSize
+          val overage = rawStep % self.matsimStepSize
+          val increment =
+            if (self.matsimStepSize.value <= 1) 0.01
+            else (self.matsimStepSize - overage).value.toDouble - 0.99
+          val advanceToSimTime: Double = currentTime.value.toDouble + increment //+ SimTime(2) //+ matsimStepSize
 
           logger.debug(
             s"called on sim in Running state: advancing one time step from $currentTime to ${SimTime(advanceToSimTime)}"
           )
 
           self.playPauseSimulationControl.doStep(advanceToSimTime)
-          val timeAfterAdvance: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
+          // val timeAfterAdvance: SimTime = SimTime(self.playPauseSimulationControl.getLocalTime)
 
           // flush print writers every 15 minutes of sim time
-          if (timeAfterAdvance.value > 0 && timeAfterAdvance.value % 900 == 0) {
+          if (currentTime.value > 0 && currentTime.value % 900 == 0) {
             self.agentExperiencePrintWriter.flush()
             self.agentPathPrintWriter.flush()
           }
 
-          val matsimFailure: Boolean = self.matsimThreadException.isDefined
-          val thisIterationIsFinishedAfterCrank: Boolean =
-            self.playPauseSimulationControl.getLocalTime == Double.MaxValue
+          val matsimFailure: Boolean                     = self.matsimThreadException.isDefined
+          val thisIterationIsFinishedAfterCrank: Boolean = currentTime.value == Double.MaxValue
 
           if (matsimFailure) {
             for {
@@ -721,7 +601,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
               // so, let's wait for that to be true.
               var i: Int              = 0
               var stillAlive: Boolean = true
-              while (stillAlive && self.playPauseSimulationControl.getLocalTime >= SimTime.EndOfDay.value) {
+              while (stillAlive && currentTime.value >= SimTime.EndOfDay.value) {
                 Try {
                   Thread.sleep(1000)
                 } match {
@@ -780,7 +660,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
         }
 
         val agentsInSimulation: Map[Id[Person], MobsimAgent] = self.qSim.getAgents.asScala.toMap
-        val currentSimTime: SimTime                          = SimTime(self.playPauseSimulationControl.getLocalTime)
+        // val currentSimTime: SimTime                          = SimTime(currentTime)
 
         for {
           response <- responses
@@ -800,8 +680,9 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
             case None =>
               // extract the mobsim agent data
-              val agentId: Id[Person]                   = mobsimAgent.getId
-              val currentLinkId: Id[Link]               = mobsimAgent.getCurrentLinkId
+              val agentId: Id[Person]     = mobsimAgent.getId
+              val currentLinkId: Id[Link] = mobsimAgent.getCurrentLinkId
+              // mobsimAgent
               val agentExperiencedRoute: List[Id[Link]] = MATSimRouteOps.convertToCompleteRoute(leg)
 
               // combine the old path with the new path
@@ -809,7 +690,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                 case Left(reason) =>
                   // noop
                   logger.warn(
-                    s"failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentSimTime not applied due to: $reason"
+                    s"failed - ${response.request.requestClass} agent ${agentId.toString}'s new route at time $currentTime not applied due to: $reason"
                   )
                   self.soAgentReplanningHandler.incrementNumberFailedRoutingAttempts(agentId)
                 case Right(updatedRoute) =>
@@ -850,7 +731,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                 ) // in-place
                             }
 
-                            self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentSimTime)
+                            self.soAgentReplanningHandler.incrementAgentDataDueToReplanning(agentId, currentTime)
                             self.soAgentReplanningHandler.getReplanningCountForAgent(agentId) match {
                               case None =>
                                 logger.error(
@@ -858,12 +739,19 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                                 )
                               case Some(numberOfPathAssignments) =>
                                 logger.debug(
-                                  s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentSimTime"
+                                  s"agent $agentId route #$numberOfPathAssignments assigned at SimTime $currentTime"
                                 )
                             }
                           case RequestClass.UE =>
                             // record that we assigned this agent a new route plan instead of relied on MATSim's routing
-                            ueAgentAssignedDijkstraRoute += agentId
+                            self.ueAgentAssignedDijkstraRoute += agentId
+                            self.selfishAgentRoutesAssigned += 1
+                            logger.debug(s"added selfish routing request for UE agent $agentId")
+                          // note: we then need to remove the mark that this UE agent required
+                          // a re-route, but we don't have the Id[Vehicle] in scope here nor do
+                          // we have a way to retrieve one (!) so instead, that must happen where
+                          // UE route requests are generated.
+
                         }
                       }
                   }
@@ -889,51 +777,51 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
         IO.raiseError(new Error(msg))
       case SimulatorState.Finishing =>
         // let's wait until we observe MATSim has finished
-        IO {
-          val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
 
-          @tailrec
-          def _isDone(): Either[IsDoneFailure, SimulatorState] = {
-            if (!t.isAlive) {
-              matsimState match {
-                case SimulatorState.Error(msg) => Left(IsDoneFailure.FinishingError(msg))
-                case SimulatorState.Finishing =>
-                  logger.info(s"MATSim Simulation exited normally")
-                  Right(SimulatorState.Finished)
-                case other =>
-                  Left(
-                    IsDoneFailure.FinishingError(
-                      s"while finishing up simulation, MATSimSimulator went from a ${SimulatorState.Finishing} state to a $other state instead of ${SimulatorState.Finished}"
-                    )
+        val timeoutStop: Long = System.currentTimeMillis + simulationTailTimeout.toMillis
+
+        @tailrec
+        def _isDone(): Either[IsDoneFailure, SimulatorState] = {
+          if (!t.isAlive) {
+            matsimState match {
+              case SimulatorState.Error(msg) => Left(IsDoneFailure.FinishingError(msg))
+              case SimulatorState.Finishing =>
+                logger.info(s"MATSim Simulation exited normally")
+                Right(SimulatorState.Finished)
+              case other =>
+                Left(
+                  IsDoneFailure.FinishingError(
+                    s"while finishing up simulation, MATSimSimulator went from a ${SimulatorState.Finishing} state to a $other state instead of ${SimulatorState.Finished}"
                   )
-              }
-            } else if (System.currentTimeMillis > timeoutStop) {
-              Left(
-                IsDoneFailure.TimeoutFailure(
-                  s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"
                 )
+            }
+          } else if (System.currentTimeMillis > timeoutStop) {
+            Left(
+              IsDoneFailure.TimeoutFailure(
+                s"surpassed timeout of ${simulationTailTimeout.toMinutes} minutes waiting for simulation to finish"
               )
-            } else {
-              Try { Thread.sleep(1000) } match {
-                case Success(()) => _isDone()
-                case Failure(e) =>
-                  Left(
-                    IsDoneFailure
-                      .TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed: ${e.getStackTrace}")
-                  )
-              }
+            )
+          } else {
+            Try { Thread.sleep(1000) } match {
+              case Success(()) => _isDone()
+              case Failure(e) =>
+                Left(
+                  IsDoneFailure
+                    .TimeoutFailure(s"waiting for MATSim in child thread to terminate, failed", e)
+                )
             }
           }
-
-          playPauseSimulationControl.play()
-          _isDone() match {
-            case Left(err) =>
-              val msg = s"failed while finishing simulation: $err"
-              throw new Error(msg)
-            case Right(finishedState) =>
-              finishedState
-          }
         }
+
+        playPauseSimulationControl.play()
+        _isDone() match {
+          case Left(err) =>
+            val msg = s"failed while finishing simulation"
+            IO.raiseError(new Error(msg, err))
+          case Right(finishedState) =>
+            IO.pure(finishedState)
+        }
+
       case SimulatorState.Running if !t.isAlive =>
         matsimState = SimulatorState.Finished
         val error = IsDoneFailure.TimeoutFailure(
@@ -954,8 +842,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
     */
   override def getUpdatedEdges: IO[List[(EdgeId, Option[Flow], MetersPerSecond)]] = IO {
 
-    val currentTime = SimTime(self.playPauseSimulationControl.getLocalTime)
-    val tt          = self.travelTimeCalculator.getLinkTravelTimes
+    val tt = self.travelTimeCalculator.getLinkTravelTimes
     val rows = this.qSim.getNetsimNetwork.getNetwork.getLinks.values.asScala.toList.map {
       case link: Link =>
         val linkId     = link.getId
@@ -970,48 +857,84 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   }
 
   /**
-    * constructs [[Request]] objects for each active agent (SO & UE)
+    * constructs [[AgentBatchData.RouteRequestData]] objects for each eligible agent (SO & UE)
     *
     * @return a list of requests
     */
-  override def getAgentsNewlyAvailableForReplanning: IO[List[AgentBatchData]] = IO {
-    if (matsimState != SimulatorState.Running) {
-      List.empty
-    } else {
+  override def getAgentsNewlyAvailableForReplanning: IO[List[AgentBatchData]] = {
 
-      val ueRequests: List[AgentBatchData] = self.newUERouteRequests.toList
-      self.newUERouteRequests.clear()
+    val agentBatchDataResult = Try {
+      // generate requests for UE agents
+      val ueRequestFn: (Id[Vehicle], Id[Person], SimTime) => IO[Option[AgentBatchData]] =
+        GenerateAgentDataOps.generateUeAgentRouteRequest(
+          self.qSim,
+          self.travelTimeCalculator.getLinkTravelTimes,
+          self.minimumReplanningLeadTime,
+          self.minimumRemainingRouteTimeForReplanning
+        )
+      val ueRequestsResult: IO[List[AgentBatchData]] = self.markForUEPathOverwrite.toList
+        .traverse {
+          case (vId, (pId, simTime)) =>
+            ueRequestFn(vId, pId, simTime).map { r => (vId, r) }
+        }
+        .map { reqs =>
+          reqs.foreach {
+            case (vId, Some(_)) =>
+              // this should really be removed when we receive and apply a route revision
+              // but instead it's here where we have the vehicle id in scope.. :-|
+              self.markForUEPathOverwrite.remove(vId)
+            case _ =>
+            // NOOP
+          }
+          reqs.flatMap { case (vId, req) => req }
+        }
 
-      val soBatchData: List[AgentBatchData] = self.newSOAgentBatchData.toList
-      self.newSOAgentBatchData.clear()
+      // we only generate requests for SO agents if these condititions are true
+      val nextSimTime  = SimTime(currentTime.value + 1)
+      val isRunning    = matsimState == SimulatorState.Running
+      val isNotTooLate = nextSimTime < self.endOfRoutingTime
 
-      val preparedSOMessages =
-        soBatchData
+      // generate requests for SO agents that are active and eligible
+      // for replanning based on the simulation configuration
+      val soRequestFn: AgentData => IO[Option[AgentBatchData]] =
+        GenerateAgentDataOps.generateSoAgentRouteRequest(
+          self.qSim,
+          self.soAgentReplanningHandler,
+          self.travelTimeCalculator.getLinkTravelTimes,
+          self.minimumReplanningLeadTime,
+          self.minimumRemainingRouteTimeForReplanning
+        )
+      val soRequestsResult = if (!(self.soReplanningThisIteration && isRunning && isNotTooLate)) {
+        IO.pure(List.empty[AgentBatchData])
+      } else {
+        self.soAgentReplanningHandler
+          .getActiveAndEligibleForReplanning(currentTime)
+          .traverse(soRequestFn)
+          .map { _.flatten }
+      }
+
+      // combine UE and SO agent messages and return
+      val result = for {
+        ueReqs <- ueRequestsResult
+        soReqs <- soRequestsResult
+      } yield {
+        // append other SO messages reporting departure and arrival. these can conflict
+        // with one another, so make sure we are sending only the correct combination of messages
+        // in the correct order
+        val soMsgs = (soReqs ::: newSOAgentBatchData.toList)
           .groupBy(_.agent)
           .flatMap { case (_, msgs) => AgentBatchData.prepareMessagesForRoutingServer(msgs) }
           .toList
+        newSOAgentBatchData.clear()
 
-      logger.debug(s"sending ${preparedSOMessages.size} SO, ${ueRequests.size} UE messages to routing server")
+        logger.debug(s"sending ${soReqs.length} SO msgs, ${ueReqs.length} UE msgs to routing server")
+        ueReqs ::: soMsgs
+      }
 
-      ueRequests ::: preparedSOMessages
-
-      // val agentsLeftSimulationRequests: List[SOAgentArrivalData] = self.agentLeftSimulationRequests.toList
-      // self.agentLeftSimulationRequests.clear()
-
-      // self.newSORouteRequests match {
-      //   case None =>
-      //     logger.debug(s"returning empty list (no requests)")
-      //     ueRequests ::: soBatchData ::: agentsLeftSimulationRequests
-      //   case Some(rr) =>
-      //     logger.debug(
-      //       s"sending ${rr.requests.size} SO, ${ueRequests.size} UE requests, ${agentsLeftSimulationRequests.size} agents left simulation requests"
-      //     )
-      //     val outgoingRequests: List[AgentBatchData] =
-      //       soBatchData ::: rr.requests ::: ueRequests ::: agentsLeftSimulationRequests
-      //     self.newSORouteRequests = None
-      //     outgoingRequests
-      // }
+      result
     }
+
+    IO.fromTry(agentBatchDataResult).flatten
   }
 
   /**
@@ -1019,8 +942,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
     * @return a [[SimTime]] object representing time in seconds
     */
   override def getCurrentSimTime: IO[SimTime] = IO {
-    val currentTime = SimTime(self.playPauseSimulationControl.getLocalTime)
-    logger.debug(s"$currentTime")
     currentTime
   }
 }

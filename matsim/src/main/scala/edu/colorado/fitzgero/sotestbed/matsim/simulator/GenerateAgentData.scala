@@ -18,8 +18,38 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass.SO
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass.UE
 import cats.implicits._
+import cats.effect.IO
+
+sealed trait GenerateAgentData
 
 object GenerateAgentData {
+
+  final case class GenerateEnterSimulation(
+    travelTime: TravelTime,
+    personId: Id[Person],
+    vehicleId: Id[Vehicle],
+    currentTime: SimTime
+  ) extends GenerateAgentData
+
+  final case class GenerateRouteRequest(
+    personId: Id[Person],
+    vehicleId: Id[Vehicle],
+    requestClass: RequestClass,
+    timeEnteredVehicle: SimTime,
+    travelTime: TravelTime,
+    agentData: Option[AgentData],
+    mostRecentTimeReplanned: Option[SimTime],
+    minimumReplanningLeadTime: TravelTimeSeconds,
+    minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
+  ) extends GenerateAgentData
+
+  // def generateAgentData(
+  //   qSim: QSim,
+  //   args: GenerateAgentData
+  // ): IO[AgentBatchData] = args match {
+  //   case ges: GenerateEnterSimulation => generateEnterSimulation(qSim, ges)
+  //   case grr: GenerateRouteRequest    => generateRouteRequest(qSim, grr)
+  // }
 
   /**
     * generates an EnterSimulation message
@@ -32,13 +62,10 @@ object GenerateAgentData {
     */
   def generateEnterSimulation(
     qSim: QSim,
-    travelTime: TravelTime,
-    personId: Id[Person],
-    vehicleId: Id[Vehicle],
-    currentTime: SimTime
-  ): Either[Error, AgentBatchData.EnterSimulation] = {
-    val agentStateOrErr = AgentState.forAgent(qSim, personId, vehicleId)
-    val agentData       = AgentData(personId, vehicleId, DepartureTime(currentTime.value.toInt))
+    args: GenerateEnterSimulation
+  ): IO[AgentBatchData] = {
+    val agentStateOrErr = AgentState.forAgent(qSim, args.personId, args.vehicleId)
+    val agentData       = AgentData(args.personId, args.vehicleId, DepartureTime(args.currentTime.value.toInt))
     val agentTripDataOrError = for {
       as  <- agentStateOrErr
       leg <- as.getModifiableLeg
@@ -46,18 +73,19 @@ object GenerateAgentData {
       agentState = as,
       agentData = agentData,
       leg = leg,
-      currentTime = currentTime.value,
-      travelTime = travelTime,
+      currentTime = args.currentTime.value,
+      travelTime = args.travelTime,
       qSim = qSim
     )
 
-    agentTripDataOrError.map { atd =>
+    val result = agentTripDataOrError.map { atd =>
       AgentBatchData.EnterSimulation(
-        agent = personId.toString,
-        departureTime = currentTime,
+        agent = args.personId.toString,
+        departureTime = args.currentTime,
         initialRoute = atd.remaining
       )
     }
+    IO.fromEither(result)
   }
 
   /**
@@ -77,26 +105,18 @@ object GenerateAgentData {
     */
   def generateRouteRequest(
     qSim: QSim,
-    personId: Id[Person],
-    vehicleId: Id[Vehicle],
-    requestClass: RequestClass,
-    timeEnteredVehicle: SimTime,
-    travelTime: TravelTime,
-    agentData: Option[AgentData],
-    mostRecentTimeReplanned: Option[SimTime],
-    minimumReplanningLeadTime: TravelTimeSeconds,
-    minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
-  ): Either[Error, Option[AgentBatchData.RouteRequestData]] = {
-    val agentStateOrErr = AgentState.forAgent(qSim, personId, vehicleId)
+    args: GenerateRouteRequest
+  ): IO[Option[AgentBatchData.RouteRequestData]] = {
+    val agentStateOrErr = AgentState.forAgent(qSim, args.personId, args.vehicleId)
     val currentTime     = qSim.getSimTimer.getTimeOfDay.toLong
 
     // get the experienced and estimated remaining trip plans
     val agentTripDataOrErr: Either[Error, Either[Error, AgentTripData]] = for {
       as  <- agentStateOrErr
-      leg <- as.getModifiableLeg
-    } yield requestClass match {
+      leg <- as.getModifiableLeg.left.map { t => new Error(s"agent in state ${as.mobsimAgent.getState}", t) }
+    } yield args.requestClass match {
       case _: SO =>
-        agentData match {
+        args.agentData match {
           case None => Left(new Error(s"must invoke GenerateRouteRequest for SO agents with AgentData in payload"))
           case Some(ad) =>
             val atd = AgentTripData.collectSOAgentTripData(
@@ -104,7 +124,7 @@ object GenerateAgentData {
               agentData = ad,
               leg = leg,
               currentTime = currentTime,
-              travelTime = travelTime,
+              travelTime = args.travelTime,
               qSim = qSim
             )
             Right(atd)
@@ -133,7 +153,7 @@ object GenerateAgentData {
           as.person,
           as.vehicle,
           SimTime(currentTime),
-          travelTime
+          args.travelTime
         )
       MATSimRouteOps.selectRequestOriginLink(
         fullRoute,
@@ -141,8 +161,8 @@ object GenerateAgentData {
         endLinkId,
         qSim,
         ttRequest,
-        minimumReplanningLeadTime,
-        minimumRemainingRouteTimeForReplanning
+        args.minimumReplanningLeadTime,
+        args.minimumRemainingRouteTimeForReplanning
       )
     }
 
@@ -155,10 +175,10 @@ object GenerateAgentData {
     } yield {
       startLinkIdOption.map { startLinkId =>
         Request(
-          agent = personId.toString,
+          agent = args.personId.toString,
           location = EdgeId(startLinkId.toString),
           destination = EdgeId(endLinkId.toString),
-          requestClass = requestClass,
+          requestClass = args.requestClass,
           travelMode = TravelMode.Car
         )
       }
@@ -175,7 +195,7 @@ object GenerateAgentData {
           .distanceOfEdgeData(agentTripData.remaining, qSim)
           .getOrElse(Meters.Zero)
 
-      val experiencedTravelTime = SimTime(currentTime) - timeEnteredVehicle
+      val experiencedTravelTime = SimTime(currentTime) - args.timeEnteredVehicle
 
       AgentBatchData.RouteRequestData(
         request = request,
@@ -184,10 +204,10 @@ object GenerateAgentData {
         experiencedRoute = agentTripData.experienced,
         remainingRoute = agentTripData.remaining,
         remainingRouteDistance = remainingDistance,
-        lastReplanningTime = mostRecentTimeReplanned
+        lastReplanningTime = args.mostRecentTimeReplanned
       )
     }
 
-    result
+    IO.fromEither(result)
   }
 }
