@@ -90,7 +90,7 @@ def build_marl_obs_space(
     see Grouping.
     """
     obs = build_observation_space(feature_names)
-    return spaces.Tuple([obs for _ in range(n_agents)])
+    return spaces.Tuple(tuple([obs for _ in range(n_agents)]))
 
 
 class NetworkObsSpaceEncoder(JSONEncoder):

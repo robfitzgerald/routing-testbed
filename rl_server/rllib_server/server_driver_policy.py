@@ -277,7 +277,7 @@ def run():
                     "warmup_timesteps": 14000,
                     # (agent) Timesteps over which to anneal epsilon.
                     #
-                    "epsilon_timesteps": 140000,
+                    "epsilon_timesteps": 1000000,
                 }
             }
         )

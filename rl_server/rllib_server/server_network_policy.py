@@ -128,6 +128,8 @@ def run():
 
     print("observation space")
     print(obs_space)
+    print("observation space sample:")
+    print(obs_space.sample())
     print("action space")
     print(act_space)
     print(f"policies: {len(policies)}")
