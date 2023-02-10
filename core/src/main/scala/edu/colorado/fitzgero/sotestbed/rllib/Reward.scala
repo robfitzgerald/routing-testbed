@@ -11,9 +11,10 @@ import cats.effect.IO
 sealed trait Reward
 
 object Reward {
-  case class SingleAgentReward(reward: Double)                           extends Reward
-  case class MultiAgentReward(reward: Map[AgentId, Double])              extends Reward
-  case class GroupedMultiAgentReward(reward: Map[AgentId, List[Double]]) extends Reward
+  final case class SingleAgentReward(reward: Double)                           extends Reward
+  final case class TupledReward(reward: List[Double])                          extends Reward
+  final case class MultiAgentReward(reward: Map[AgentId, Double])              extends Reward
+  final case class GroupedMultiAgentReward(reward: Map[AgentId, List[Double]]) extends Reward
 
   implicit val marEnc: Encoder[Map[AgentId, Double]] =
     CirceUtils.mapEncoder(_.value, identity)
@@ -30,6 +31,7 @@ object Reward {
   implicit val enc: Encoder[Reward] = {
     Encoder.instance {
       case sa: SingleAgentReward        => sa.reward.asJson
+      case tr: TupledReward             => tr.reward.asJson
       case ma: MultiAgentReward         => if (ma.reward.isEmpty) None.asJson else ma.reward.asJson
       case gma: GroupedMultiAgentReward => if (gma.reward.isEmpty) None.asJson else gma.reward.asJson
     }
@@ -39,6 +41,7 @@ object Reward {
 
     def prettyPrint: String = r match {
       case SingleAgentReward(reward)       => reward.toString
+      case TupledReward(reward)            => reward.asJson.noSpaces
       case MultiAgentReward(reward)        => reward.asJson.noSpaces
       case GroupedMultiAgentReward(reward) => reward.asJson.noSpaces
     }
@@ -46,6 +49,11 @@ object Reward {
     def asSingleAgentReward: IO[SingleAgentReward] = r match {
       case s: SingleAgentReward => IO.pure(s)
       case other                => IO.raiseError(new Error(s"the reward type is not single agent: ${other.getClass.getSimpleName}"))
+    }
+
+    def asTupledReward: IO[TupledReward] = r match {
+      case t: TupledReward => IO.pure(t)
+      case other           => IO.raiseError(new Error(s"the reward type is not tupled: ${other.getClass.getSimpleName}"))
     }
 
     def asMultiAgentReward: IO[MultiAgentReward] = r match {
@@ -62,6 +70,7 @@ object Reward {
   implicit val dec: Decoder[Reward] =
     List[Decoder[Reward]](
       Decoder[Double].map { SingleAgentReward.apply }.widen,
+      Decoder[List[Double]].map { TupledReward.apply }.widen,
       Decoder[Option[Map[AgentId, Double]]].emap {
         case None    => Right(MultiAgentReward(Map.empty[AgentId, Double]))
         case Some(m) => Right(MultiAgentReward(m))

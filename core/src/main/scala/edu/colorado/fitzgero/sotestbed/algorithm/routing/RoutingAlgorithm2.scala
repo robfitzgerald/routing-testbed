@@ -324,6 +324,8 @@ object RoutingAlgorithm2 {
     obs match {
       case sao: Observation.SingleAgentObservation =>
         IO.raiseError(new Error(s"expected multiagent observation, found $sao"))
+      case tao: Observation.TupledAgentObservation =>
+        IO.raiseError(new Error(s"expected multiagent observation, found $tao"))
       case Observation.MultiAgentObservation(observation) =>
         observation.toList
           .traverse {

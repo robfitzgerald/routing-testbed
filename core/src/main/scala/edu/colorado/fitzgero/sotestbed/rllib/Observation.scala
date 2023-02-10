@@ -11,9 +11,10 @@ import cats.effect.IO
 sealed trait Observation
 
 object Observation {
-  case class SingleAgentObservation(observation: List[Double])                           extends Observation
-  case class MultiAgentObservation(observation: Map[AgentId, List[Double]])              extends Observation
-  case class GroupedMultiAgentObservation(observation: Map[AgentId, List[List[Double]]]) extends Observation
+  final case class SingleAgentObservation(observation: List[Double])                           extends Observation
+  final case class TupledAgentObservation(observation: List[List[Double]])                     extends Observation
+  final case class MultiAgentObservation(observation: Map[AgentId, List[Double]])              extends Observation
+  final case class GroupedMultiAgentObservation(observation: Map[AgentId, List[List[Double]]]) extends Observation
 
   // def singleAgentObservationHeader(): String = o match {
   //   case sao: SingleAgentObservation => sao.observation.indices.map { i => f"o${i + 1}" }.mkString(",")
@@ -34,6 +35,7 @@ object Observation {
 
     def prettyPrint: String = o match {
       case SingleAgentObservation(observation) => observation.asJson.noSpaces
+      case TupledAgentObservation(observation) => observation.asJson.noSpaces
       case MultiAgentObservation(observation) =>
         throw new NotImplementedError
       // observation.toList
@@ -44,6 +46,11 @@ object Observation {
     def asSingleAgentObservation: IO[SingleAgentObservation] = o match {
       case s: SingleAgentObservation => IO.pure(s)
       case other                     => IO.raiseError(new Error(s"the reward type is not single agent: ${other.getClass.getSimpleName}"))
+    }
+
+    def asTupledAgentObservation: IO[TupledAgentObservation] = o match {
+      case t: TupledAgentObservation => IO.pure(t)
+      case other                     => IO.raiseError(new Error(s"the reward type is not tupled agent: ${other.getClass.getSimpleName}"))
     }
 
     def asMultiAgentObservation: IO[MultiAgentObservation] = o match {
@@ -60,23 +67,37 @@ object Observation {
   implicit val obsMapEnc: Encoder[Map[AgentId, List[Double]]] =
     CirceUtils.mapEncoder(_.value, identity)
 
+  implicit val obsGroupedMapEnc: Encoder[Map[AgentId, List[List[Double]]]] =
+    CirceUtils.mapEncoder(_.value, identity)
+
   implicit val obsMapDec: Decoder[Map[AgentId, List[Double]]] =
     CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (d: List[Double]) => Right(d))
+
+  implicit val obsGroupedMapDec: Decoder[Map[AgentId, List[List[Double]]]] =
+    CirceUtils.mapDecoder((s: String) => Right(AgentId(s)), (d: List[List[Double]]) => Right(d))
 
   implicit val enc: Encoder[Observation] = {
     Encoder.instance {
       case sa: SingleAgentObservation => sa.observation.asJson
+      case ta: TupledAgentObservation => ta.observation.asJson
       case ma: MultiAgentObservation =>
         if (ma.observation.isEmpty) None.asJson else ma.observation.asJson
+      case ga: GroupedMultiAgentObservation =>
+        if (ga.observation.isEmpty) None.asJson else ga.observation.asJson
     }
   }
 
   implicit val dec: Decoder[Observation] =
     List[Decoder[Observation]](
       Decoder[List[Double]].map { SingleAgentObservation.apply }.widen,
+      Decoder[List[List[Double]]].map { TupledAgentObservation.apply }.widen,
       Decoder[Option[Map[AgentId, List[Double]]]].emap {
         case None    => Right(MultiAgentObservation(Map.empty))
         case Some(m) => Right(MultiAgentObservation(m))
+      },
+      Decoder[Option[Map[AgentId, List[List[Double]]]]].emap {
+        case None    => Right(GroupedMultiAgentObservation(Map.empty))
+        case Some(m) => Right(GroupedMultiAgentObservation(m))
       }
     ).reduceLeft(_.or(_))
 }
