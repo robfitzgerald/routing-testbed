@@ -31,22 +31,6 @@ object DriverPolicySpace {
   case object Balance extends DriverPolicySpace
 
   /**
-    * encodes the headroom of karma an agent could have
-    * as MaxKarma - Balance
-    */
-  case object KarmaHeadroom extends DriverPolicySpace
-
-  /**
-    * normalized balance into [0, 1] where MaxBalance -> 1
-    */
-  case object BalancePct extends DriverPolicySpace
-
-  /**
-    * normalized headroom into [0, 1] where MaxBalance -> 0
-    */
-  case object KarmaHeadroomPct extends DriverPolicySpace
-
-  /**
     * encode the number of agents in this batch as a feature
     */
   case object BatchSize extends DriverPolicySpace
@@ -80,11 +64,6 @@ object DriverPolicySpace {
     * the percentage of distance along the current path
     */
   case object PercentDistance extends DriverPolicySpace
-
-  /**
-    * the percentage of distance remaining along the current path
-    */
-  case object PercentRemainingDistance extends DriverPolicySpace
 
   /**
     * at a replanning event, captures the marginal change in
@@ -135,11 +114,6 @@ object DriverPolicySpace {
     * the diff from free flow for the experienced part of the trip
     */
   case object FreeFlowDiffExperiencedTravelTime extends DriverPolicySpace
-
-  /**
-    * the percent diff from free flow for the experienced part of the trip
-    */
-  case object FreeFlowDiffExperiencedTravelTimePct extends DriverPolicySpace
 
   /**
     * at a replanning event, captures the diff from free flow
