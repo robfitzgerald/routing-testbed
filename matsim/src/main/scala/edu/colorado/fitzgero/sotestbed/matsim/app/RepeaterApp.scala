@@ -36,19 +36,28 @@ object RepeaterApp
       help = "start output directory name with counter from this value"
     )
 
+  val nameOpt: Opts[String] =
+    Opts
+      .option[String](
+        long = "name",
+        short = "n",
+        help = "name, used when creating output directories for MATSim runs"
+      )
+      .withDefault("repeated")
+
   val seedOpt: Opts[Long] = Opts.option[Long](long = "seed", help = "random seed").withDefault(System.currentTimeMillis)
 
   def main: Opts[IO[ExitCode]] = {
 
-    (configFileOpt, startingNumberOpt, seedOpt).mapN {
-      case (configFile, startingNumber, seed) =>
+    (configFileOpt, startingNumberOpt, nameOpt, seedOpt).mapN {
+      case (configFile, startingNumber, name, seed) =>
         val random = new Random(seed)
 
         println(s"if this dies, make sure you're not writing to an existing directory!!! :-O")
 
         createTemplateConfig(configFile.toFile).flatMap { config =>
           startingNumber.iterateForeverM { iteration =>
-            val itConf = prepareRunConfig(config, iteration)
+            val itConf = prepareRunConfig(config, iteration, name)
             val runner = MATSimExperimentRunner3(itConf, random.nextLong)
             println(s"--- running training repeater iteration $iteration")
             for {
@@ -72,7 +81,7 @@ object RepeaterApp
     IO.fromEither(confOrError)
   }
 
-  def prepareRunConfig(config: MATSimConfig, iteration: Int): MATSimRunConfig = {
+  def prepareRunConfig(config: MATSimConfig, iteration: Int, name: String): MATSimRunConfig = {
     val popFileName: String = s"population-${config.population.size}.xml"
 
     // ack, we need to set the batchName first before using the updated IO object to set
@@ -87,7 +96,7 @@ object RepeaterApp
     val popSize = updatedConf.population.size
     val scenarioData = MATSimRunConfig.ScenarioData(
 //      algorithm = updatedConf.algorithm.name,
-      algorithm = s"repeated-$iteration",
+      algorithm = s"$name-$iteration",
       variationName = popSize.toString,
       popSize = popSize,
       trialNumber = 0,
