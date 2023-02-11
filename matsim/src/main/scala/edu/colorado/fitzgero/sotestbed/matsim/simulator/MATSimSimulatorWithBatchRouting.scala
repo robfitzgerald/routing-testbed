@@ -78,6 +78,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var soReplanningThisIteration: Boolean               = false
   var reachedDestination: Int                          = 0
   var selfishAgentRoutesAssigned: Int                  = 0
+  var matsimShutdown: Boolean                          = false
 
   // simulation state containers and handlers
   var roadNetworkFlowHandler: RoadNetworkFlowHandler     = _
@@ -198,6 +199,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           self.observedMATSimIteration = event.getIteration
           self.observedHitMidnight = false
           self.reachedDestination = 0
+          self.matsimShutdown = false
 
           self.selfishAgentRoutesAssigned = 0
 
@@ -263,6 +265,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
             runStatsPrintWriter.close()
             agentExperiencePrintWriter.close()
             agentPathPrintWriter.close()
+            self.matsimShutdown = true
           } match {
             case Failure(exception) =>
               throw new Error(s"failure closing log files at shutdown", exception)
@@ -822,7 +825,12 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
             IO.pure(finishedState)
         }
 
-      case SimulatorState.Running if !t.isAlive =>
+      case SimulatorState.Running if self.matsimShutdown =>
+        // looks like we got out of sync
+        self.matsimState = SimulatorState.Finished
+        IO.pure(SimulatorState.Finished)
+
+      case SimulatorState.Running if !t.isAlive && !self.matsimShutdown =>
         matsimState = SimulatorState.Finished
         val error = IsDoneFailure.TimeoutFailure(
           s"MATSim thread is dead but simulation is not finished. MATSim may have had a fatal error."
