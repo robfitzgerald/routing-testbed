@@ -14,6 +14,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{
   KarmaSelectionAlgorithm,
   NetworkPolicyConfig
 }
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.networkpolicy.NetworkPolicyFilter
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.mcts.{
   DefaultPolicy,
   ExpandPolicy,
@@ -145,6 +146,7 @@ object SelectionAlgorithmConfig {
   final case class KarmaSelection(
     driverPolicy: DriverPolicyConfig,
     networkPolicy: NetworkPolicyConfig,
+    networkPolicyFilter: NetworkPolicyFilter,
     auctionPolicy: AuctionPolicy,
     congestionObservation: CongestionObservationType,
     freeFlowCostFunction: FreeFlowCostFunctionConfig,
@@ -164,6 +166,7 @@ object SelectionAlgorithmConfig {
           KarmaSelectionAlgorithm(
             dp,
             networkPolicy,
+            networkPolicyFilter,
             auctionPolicy,
             congestionObservation,
             bankConfig,

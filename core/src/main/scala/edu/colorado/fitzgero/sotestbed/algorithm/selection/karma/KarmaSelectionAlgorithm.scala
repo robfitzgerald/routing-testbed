@@ -20,6 +20,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.DriverPolicy._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness._
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.networkpolicy.NetworkPolicyFilter
 import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.SingleAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.MultiAgentPolicy
@@ -42,6 +43,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClie
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
   networkPolicy: NetworkPolicyConfig,
+  networkPolicyFilter: NetworkPolicyFilter,
   auctionPolicy: AuctionPolicy,
   congestionObservation: CongestionObservationType,
   bankConfig: BankConfig,
@@ -338,11 +340,15 @@ case class KarmaSelectionAlgorithm(
         // run the driver policy and network policy, and use the result to select
         // a path for each driver agent
         // get the costs associated with the trips
+
+        // update: we need to honor filtering out bids
+        // -
         val result = for {
           _      <- updateRlClientServerResult
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           bids   <- bidFn(signal)
-          selections = signal.assign(bids, alts)
+          selections         = signal.assign(bids, alts)
+          filteredSelections = networkPolicyFilter.filter(selections)
           updatedBank <- IO.fromEither(auctionPolicy.resolveAuction(selections, bank, bankConfig.max))
           paths    = selections.map { case (_, _, path) => path }
           routesUo = alts.values.flatMap(_.headOption).toList
@@ -350,11 +356,10 @@ case class KarmaSelectionAlgorithm(
           costsSo <- collabCostFn(paths)
         } yield {
           // construct the responses
-          val responses = selections.zip(costsSo.agentPathCosts).map {
-            case ((bid, index, path), cost) =>
-              val edgeList = path.map {
-                _.edgeId
-              }
+          val responses = filteredSelections.map {
+            case (bid, index, path) =>
+              val edgeList = path.map(_.edgeId)
+              val cost     = path.map(_.cost).foldLeft(Cost.Zero) { _ + _ }
               Response(bid.request, index, edgeList, cost)
           }
 
@@ -366,6 +371,7 @@ case class KarmaSelectionAlgorithm(
           val travelTimeDiff: Cost     = optimalCost - selfishCost
           val meanTravelTimeDiff: Cost = Cost((optimalCost - selfishCost).value / alts.size)
           val (assignedUo, assignedSo) = selections.partition { case (_, idx, _) => idx == 0 }
+          val dropped                  = selections.length - filteredSelections.length
           logger.info(f"BATCH $batchId")
           logger.info(f"KARMA - NETWORK SIGNAL $signal")
           logger.info(f"BIDS - ${bids.mkString("[", ",", "]")}")
@@ -375,6 +381,7 @@ case class KarmaSelectionAlgorithm(
             f"COST_EST: BEST $optimalCost, SELFISH $selfishCost, " +
               f"DIFF ${travelTimeDiff.value}%.2f AVG_DIFF ${meanTravelTimeDiff.value}%.2f"
           )
+          logger.info(f"NETWORK POLICY FILTER - $dropped/${selections.length} ROUTE RESPONSES")
 
           // responses and analytics
           val selectionAlgorithmResult = SelectionAlgorithm.SelectionAlgorithmResult(
@@ -526,5 +533,23 @@ object KarmaSelectionAlgorithm {
       eaOpt <- roadNetwork.edge(edgeId)
       ea    <- IO.fromOption(eaOpt)(new Error(s"network missing edge $edgeId"))
     } yield ea.attribute.observedTravelTime
+  }
+
+  final case class ApplySelectionsResult(
+    responses: List[Response],
+    updatedBank: Map[String, Karma]
+  )
+
+  def applySelections(
+    selections: List[(Bid, Int, Path)],
+    bank: Map[String, Karma],
+    maxBalance: Karma,
+    auctionPolicy: AuctionPolicy,
+    npf: NetworkPolicyFilter
+  ): IO[ApplySelectionsResult] = {
+    val filteredSelections = npf.filter(selections)
+    val auctionResult      = auctionPolicy.resolveAuction(selections, bank, maxBalance)
+    IO.fromEither(auctionResult).map { updatedBank => }
+    ???
   }
 }
