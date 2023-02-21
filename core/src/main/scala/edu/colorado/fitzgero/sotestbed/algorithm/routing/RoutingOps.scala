@@ -1,45 +1,87 @@
 package edu.colorado.fitzgero.sotestbed.algorithm.routing
 
-import cats.Monad
-import cats.data.OptionT
+import edu.colorado.fitzgero.sotestbed.algorithm.batching._
+import edu.colorado.fitzgero.sotestbed.model.agent.Request
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
+import cats.effect.IO
 import cats.implicits._
-
-import edu.colorado.fitzgero.sotestbed.model.numeric.{Flow, SimTime}
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunnerResult
 
 object RoutingOps {
 
-  type PathToMarginalFlows[F[_], V, E] = (RoadNetwork[F, V, E], Path) => F[List[(EdgeId, Flow)]]
+  def preFilterBatches(
+    batchingManager: BatchingManager,
+    minBatchSize: Int,
+    replanAtSameLink: Boolean,
+    batches: List[(String, List[Request])]
+  ): List[(String, List[Request])] = {
+    val noSmallBatches = removeSmallBatches(minBatchSize, batches)
+    if (replanAtSameLink) noSmallBatches
+    else removeRequestsAtSameLink(batchingManager, noSmallBatches)
+  }
 
-  def defaultMarginalFlow[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E], path: Path): F[List[(EdgeId, Flow)]] =
-    Monad[F].pure{
-      path.map{pathSegment =>
-        (pathSegment.edgeId, Flow(1.0))
+  def findShortestPathsForBatches(
+    search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
+    batches: List[(String, List[Request])]
+  ): IO[List[(String, List[(Request, Path)])]] =
+    batches
+      .traverse {
+        case (batchId, reqs) =>
+          findShortestPathForBatch(search, reqs)
+            .map {
+              case None        => None
+              case Some(paths) => Some((batchId, paths))
+            }
       }
+      .map { _.flatten }
+
+  def findShortestPathForBatch(
+    search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
+    reqs: List[Request]
+  ): IO[Option[List[(Request, Path)]]] =
+    reqs
+      .traverse { req =>
+        search(req.location, req.destination, TraverseDirection.Forward)
+          .map {
+            case None       => None
+            case Some(path) => Some((req, path))
+          }
+      }
+      .map {
+        _.flatten match {
+          case Nil            => None
+          case nonEmptyResult => Some(nonEmptyResult)
+        }
+      }
+
+  def extractSingularBatchResult(
+    selectionResult: List[Option[SelectionRunnerResult]]
+  ): IO[Option[SelectionRunnerResult]] =
+    selectionResult match {
+      case Nil        => IO.pure(None)
+      case one :: Nil => IO.pure(one)
+      case more       => IO.raiseError(new Error(s"expected 0 or 1 selection result, found ${more.length}"))
     }
 
-  def defaultCombineFlows(flows: Iterable[Flow]): Flow = flows.foldLeft(Flow.Zero){_ + _}
-
-  /**
-    * given a path, determine the flow assignment contribution per edge
-    * @param roadNetwork
-    * @param path
-    * @tparam F
-    * @tparam V
-    * @tparam E
-    * @return
-    */
-  def marginalDecayedFlows[F[_]: Monad, V, E](decayAfterEstimatedTime: SimTime, decayRate: Flow)(roadNetwork: RoadNetwork[F, V, E],
-                                                                                    path                    : Path): F[List[(EdgeId, Flow)]] = {
-    for {
-      linkTuples <- path.traverse{pathSegment => roadNetwork.edge(pathSegment.edgeId).map{edge => (pathSegment, edge)} }
-    } yield {
-      for {
-        (pathSegment, edgeOption) <- linkTuples
-        edge <- edgeOption
-      } yield {
-        ???
-      }
+  def removeRequestsAtSameLink(
+    batchingManager: BatchingManager,
+    batches: List[(String, List[Request])]
+  ): List[(String, List[Request])] = {
+    batches.flatMap {
+      case (batchId, reqs) =>
+        reqs.filter { req =>
+          batchingManager.storedHistory.getPreviousReplanning(req.agent) match {
+            case None => true
+            case Some(prevReplanned) =>
+              prevReplanned.request.location != req.location
+          }
+        } match {
+          case Nil      => None
+          case filtered => Some(batchId -> filtered)
+        }
     }
   }
+
+  def removeSmallBatches(minBatchSize: Int, batches: List[(String, List[Request])]): List[(String, List[Request])] =
+    batches.filter { case (_, reqs) => reqs.lengthCompare(minBatchSize) >= 0 }
 }

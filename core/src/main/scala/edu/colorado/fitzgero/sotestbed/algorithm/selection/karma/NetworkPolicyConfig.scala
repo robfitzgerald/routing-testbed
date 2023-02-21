@@ -5,7 +5,7 @@ import scala.util.Random
 import cats.effect.IO
 import cats.implicits._
 
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.SelectionRunnerRequest
+import edu.colorado.fitzgero.sotestbed.algorithm.selection._
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR

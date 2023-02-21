@@ -17,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 
 case class SelfishSyncRoutingBPR(
   marginalCostFunction: EdgeBPR => Flow => Cost, // Likely EdgeBPRCostOps.marginalCostFunction
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
+  pathToMarginalFlowsFunction: FlowObservationOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow
 ) extends RoutingAlgorithm[IO, Coordinate, EdgeBPR]
     with LazyLogging {

@@ -37,6 +37,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.numeric.Flow
+import org.hsqldb.rights.User
 
 final case class MATSimConfig(
   io: MATSimConfig.Io,
@@ -160,6 +161,18 @@ object MATSimConfig {
 
   object Algorithm {
 
+    final case class UserOptimalAuction(
+      edgeUpdateFunction: EdgeUpdateFunctionConfig,
+      marginalCostFunction: MarginalCostFunctionConfig,
+      selectionAlgorithm: SelectionAlgorithmConfig,
+      batchingFunction: BatchingFunctionConfig,
+      grid: GridConfig,
+      useFreeFlowNetworkCostsInPathSearch: Boolean
+    ) extends Algorithm {
+      def name: String = "user-optimal-auction"
+      def selfishOnly  = false
+    }
+
     final case class Selfish(
       edgeUpdateFunction: EdgeUpdateFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig
@@ -216,14 +229,16 @@ object MATSimConfig {
     implicit class AlgorithmExtensions(a: Algorithm) {
 
       def marginalCostFunction: EdgeBPR => Flow => Cost = a match {
-        case a: Selfish       => a.marginalCostFunction.build()
-        case a: SystemOptimal => a.marginalCostFunction.build()
+        case a: Selfish            => a.marginalCostFunction.build()
+        case a: SystemOptimal      => a.marginalCostFunction.build()
+        case a: UserOptimalAuction => a.marginalCostFunction.build()
       }
 
       def costFunction: EdgeBPR => Cost = {
         val mcf = a match {
-          case a: Selfish       => a.marginalCostFunction.build()
-          case a: SystemOptimal => a.marginalCostFunction.build()
+          case a: Selfish            => a.marginalCostFunction.build()
+          case a: SystemOptimal      => a.marginalCostFunction.build()
+          case a: UserOptimalAuction => a.marginalCostFunction.build()
         }
         (e: EdgeBPR) => mcf(e)(Flow.Zero)
       }

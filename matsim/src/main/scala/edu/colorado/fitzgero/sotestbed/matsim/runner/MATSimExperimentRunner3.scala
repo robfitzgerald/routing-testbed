@@ -7,7 +7,11 @@ import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2, SelfishSyncRoutingBPR}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
+  BatchedKspSelectionRouting,
+  RoutingAlgorithm,
+  SelfishSyncRoutingBPR
+}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.rl.RLSelectionAlgorithm
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.{SelectionAlgorithm, SelectionRunner}
@@ -42,6 +46,13 @@ import edu.colorado.fitzgero.sotestbed.config.DriverPolicyConfig
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.MultiAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.SingleAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2PrintOps
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.UserOptimalAuctionSelection
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm.Selfish
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm.SystemOptimal
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.Algorithm.UserOptimalAuction
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPRCostOps
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.FlowObservationOps
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithmV3
 
 //import kantan.csv._
 //import kantan.csv.ops._
@@ -66,7 +77,29 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       agentsUnderControlPercentage = if (matsimRunConfig.algorithm.isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
       else matsimRunConfig.routing.adoptionRate
       agentsUnderControl <- matsimRunConfig.algorithm match {
-        case _: Algorithm.Selfish        => Right(Set.empty[Id[Person]])
+        case _: Algorithm.Selfish => Right(Set.empty[Id[Person]])
+        case uo: Algorithm.UserOptimalAuction =>
+          val groupingFile: Option[String] = uo.selectionAlgorithm match {
+            case ks: SelectionAlgorithmConfig.KarmaSelection if ks.driverPolicy.isInstanceOf[ExternalRLServer] =>
+              ks.driverPolicy match {
+                case ExternalRLServer(structure, client) =>
+                  structure match {
+                    case MultiAgentPolicy(space, groupingFile) => groupingFile
+                    case SingleAgentPolicy(space)              => None
+                  }
+                case _ => throw new Exception
+              }
+            case rl: SelectionAlgorithmConfig.RLSelection => Some(rl.groupingFile)
+            case _                                        => None
+          }
+          groupingFile match {
+            case Some(gf) => PopulationOps.readGrouping(gf)
+            case None =>
+              PopulationOps.loadAgentsUnderControl(
+                matsimRunConfig.io.populationFile,
+                agentsUnderControlPercentage
+              )
+          }
         case so: Algorithm.SystemOptimal =>
           // do we have a grouping file? if so, load that
           val groupingFile: Option[String] = so.selectionAlgorithm match {
@@ -164,8 +197,9 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             }
         }
 
-      val soAssetsOrError: Either[Error, Option[(RoutingAlgorithm2, Map[String, Karma])]] =
+      val soAssetsOrError: Either[Error, Option[(RoutingAlgorithmV3, Map[String, Karma])]] =
         config.algorithm match {
+
           case so: Algorithm.SystemOptimal =>
             val soAlgorithmOrError = for {
               grid <- so.grid.build(network)
@@ -214,7 +248,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   Map.empty
               }
 
-              val alg = RoutingAlgorithm2(
+              val alg = BatchedKspSelectionRouting(
                 altPathsAlgorithmRunner = ksp,
                 batchingFunction = so.batchingFunction.build(grid),
                 batchFilterFunction =
@@ -229,6 +263,62 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             }
 
             soAlgorithmOrError
+
+          case auction: Algorithm.UserOptimalAuction =>
+            val gridResult = for {
+              grid <- auction.grid.build(network)
+              gridFile = config.experimentLoggingDirectory.resolve("grid.csv").toFile
+              _ <- CoordinateGrid2PrintOps.writeGridToCsv(grid, gridFile)
+              _ <- checkRLKarmaUsesFreeFlow(auction)
+            } yield grid
+
+            val bankResult: Either[Error, Map[String, Karma]] = auction.selectionAlgorithm match {
+              case k: SelectionAlgorithmConfig.KarmaSelection =>
+                val agentStrings = agentsUnderControl.map { _.toString }
+                val bank         = k.bankConfig.build(agentStrings)
+                Right(bank)
+              case _ =>
+                Left(new Error(s"using UserOptimalAuction routing but no bank config provided"))
+            }
+
+            val selectionAlgorithm: SelectionAlgorithm =
+              auction.selectionAlgorithm.build(config.experimentLoggingDirectory)
+
+            selectionAlgorithm match {
+              case ksa: KarmaSelectionAlgorithm =>
+                ksa.driverPolicy match {
+                  case RLBasedDriverPolicy(structure, client) =>
+                  // side effect here
+                  case _ => ()
+                }
+              case _ => ()
+            }
+
+            val sel: SelectionRunner =
+              SelectionRunner(
+                selectionAlgorithm = selectionAlgorithm,
+                pathToMarginalFlowsFunction = FlowObservationOps.defaultMarginalFlow,
+                combineFlowsFunction = FlowObservationOps.defaultCombineFlows,
+                marginalCostFunction = EdgeBPRCostOps.marginalCostFunction(0.15, 4.0),
+                minimumAverageImprovement = config.routing.minimumAverageImprovement
+              )
+
+            val algResult = for {
+              grid <- gridResult
+              bank <- bankResult
+            } yield UserOptimalAuctionSelection(
+              batchingFunction = auction.batchingFunction.build(grid),
+              selectionRunner = sel,
+              replanAtSameLink = config.routing.replanAtSameLink,
+              useCurrentLinkFlows = !auction.useFreeFlowNetworkCostsInPathSearch
+            )
+
+            val result = for {
+              alg  <- algResult
+              bank <- bankResult
+            } yield Some((alg, bank))
+
+            result
 
           case _: Algorithm.Selfish =>
             Right(None)
@@ -267,18 +357,31 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                 .map { bankFilePath => logger.info(f"bank file written to $bankFilePath") }
 
             // if there's an RL trainer with an episode started, let's end that episode
-            ra.selectionRunner.selectionAlgorithm match {
-              case rlsa: RLSelectionAlgorithm =>
-                for {
-                  _ <- bankResult
-                  // _ <- rlsa.reportAgentsAreDone()
-                  _ <- rlsa.close()
-                } yield ()
-              case _ =>
-                bankResult
+
+            val sel = ra match {
+              case b: BatchedKspSelectionRouting  => Some(b.selectionRunner.selectionAlgorithm)
+              case a: UserOptimalAuctionSelection => Some(a.selectionRunner.selectionAlgorithm)
+              case _                              => None
             }
+
+            sel match {
+              case None =>
+                IO.unit
+              case Some(selectionAlgorithm) =>
+                selectionAlgorithm match {
+                  case rlsa: RLSelectionAlgorithm =>
+                    for {
+                      _ <- bankResult
+                      // _ <- rlsa.reportAgentsAreDone()
+                      _ <- rlsa.close()
+                    } yield ()
+                  case _ =>
+                    bankResult
+                }
+            }
+
           case _ =>
-            IO.pure()
+            IO.unit
         }
       }
     }
@@ -291,14 +394,19 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
     }
   }
 
-  def checkRLKarmaUsesFreeFlow(so: Algorithm.SystemOptimal): Either[Error, Unit] = {
-    so.selectionAlgorithm match {
-      case _: RLSelection =>
-        if (!so.useFreeFlowNetworkCostsInPathSearch)
-          Left(new Error(s"when using RL selection algorithm, useFreeFlowNetworkCostsInPathSearch must be true"))
-        else Right(())
-      case _ =>
-        Right(())
+  def checkRLKarmaUsesFreeFlow(alg: Algorithm): Either[Error, Unit] = {
+    alg match {
+      case _: Selfish =>
+        Left(new Error(s"internal error"))
+      case so: SystemOptimal
+          if so.selectionAlgorithm.isInstanceOf[RLSelection] && !so.useFreeFlowNetworkCostsInPathSearch =>
+        Left(new Error(s"when using RL selection algorithm, useFreeFlowNetworkCostsInPathSearch must be true"))
+      // case so: SystemOptimal => Right(so.selectionAlgorithm)
+      case uoa: UserOptimalAuction
+          if uoa.selectionAlgorithm.isInstanceOf[RLSelection] && !uoa.useFreeFlowNetworkCostsInPathSearch =>
+        Right(uoa.selectionAlgorithm)
+        Left(new Error(s"when using RL selection algorithm, useFreeFlowNetworkCostsInPathSearch must be true"))
+      case _ => Right(())
     }
   }
 

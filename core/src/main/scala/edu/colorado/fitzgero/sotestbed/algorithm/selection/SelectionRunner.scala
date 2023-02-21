@@ -3,9 +3,11 @@ package edu.colorado.fitzgero.sotestbed.algorithm.selection
 import cats.effect.IO
 
 import com.typesafe.scalalogging.LazyLogging
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingOps, TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm}
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm.SelectionAlgorithmResult
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.SelectionRunnerResult
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{
+  FlowObservationOps,
+  TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm
+}
+import edu.colorado.fitzgero.sotestbed.algorithm.selection._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
@@ -15,7 +17,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 
 final case class SelectionRunner(
   selectionAlgorithm: SelectionAlgorithm,
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
+  pathToMarginalFlowsFunction: FlowObservationOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   minimumAverageImprovement: Cost
@@ -30,7 +32,7 @@ final case class SelectionRunner(
     * @return the best combination of paths as [[Response]] objects for each [[Request]]
     */
   def run(
-    req: SelectionRunner.SelectionRunnerRequest,
+    req: SelectionRunnerRequest,
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma]
   ): IO[Option[(SelectionRunnerResult, Map[String, Karma])]] = {
@@ -86,17 +88,6 @@ final case class SelectionRunner(
 }
 
 object SelectionRunner {
-
-  final case class SelectionRunnerRequest(
-    batchId: String,
-    finalAlternatePaths: Map[Request, List[Path]]
-  )
-
-  final case class SelectionRunnerResult(
-    batchId: String,
-    selection: SelectionAlgorithmResult,
-    runtime: RunTime
-  )
 
   /**
     * the ksp filter may have modified the path that we will assign; this lets us override the

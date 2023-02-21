@@ -36,7 +36,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunne
 class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm(
   altPathsAlgorithm: KSPAlgorithm,
   selectionAlgorithm: SelectionAlgorithm,
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
+  pathToMarginalFlowsFunction: FlowObservationOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   kspFilterFunction: KSPFilterFunction,

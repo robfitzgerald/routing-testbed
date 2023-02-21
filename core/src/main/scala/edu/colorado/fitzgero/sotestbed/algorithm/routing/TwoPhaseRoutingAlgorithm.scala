@@ -28,7 +28,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetw
 class TwoPhaseRoutingAlgorithm(
   altPathsAlgorithm: KSPAlgorithm,
   selectionAlgorithm: SelectionAlgorithm,
-  pathToMarginalFlowsFunction: RoutingOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
+  pathToMarginalFlowsFunction: FlowObservationOps.PathToMarginalFlows[IO, Coordinate, EdgeBPR],
   combineFlowsFunction: Iterable[Flow] => Flow,
   marginalCostFunction: EdgeBPR => Flow => Cost,
   timeLimit: RunTime = RunTime(31536000), // one year.

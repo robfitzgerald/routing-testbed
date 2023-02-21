@@ -3,7 +3,7 @@ package edu.colorado.fitzgero.sotestbed.algorithm.batching
 import com.typesafe.scalalogging.LazyLogging
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.AgentBatchData.{RouteRequestData, SOAgentArrivalData}
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithm
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionRunner.SelectionRunnerResult
+import edu.colorado.fitzgero.sotestbed.algorithm.selection._
 import edu.colorado.fitzgero.sotestbed.model.agent.{RequestClass, Response}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.RoadNetwork

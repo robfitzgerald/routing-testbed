@@ -14,7 +14,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.{
   BatchingFunction,
   BatchingManager
 }
-import edu.colorado.fitzgero.sotestbed.algorithm.routing.{RoutingAlgorithm, RoutingAlgorithm2}
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.{BatchedKspSelectionRouting, RoutingAlgorithm}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.{Karma, KarmaSelectionAlgorithm}
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass}
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
@@ -25,6 +25,8 @@ import edu.colorado.fitzgero.sotestbed.reports.Reports
 import edu.colorado.fitzgero.sotestbed.simulator.HandCrankedSimulator
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import java.nio.file.Path
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithmV3
+import edu.colorado.fitzgero.sotestbed.algorithm.routing.UserOptimalAuctionSelection
 
 abstract class RoutingExperiment2
     extends Reports[IO, Coordinate, EdgeBPR]
@@ -42,7 +44,7 @@ abstract class RoutingExperiment2
     ueRoutingAlgorithm: Option[RoutingAlgorithm[IO, Coordinate, EdgeBPR]],
     updateFunction: Edge.UpdateFunction[EdgeBPR],
     costFunction: EdgeBPR => Cost,
-    soRoutingAlgorithm: Option[RoutingAlgorithm2],
+    soRoutingAlgorithm: Option[RoutingAlgorithmV3],
     bank: Map[String, Karma],
     batchWindow: SimTime,
     minRequestUpdateThreshold: SimTime,
@@ -65,7 +67,7 @@ abstract class RoutingExperiment2
             b1        <- b0.updateAgentBatchData(soUpdate, r1)
             (b2, batchRequests) = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
             soOutput <- soRoutingAlgorithm
-              .map { _.runSO(r1, batchRequests, currentSimTime, b2, k0) }
+              .map { _.route(r1, batchRequests, currentSimTime, b2, k0) }
               .getOrElse(IO.pure((List.empty, k0)))
             (soResults, k1) = soOutput
             ueResolved      = BatchingManager.resolveRoutingResultBatches(List(ueResults))
@@ -150,14 +152,23 @@ object RoutingExperiment2 extends LazyLogging {
     result
   }
 
-  def closeOutAlgorthm(alg: Option[RoutingAlgorithm2], finalState: ExperimentState): IO[Unit] = {
+  def closeOutAlgorthm(alg: Option[RoutingAlgorithmV3], finalState: ExperimentState): IO[Unit] = {
     alg match {
       case None => IO.unit
       case Some(routingAlg) =>
-        routingAlg.selectionRunner.selectionAlgorithm match {
-          case k: KarmaSelectionAlgorithm => k.close(finalState.bank, finalState.roadNetwork)
-          case _                          => IO.unit
+        routingAlg match {
+          case bksr: BatchedKspSelectionRouting =>
+            bksr.selectionRunner.selectionAlgorithm match {
+              case k: KarmaSelectionAlgorithm => k.close(finalState.bank, finalState.roadNetwork)
+              case _                          => IO.unit
+            }
+          case uoas: UserOptimalAuctionSelection =>
+            uoas.selectionRunner.selectionAlgorithm match {
+              case k: KarmaSelectionAlgorithm => k.close(finalState.bank, finalState.roadNetwork)
+              case _                          => IO.unit
+            }
         }
+
     }
   }
 }
