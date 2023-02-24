@@ -20,7 +20,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.DriverPolicy._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness._
-import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.networkpolicy.NetworkPolicyFilter
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyFilter
 import edu.colorado.fitzgero.sotestbed.rllib._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.SingleAgentPolicy
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicyStructure.MultiAgentPolicy
@@ -43,7 +43,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClie
 case class KarmaSelectionAlgorithm(
   driverPolicy: DriverPolicy,
   networkPolicy: NetworkPolicyConfig,
-  networkPolicyFilter: NetworkPolicyFilter,
+  driverPolicyFilter: DriverPolicyFilter,
   auctionPolicy: AuctionPolicy,
   congestionObservation: CongestionObservationType,
   bankConfig: BankConfig,
@@ -348,7 +348,7 @@ case class KarmaSelectionAlgorithm(
           signal <- IO.fromEither(networkPolicySignals.getOrError(batchId))
           bids   <- bidFn(signal)
           selections         = signal.assign(bids, alts)
-          filteredSelections = networkPolicyFilter.filter(selections)
+          filteredSelections = driverPolicyFilter.filter(selections)
           updatedBank <- IO.fromEither(auctionPolicy.resolveAuction(selections, bank, bankConfig.max))
           paths    = selections.map { case (_, _, path) => path }
           routesUo = alts.values.flatMap(_.headOption).toList
@@ -533,23 +533,5 @@ object KarmaSelectionAlgorithm {
       eaOpt <- roadNetwork.edge(edgeId)
       ea    <- IO.fromOption(eaOpt)(new Error(s"network missing edge $edgeId"))
     } yield ea.attribute.observedTravelTime
-  }
-
-  final case class ApplySelectionsResult(
-    responses: List[Response],
-    updatedBank: Map[String, Karma]
-  )
-
-  def applySelections(
-    selections: List[(Bid, Int, Path)],
-    bank: Map[String, Karma],
-    maxBalance: Karma,
-    auctionPolicy: AuctionPolicy,
-    npf: NetworkPolicyFilter
-  ): IO[ApplySelectionsResult] = {
-    val filteredSelections = npf.filter(selections)
-    val auctionResult      = auctionPolicy.resolveAuction(selections, bank, maxBalance)
-    IO.fromEither(auctionResult).map { updatedBank => }
-    ???
   }
 }

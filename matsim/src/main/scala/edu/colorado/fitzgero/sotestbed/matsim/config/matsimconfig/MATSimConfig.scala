@@ -162,6 +162,7 @@ object MATSimConfig {
   object Algorithm {
 
     final case class UserOptimalAuction(
+      name: String,
       edgeUpdateFunction: EdgeUpdateFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
       selectionAlgorithm: SelectionAlgorithmConfig,
@@ -169,8 +170,7 @@ object MATSimConfig {
       grid: GridConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean
     ) extends Algorithm {
-      def name: String = "user-optimal-auction"
-      def selfishOnly  = false
+      def selfishOnly = false
     }
 
     final case class Selfish(

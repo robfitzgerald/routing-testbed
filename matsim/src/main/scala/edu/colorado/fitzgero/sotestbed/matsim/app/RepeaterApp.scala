@@ -82,7 +82,7 @@ object RepeaterApp
   }
 
   def prepareRunConfig(config: MATSimConfig, iteration: Int, name: String): MATSimRunConfig = {
-    val popFileName: String = s"population-${config.population.size}.xml"
+    val popFileName: String = s"population-$iteration-${config.population.size}.xml"
 
     // ack, we need to set the batchName first before using the updated IO object to set
     // the population file path.. who made this crap? :-D

@@ -13,9 +13,25 @@ case class PathSegment(edgeId: EdgeId, cost: Cost) {
 
   def toEdgeData(rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]): IO[EdgeData] =
     PathSegment.toEdgeData(this, rn)
+
+  def updateCostEstimate(rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]): IO[PathSegment] =
+    PathSegment.updateCostEstimate(this, rn)
 }
 
 object PathSegment {
+
+  def updateCostEstimate(
+    pathSegment: PathSegment,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
+  ): IO[PathSegment] =
+    rn.edge(pathSegment.edgeId)
+      .flatMap {
+        case None => IO.raiseError(new Error(s"road network missing edge ${pathSegment.edgeId}"))
+        case Some(ea) =>
+          val updatedCost = Cost(ea.attribute.observedTravelTime.value)
+          val updatedSeg  = pathSegment.copy(cost = updatedCost)
+          IO.pure(updatedSeg)
+      }
 
   /**
     * helper to deal with the friction between these competing definitions

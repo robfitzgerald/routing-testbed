@@ -104,6 +104,24 @@ final case class UserOptimalAuctionSelection(
 
 object UserOptimalAuctionSelection {
 
+  /**
+    * runs route selection for a batch of requests
+    *
+    * in the UserOptimalAuctionSelection setting, we dismiss k-shortest paths generation.
+    * instead, we create only one new route which is optimal with respect to the current
+    * network conditions. this is combined with the current route to make a selection
+    * request for each agent.
+    *
+    * @param selectionRunner runs route selection algorithm
+    * @param search routing algorithm, assumed optimal such as Dijkstra's
+    * @param roadNetwork current network conditions
+    * @param batchingManager current knowlege of route histories and batch-building function
+    * @param bank current balance of money (karma) for each agent
+    * @param zoneLookup mapping from a batch zone to the list of edges associated with the zone
+    * @param batchId the id of this batch
+    * @param requests the requests for this batch
+    * @return the full routing algorithm response and all associated bank update
+    */
   def resolveBatch(
     selectionRunner: SelectionRunner,
     search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
@@ -117,19 +135,37 @@ object UserOptimalAuctionSelection {
     RoutingOps
       .findShortestPathForBatch(search, requests)
       .flatMap {
-        case None => IO.pure(None)
+        case None            => IO.pure(None)
         case Some(withPaths) =>
-          val selectionReqs = SelectionRunnerRequest.fromTspResult(batchId, withPaths)
+          // to integrate with the existing framework, let's match the assumption that
+          // there are at least two paths. for our case, path index 0 should be an updated
+          // user-optimal path.
+          // for the user optimal auction selection setting, we compare this updated UO route
+          // with the current route. here, we explicitly place that current route in path
+          // index 1.
+          // because of this, we need to filter away any assignments that picked index 1.
+          val withTwoPathsResult =
+            withPaths
+              .traverse {
+                case (req, uoPath) =>
+                  for {
+                    hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(req.agent))
+                    currentPath <- hist.route.traverse { _.toPathSegment.updateCostEstimate(roadNetwork) }
+                  } yield (req, List(uoPath, currentPath))
+              }
+              .map { twoPaths => SelectionRunnerRequest(batchId, twoPaths.toMap) }
+
           for {
+            selectionRunnerRequest <- withTwoPathsResult
             selectionFn <- KarmaSelectionAlgorithmOps.instantiateSelectionAlgorithm(
               selectionRunner,
               roadNetwork,
               batchingManager,
               bank,
               zoneLookup
-            )(List(selectionReqs))
+            )(List(selectionRunnerRequest))
             selectionOutput <- KarmaSelectionAlgorithmOps.runSelectionWithBank(
-              List(selectionReqs),
+              List(selectionRunnerRequest),
               roadNetwork,
               selectionFn,
               bank
@@ -137,13 +173,17 @@ object UserOptimalAuctionSelection {
             (soResults, updatedBank) = selectionOutput
             oneResult <- RoutingOps.extractSingularBatchResult(soResults)
           } yield {
-            oneResult.map { selectionResult =>
-              val result = RoutingAlgorithm.Result(
-                responses = selectionResult.selection.selectedRoutes,
-                agentHistory = batchingManager.storedHistory
-              )
-              (result, updatedBank)
-            }
+            // at this point, the underlying KarmaSelectionAlgorithm should have applied
+            // the NetworkPolicyFilter so that we only see UO route responses
+
+            oneResult
+              .map { selectionResult =>
+                val result = RoutingAlgorithm.Result(
+                  responses = selectionResult.selection.selectedRoutes,
+                  agentHistory = batchingManager.storedHistory
+                )
+                (result, updatedBank)
+              }
           }
       }
   }
