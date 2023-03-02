@@ -254,7 +254,7 @@ object UserOptimalAuctionSelection extends LazyLogging {
     val refDist       = refSpur.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
     val proposedEdges = proposed.map(_.edgeId).toSet
 
-    val overlapPercentResult = current.filter(e => proposedEdges.contains(e.edgeId)) match {
+    val nonOverlapPctResult = current.filter(e => !proposedEdges.contains(e.edgeId)) match {
       case Nil => IO.pure(0.0)
       case overlapEdges =>
         for {
@@ -263,6 +263,6 @@ object UserOptimalAuctionSelection extends LazyLogging {
         } yield if (refDist == 0.0) 0.0 else overlapDist / refDist
     }
 
-    overlapPercentResult.map(_ > theta)
+    nonOverlapPctResult.map(_ > theta)
   }
 }
