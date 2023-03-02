@@ -45,6 +45,18 @@ object DriverPolicySpaceV2Ops {
       overall <- IO.fromEither(current.overallTravelTimeEstimate)
     } yield overall.value
 
+  /**
+    * estimates the total trip travel time after replacing some later
+    * segment of the trip with a path spur.
+    *
+    * ensures we use experienced travel times for the experienced part of
+    * the route and use up-to-date estimates for any future segments.
+    *
+    * @param rn the road network state
+    * @param history the history for this agent
+    * @param pathSpur the path spur to apply
+    * @return the effect of estimating the total travel time with this spur
+    */
   def pathAlternativeTravelTimeEstimate(
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     history: AgentHistory,
@@ -54,7 +66,8 @@ object DriverPolicySpaceV2Ops {
       current   <- IO.fromEither(history.currentRequest)
       edgesSpur <- pathSpur.traverse { _.toEdgeData(rn) }
       remWithSpur = coalesceFuturePath(current.remainingRoute, edgesSpur)
-      tt <- travelTime(rn, current.experiencedRoute, remWithSpur).map { _.foldLeft(0.0) { _ + _ } }
+      tts <- travelTime(rn, current.experiencedRoute, remWithSpur)
+      tt = tts.foldLeft(0.0) { _ + _ }
     } yield tt
 
   /**
