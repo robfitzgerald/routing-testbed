@@ -43,8 +43,9 @@ object RoutingOps {
       .traverse { req =>
         search(req.location, req.destination, TraverseDirection.Forward)
           .map {
-            case None       => None
-            case Some(path) => Some((req, path))
+            case None                       => None
+            case Some(path) if path.isEmpty => None
+            case Some(path)                 => Some((req, path))
           }
       }
       .map {
