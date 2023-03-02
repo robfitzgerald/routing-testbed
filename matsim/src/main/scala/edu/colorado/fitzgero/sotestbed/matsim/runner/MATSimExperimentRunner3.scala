@@ -310,7 +310,8 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
               batchingFunction = auction.batchingFunction.build(grid),
               selectionRunner = sel,
               replanAtSameLink = config.routing.replanAtSameLink,
-              useCurrentLinkFlows = !auction.useFreeFlowNetworkCostsInPathSearch
+              useCurrentLinkFlows = !auction.useFreeFlowNetworkCostsInPathSearch,
+              theta = auction.newRouteDissimilarityPercent
             )
 
             val result = for {

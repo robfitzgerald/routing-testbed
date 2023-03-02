@@ -168,7 +168,8 @@ object MATSimConfig {
       selectionAlgorithm: SelectionAlgorithmConfig,
       batchingFunction: BatchingFunctionConfig,
       grid: GridConfig,
-      useFreeFlowNetworkCostsInPathSearch: Boolean
+      useFreeFlowNetworkCostsInPathSearch: Boolean,
+      newRouteDissimilarityPercent: Double
     ) extends Algorithm {
       def selfishOnly = false
     }

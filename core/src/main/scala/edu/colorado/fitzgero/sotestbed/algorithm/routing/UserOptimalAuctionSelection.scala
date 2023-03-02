@@ -22,6 +22,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm._
 final case class UserOptimalAuctionSelection(
   batchingFunction: BatchingFunction,
   selectionRunner: SelectionRunner,
+  theta: Double,
   replanAtSameLink: Boolean,
   useCurrentLinkFlows: Boolean
 ) extends RoutingAlgorithmV3
@@ -88,7 +89,8 @@ final case class UserOptimalAuctionSelection(
                   bank = thisBank,
                   zoneLookup = zones,
                   batchId = batchId,
-                  requests = requests
+                  requests = requests,
+                  theta = theta
                 ).flatMap {
                   case None => acc
                   case Some((routingResult, updatedBank)) =>
@@ -102,7 +104,7 @@ final case class UserOptimalAuctionSelection(
   }
 }
 
-object UserOptimalAuctionSelection {
+object UserOptimalAuctionSelection extends LazyLogging {
 
   /**
     * runs route selection for a batch of requests
@@ -130,7 +132,8 @@ object UserOptimalAuctionSelection {
     bank: Map[String, Karma],
     zoneLookup: Map[String, List[EdgeId]],
     batchId: String,
-    requests: List[Request]
+    requests: List[Request],
+    theta: Double
   ): IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]] = {
     RoutingOps
       .findShortestPathForBatch(search, requests)
@@ -147,45 +150,61 @@ object UserOptimalAuctionSelection {
           val withTwoPathsResult =
             withPaths
               .traverse {
-                case (req, uoPath) =>
-                  // we need to compare the provided uoPath, starting/ending at the Request locations,
+                case (req, newSpur) =>
+                  // we need to compare the provided faster path, starting/ending at the Request locations,
                   // with just a spur with the same start location
                   for {
                     hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(req.agent))
                     currentPath <- getCurrentPath(roadNetwork, hist)
-                    currentSpur = pathSpurFromCurrent(uoPath, currentPath)
-                  } yield (req, List(uoPath, currentSpur))
+                    currentSpur = pathSpurFromCurrent(newSpur, currentPath)
+                    diverse <- sufficientlyDiverse(roadNetwork, currentPath, newSpur, theta)
+                  } yield if (diverse) Some((req, List(newSpur, currentSpur))) else None
               }
-              .map { twoPaths => SelectionRunnerRequest(batchId, twoPaths.toMap) }
+              .map { twoPaths =>
+                val numReqs    = requests.length
+                val numDiverse = twoPaths.flatten.length
+                if (numDiverse == 0) {
+                  logger.info(s"batch $batchId has no requests that are sufficiently diverse")
+                  None
+                } else {
+                  val msg = s"batch $batchId after generating new paths for agents, " +
+                    s"$numDiverse/$numReqs are sufficiently diverse"
+                  logger.info(msg)
+                  Some(SelectionRunnerRequest(batchId, twoPaths.flatten.toMap))
+                }
+              }
 
-          for {
-            selectionRunnerRequest <- withTwoPathsResult
-            selectionFn <- KarmaSelectionAlgorithmOps.instantiateSelectionAlgorithm(
-              selectionRunner,
-              roadNetwork,
-              batchingManager,
-              bank,
-              zoneLookup
-            )(List(selectionRunnerRequest))
-            selectionOutput <- KarmaSelectionAlgorithmOps.runSelectionWithBank(
-              List(selectionRunnerRequest),
-              roadNetwork,
-              selectionFn,
-              bank
-            )
-            (soResults, updatedBank) = selectionOutput
-            oneResult <- RoutingOps.extractSingularBatchResult(soResults)
-          } yield {
-            // at this point, the underlying KarmaSelectionAlgorithm should have applied
-            // the NetworkPolicyFilter so that we only see UO route responses
-
-            oneResult
-              .map { selectionResult =>
-                val result = RoutingAlgorithm.Result(
-                  responses = selectionResult.selection.selectedRoutes,
-                  agentHistory = batchingManager.storedHistory
+          withTwoPathsResult.flatMap {
+            case None => IO.pure(None)
+            case Some(selectionRunnerRequest) =>
+              for {
+                selectionFn <- KarmaSelectionAlgorithmOps.instantiateSelectionAlgorithm(
+                  selectionRunner,
+                  roadNetwork,
+                  batchingManager,
+                  bank,
+                  zoneLookup
+                )(List(selectionRunnerRequest))
+                selectionOutput <- KarmaSelectionAlgorithmOps.runSelectionWithBank(
+                  List(selectionRunnerRequest),
+                  roadNetwork,
+                  selectionFn,
+                  bank
                 )
-                (result, updatedBank)
+                (soResults, updatedBank) = selectionOutput
+                oneResult <- RoutingOps.extractSingularBatchResult(soResults)
+              } yield {
+                // at this point, the underlying KarmaSelectionAlgorithm should have applied
+                // the NetworkPolicyFilter so that we only see UO route responses
+
+                oneResult
+                  .map { selectionResult =>
+                    val result = RoutingAlgorithm.Result(
+                      responses = selectionResult.selection.selectedRoutes,
+                      agentHistory = batchingManager.storedHistory
+                    )
+                    (result, updatedBank)
+                  }
               }
           }
       }
@@ -210,10 +229,40 @@ object UserOptimalAuctionSelection {
     * @return
     */
   def pathSpurFromCurrent(newPathSpur: Path, currentPath: Path): Path = {
+
     newPathSpur match {
       case Nil            => currentPath
       case firstEdge :: _ => currentPath.dropWhile(_.edgeId != firstEdge.edgeId)
     }
+  }
 
+  /**
+    * checks the overlap percentage (by distance) of the new path to the current path,
+    * starting from the point in the future where they separate.
+    *
+    * @param rn current road network state
+    * @param current the current path
+    * @param proposed proposed path spur
+    * @param theta overlap requirement to be "sufficiently diverse", read as
+    *              the minimum amount of dis-similarity. for example, if theta
+    *              is 33%, then the new path must have 33% of its distance that
+    *              does not overlap with the current path.
+    * @return the effect of finding if these paths are sufficiently diverse
+    */
+  def sufficientlyDiverse(rn: RoadNetworkIO, current: Path, proposed: Path, theta: Double): IO[Boolean] = {
+    val refSpur       = pathSpurFromCurrent(proposed, current)
+    val refDist       = refSpur.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+    val proposedEdges = proposed.map(_.edgeId).toSet
+
+    val overlapPercentResult = current.filter(e => proposedEdges.contains(e.edgeId)) match {
+      case Nil => IO.pure(0.0)
+      case overlapEdges =>
+        for {
+          refDist     <- refSpur.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+          overlapDist <- overlapEdges.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+        } yield if (refDist == 0.0) 0.0 else overlapDist / refDist
+    }
+
+    overlapPercentResult.map(_ > theta)
   }
 }
