@@ -25,7 +25,8 @@ object DijkstraSearch {
     */
   def vertexOrientedShortestPath[F[_]: Monad, V, E](
     roadNetworkModel: RoadNetwork[F, V, E],
-    costFunction: E => Cost)(srcVertexId: VertexId, dstVertexId: VertexId, direction: TraverseDirection): F[Option[Path]] = {
+    costFunction: E => Cost
+  )(srcVertexId: VertexId, dstVertexId: VertexId, direction: TraverseDirection): F[Option[Path]] = {
 
     if (srcVertexId == dstVertexId) {
       Monad[F].pure {
@@ -40,9 +41,13 @@ object DijkstraSearch {
         }
 
       for {
-        spanningTreeOption <- SpanningTree.vertexOrientedMinSpanningTree(roadNetworkModel, costFunction)(treeSource, Some {
-          treeDestination
-        }, direction)
+        spanningTreeOption <- SpanningTree.vertexOrientedMinSpanningTree(roadNetworkModel, costFunction)(
+          treeSource,
+          Some {
+            treeDestination
+          },
+          direction
+        )
       } yield {
         for {
           spanningTree <- spanningTreeOption
@@ -63,11 +68,12 @@ object DijkstraSearch {
     * @param direction searching forward or backward from src to dst
     * @tparam V vertex type
     * @tparam E edge type
-    * @return
+    * @return a shortest path including the source and destination edges
     */
   def edgeOrientedShortestPath[F[_]: Monad, V, E](
     roadNetworkModel: RoadNetwork[F, V, E],
-    costFunction: E => Cost)(srcEdgeId: EdgeId, dstEdgeId: EdgeId, direction: TraverseDirection): F[Option[Path]] = {
+    costFunction: E => Cost
+  )(srcEdgeId: EdgeId, dstEdgeId: EdgeId, direction: TraverseDirection): F[Option[Path]] = {
     if (srcEdgeId == dstEdgeId) {
       Monad[F].pure {
         Some { EmptyPath }
@@ -79,7 +85,11 @@ object DijkstraSearch {
           dstVertexOfSrcEdge <- OptionT { roadNetworkModel.destination(srcEdgeId) }
           srcVertexOfDstEdge <- OptionT { roadNetworkModel.source(dstEdgeId) }
           result <- OptionT {
-            vertexOrientedShortestPath(roadNetworkModel, costFunction)(dstVertexOfSrcEdge, srcVertexOfDstEdge, direction)
+            vertexOrientedShortestPath(roadNetworkModel, costFunction)(
+              dstVertexOfSrcEdge,
+              srcVertexOfDstEdge,
+              direction
+            )
           }
         } yield PathSegment(srcEdgeId, Cost.Zero) +: result :+ PathSegment(dstEdgeId, Cost.Zero)
       }.value
@@ -96,7 +106,10 @@ object DijkstraSearch {
     */
   def backtrack[E](spanningTree: MinSpanningTree[E])(startPoint: VertexId): Option[Path] = {
 
-    @tailrec def _backtrack(traversalVertex: VertexId, solution: List[MinSpanningTraversal[E]] = List.empty): List[MinSpanningTraversal[E]] = {
+    @tailrec def _backtrack(
+      traversalVertex: VertexId,
+      solution: List[MinSpanningTraversal[E]] = List.empty
+    ): List[MinSpanningTraversal[E]] = {
 
       spanningTree.traverse(traversalVertex) match {
         case None => solution
