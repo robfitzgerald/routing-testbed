@@ -55,7 +55,6 @@ object DriverPolicySpaceV2Ops {
       edgesSpur <- pathSpur.traverse { _.toEdgeData(rn) }
       remWithSpur = coalesceFuturePath(current.remainingRoute, edgesSpur)
       tt <- travelTime(rn, current.experiencedRoute, remWithSpur).map { _.foldLeft(0.0) { _ + _ } }
-      // remainingCost = costOfRemainingWithAlternative(current.remainingRoute)(path)
     } yield tt
 
   /**
@@ -81,18 +80,16 @@ object DriverPolicySpaceV2Ops {
     spurEdges: List[EdgeData] = List.empty
   ): IO[Double] =
     for {
+      // estimate travel time over experienced and remaining routes with optional route spur
       currentHist <- IO.fromEither(history.currentRequest)
       experiencedRoute = currentHist.experiencedRoute
       remWithSpur      = coalesceFuturePath(currentHist.remainingRoute, spurEdges)
-      totalRoute       = coalesceFuturePath(experiencedRoute, remWithSpur)
-      // estimate travel time over experienced and remaining routes with optional route spur
       tt <- travelTime(rn, experiencedRoute, remWithSpur).map { _.foldLeft(0.0) { _ + _ } }
-      // travelTime = totalRoute.flatMap { _.estimatedTimeAtEdge }.foldLeft(0.0) { _ + _.value }
       // get the free flow travel time for the same route
+      totalRoute = coalesceFuturePath(experiencedRoute, remWithSpur)
       fftt <- freeFlowTravelTime(rn, totalRoute).map { _.foldLeft(0.0) { _ + _ } }
-      observation  = if (tt == 0.0) 0.0 else fftt / tt
-      obsTruncated = math.max(0.0, math.min(1.0, observation))
-    } yield obsTruncated
+      observation = if (tt == 0.0) 0.0 else fftt / tt
+    } yield observation
 
   /**
     * takes a path and some future path spur and coalesces it into a single path.
@@ -188,5 +185,14 @@ object DriverPolicySpaceV2Ops {
       } yield ea.attribute.freeFlowTravelTime.value
 
     route.traverse(_ff)
+  }
+
+  def invertPercent(value: Double): Double = 1.0 - value
+
+  def invertValue(min: Double, max: Double, value: Double): Double = {
+    val pos    = (value - min) / (max - min)
+    val invPos = 1.0 - pos
+    val result = ((max - min) * invPos) + min
+    result
   }
 }

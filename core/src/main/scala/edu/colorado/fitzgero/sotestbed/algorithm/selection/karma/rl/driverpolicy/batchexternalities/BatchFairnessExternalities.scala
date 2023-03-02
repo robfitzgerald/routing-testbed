@@ -15,7 +15,19 @@ import io.circe.syntax._
 
 object BatchFairnessExternalities extends LazyLogging {
 
-  def calculate(
+  /**
+    * calculates the "batch risk". this is the difference between fairness values of
+    * the most fair and least fair assignments. this observation is not agent-specific;
+    * as an observation feature, it would return the same value for each agent in the batch.
+    *
+    * @param rn
+    * @param alts
+    * @param sig
+    * @param hists
+    * @param calcFn
+    * @return
+    */
+  def calculateBatchRisk(
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     alts: Map[Request, List[Path]],
     sig: NetworkPolicySignal,

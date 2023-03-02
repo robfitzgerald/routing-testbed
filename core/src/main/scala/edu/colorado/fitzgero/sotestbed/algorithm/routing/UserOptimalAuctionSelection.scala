@@ -148,10 +148,13 @@ object UserOptimalAuctionSelection {
             withPaths
               .traverse {
                 case (req, uoPath) =>
+                  // we need to compare the provided uoPath, starting/ending at the Request locations,
+                  // with just a spur with the same start location
                   for {
                     hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(req.agent))
-                    currentPath <- hist.route.traverse { _.toPathSegment.updateCostEstimate(roadNetwork) }
-                  } yield (req, List(uoPath, currentPath))
+                    currentPath <- getCurrentPath(roadNetwork, hist)
+                    currentSpur = pathSpurFromCurrent(uoPath, currentPath)
+                  } yield (req, List(uoPath, currentSpur))
               }
               .map { twoPaths => SelectionRunnerRequest(batchId, twoPaths.toMap) }
 
@@ -188,4 +191,29 @@ object UserOptimalAuctionSelection {
       }
   }
 
+  /**
+    * grabs the current route and converts to a [[Path]] with latest network costs
+    *
+    * @param rn road network state
+    * @param rrd current data stored for this route request
+    * @return the latest route plan with updated network costs
+    */
+  def getCurrentPath(rn: RoadNetworkIO, rrd: AgentBatchData.RouteRequestData): IO[Path] =
+    rrd.route.traverse { _.toPathSegment.updateCostEstimate(rn) }
+
+  /**
+    * picks a path spur from the current path which shares the same start location
+    * as some newly-computed path spur (and assumed destination)
+    *
+    * @param newPathSpur
+    * @param currentPath
+    * @return
+    */
+  def pathSpurFromCurrent(newPathSpur: Path, currentPath: Path): Path = {
+    newPathSpur match {
+      case Nil            => currentPath
+      case firstEdge :: _ => currentPath.dropWhile(_.edgeId != firstEdge.edgeId)
+    }
+
+  }
 }

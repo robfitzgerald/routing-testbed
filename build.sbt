@@ -1,6 +1,6 @@
 import sbtassembly.MergeStrategy
 
-val packageVersion = "2.13.2"
+val packageVersion = "2.14.0"
 val sVersion       = "2.13.6"
 val circeVersion   = "0.14.1"
 
@@ -28,7 +28,7 @@ lazy val core = project
         oldStrategy(x)
     }
   )
-//  .dependsOn(dabtree)
+  .dependsOn(mctsProject)
 
 lazy val matsim = project
   .in(file("matsim"))
@@ -44,12 +44,7 @@ lazy val matsim = project
   )
   .dependsOn(core)
 
-//lazy val coreResolvers = Seq(
-//  Resolver.url(
-//    "idio",
-//    url("http://dl.bintray.com/idio/sbt-plugins")
-//  )(Resolver.ivyStylePatterns)
-//)
+lazy val mctsProject = RootProject(uri("https://github.com/robfitzgerald/mcts.git"))
 
 lazy val matsimResolvers = Seq(
   "MATSim release repository".at("https://repo.matsim.org/repository/matsim/"),
@@ -58,23 +53,12 @@ lazy val matsimResolvers = Seq(
 //  "OpenGeo Maven Repository".at("http://repo.opengeo.org")
 )
 
-//lazy val matsimSpark = project
-//  .in(file("matsim-spark"))
-//  .settings(
-//    name := "so-testbed-matsim-spark",
-//    scalaVersion := sVersion,
-//    libraryDependencies ++= matsimSparkDependencies
-//  )
-//  .dependsOn(core, matsim)
-
 lazy val scalac = List(
 //  "-target:jvm-1.8",
   "-language:higherKinds", // Cats
 //  "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
   "-Xmacro-settings:materialize-derivations" // better PureConfig error messages
 )
-
-//lazy val javac = List("-source", "1.8", "-target", "1.8")
 
 // External Dependencies
 lazy val coreDependencies = List(
