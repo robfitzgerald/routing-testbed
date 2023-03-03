@@ -20,25 +20,10 @@ object RoutingOps {
     else removeRequestsAtSameLink(batchingManager, noSmallBatches)
   }
 
-  def findShortestPathsForBatches(
-    search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
-    batches: List[(String, List[Request])]
-  ): IO[List[(String, List[(Request, Path)])]] =
-    batches
-      .traverse {
-        case (batchId, reqs) =>
-          findShortestPathForBatch(search, reqs)
-            .map {
-              case None        => None
-              case Some(paths) => Some((batchId, paths))
-            }
-      }
-      .map { _.flatten }
-
   def findShortestPathForBatch(
     search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
     reqs: List[Request]
-  ): IO[Option[List[(Request, Path)]]] =
+  ): IO[List[(Request, Path)]] =
     reqs
       .traverse { req =>
         search(req.location, req.destination, TraverseDirection.Forward)
@@ -48,12 +33,7 @@ object RoutingOps {
             case Some(path)                 => Some((req, path))
           }
       }
-      .map {
-        _.flatten match {
-          case Nil            => None
-          case nonEmptyResult => Some(nonEmptyResult)
-        }
-      }
+      .map { _.flatten }
 
   def extractSingularBatchResult(
     selectionResult: List[Option[SelectionRunnerResult]]

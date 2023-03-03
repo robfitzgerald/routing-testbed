@@ -69,12 +69,10 @@ object AssignmentFairnessExternality {
     assignmentFn: Map[Request, List[Path]] => List[(Request, Path)]
   ): IO[Double] = {
     import BatchExternalitiesOps._
-    val pathCostResult = assignmentFn(alts).traverse {
-      case (req, path) => getPathAllocationWithSpur(rn, hists, req.agent, path)
-    }
+    val getAllocFn = (r: Request, p: Path) => getPathAllocationWithSpur(rn, hists, r.agent, p)
 
     for {
-      costs    <- pathCostResult
+      costs    <- assignmentFn(alts).traverse(getAllocFn.tupled)
       fairness <- IO.fromOption(JainFairnessMath.fairness(costs))(new Error(s"unable to compute fairness"))
     } yield fairness
   }

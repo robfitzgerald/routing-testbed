@@ -16,7 +16,9 @@ object NetworkPolicySignal extends LazyLogging {
 
   case object UserOptimal extends NetworkPolicySignal
 
-  case class WeightedSampleWithoutReplacement(thresholdPercent: Double, random: Random) extends NetworkPolicySignal
+  case class WeightedSampleWithoutReplacement(thresholdPercent: Double, random: Random) extends NetworkPolicySignal {
+    override def toString: String = f"WeightedSamplingWithoutReplacement(${thresholdPercent * 100.0}%.2f%%)"
+  }
 
   /**
     * a system-optimal policy instance where a random system-optimal strategy is

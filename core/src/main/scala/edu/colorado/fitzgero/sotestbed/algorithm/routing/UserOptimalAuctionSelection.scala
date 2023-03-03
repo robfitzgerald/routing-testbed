@@ -75,29 +75,57 @@ final case class UserOptimalAuctionSelection(
 
     val selectionResults = batchingResult.flatMap {
       case (batches, zones) =>
-        val initial: IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])] =
-          IO.pure((List.empty, bank))
-        batches.foldLeft(initial) {
-          case (acc, (batchId, requests)) =>
-            acc.flatMap {
-              case (prevResults, thisBank) =>
-                resolveBatch(
-                  selectionRunner = selectionRunner,
-                  search = search,
-                  roadNetwork = roadNetwork,
-                  batchingManager = batchingManager,
-                  bank = thisBank,
-                  zoneLookup = zones,
-                  batchId = batchId,
-                  requests = requests,
-                  theta = theta
-                ).flatMap {
-                  case None => acc
-                  case Some((routingResult, updatedBank)) =>
-                    IO.pure(((batchId, routingResult) +: prevResults, updatedBank))
-                }
-            }
+        val resolveFn = resolveBatch(
+          selectionRunner = selectionRunner,
+          search = search,
+          roadNetwork = roadNetwork,
+          batchingManager = batchingManager,
+          zoneLookup = zones,
+          theta = theta
+        ) _
+
+        val nBatches = batches.length
+        logger.debug(s"running user optimal auction selection on $nBatches batches")
+
+        case class State(
+          batches: List[(String, List[Request])] = batches,
+          responses: List[(String, RoutingAlgorithm.Result)] = List.empty,
+          bank: Map[String, Karma] = bank
+        ) {
+          override def toString = s"State(${batches.length} batches, ${responses.length} responses)"
         }
+
+        val runResult = State().iterateUntilM { state =>
+          state.batches match {
+            case Nil =>
+              logger.debug(s"done running batches")
+              IO.pure(state)
+            case (batchId, requests) :: nextBatches =>
+              val nRemaining = state.batches.length
+              logger.debug(s"running batch $batchId ($nRemaining/$nBatches remaining) - run state: $state")
+              for {
+                response <- resolveFn(state.bank, batchId, requests)
+              } yield {
+                response match {
+                  case None =>
+                    logger.debug(s"batch $batchId yielded no responses, remaining: ${nextBatches.length}")
+                    state.copy(nextBatches)
+                  case Some((result, updatedBank)) =>
+                    val msg = s"batch $batchId yielded ${result.responses.length} responses. " +
+                      s"remaining batches: ${nextBatches.length}"
+                    logger.debug(msg)
+                    state.copy(nextBatches, (batchId, result) +: state.responses, updatedBank)
+                }
+              }
+          }
+        } { s =>
+          val stop = s.batches.isEmpty
+          logger.debug(s"iteration state: $s - stop iteration? $stop")
+          stop
+        }
+
+        runResult.map { state => (state.responses, state.bank) }
+
     }
 
     selectionResults
@@ -129,85 +157,104 @@ object UserOptimalAuctionSelection extends LazyLogging {
     search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
     roadNetwork: RoadNetworkIO,
     batchingManager: BatchingManager,
-    bank: Map[String, Karma],
     zoneLookup: Map[String, List[EdgeId]],
-    batchId: String,
-    requests: List[Request],
     theta: Double
+  )(
+    bank: Map[String, Karma],
+    batchId: String,
+    requests: List[Request]
   ): IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]] = {
-    RoutingOps
-      .findShortestPathForBatch(search, requests)
-      .flatMap {
-        case None            => IO.pure(None)
-        case Some(withPaths) =>
-          // to integrate with the existing framework, let's match the assumption that
-          // there are at least two paths. for our case, path index 0 should be an updated
-          // user-optimal path.
-          // for the user optimal auction selection setting, we compare this updated UO route
-          // with the current route. here, we explicitly place that current route in path
-          // index 1.
-          // because of this, we need to filter away any assignments that picked index 1.
-          val withTwoPathsResult =
-            withPaths
-              .traverse {
-                case (req, newSpur) =>
-                  // we need to compare the provided faster path, starting/ending at the Request locations,
-                  // with just a spur with the same start location
-                  for {
-                    hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(req.agent))
-                    currentPath <- getCurrentPath(roadNetwork, hist)
-                    currentSpur = pathSpurFromCurrent(newSpur, currentPath)
-                    diverse <- sufficientlyDiverse(roadNetwork, currentPath, newSpur, theta)
-                  } yield if (diverse) Some((req, List(newSpur, currentSpur))) else None
-              }
-              .map { twoPaths =>
-                val numReqs    = requests.length
-                val numDiverse = twoPaths.flatten.length
-                if (numDiverse == 0) {
-                  logger.info(s"batch $batchId has no requests that are sufficiently diverse")
-                  None
-                } else {
-                  val msg = s"batch $batchId after generating new paths for agents, " +
-                    s"$numDiverse/$numReqs are sufficiently diverse"
-                  logger.info(msg)
-                  Some(SelectionRunnerRequest(batchId, twoPaths.flatten.toMap))
-                }
-              }
+    val filterFn = filterNonDiverseAlternatives(roadNetwork, batchingManager, theta) _
+    val runFn    = runSelection(selectionRunner, roadNetwork, batchingManager, bank, zoneLookup) _
 
-          withTwoPathsResult.flatMap {
-            case None => IO.pure(None)
-            case Some(selectionRunnerRequest) =>
-              for {
-                selectionFn <- KarmaSelectionAlgorithmOps.instantiateSelectionAlgorithm(
-                  selectionRunner,
-                  roadNetwork,
-                  batchingManager,
-                  bank,
-                  zoneLookup
-                )(List(selectionRunnerRequest))
-                selectionOutput <- KarmaSelectionAlgorithmOps.runSelectionWithBank(
-                  List(selectionRunnerRequest),
-                  roadNetwork,
-                  selectionFn,
-                  bank
-                )
-                (soResults, updatedBank) = selectionOutput
-                oneResult <- RoutingOps.extractSingularBatchResult(soResults)
-              } yield {
-                // at this point, the underlying KarmaSelectionAlgorithm should have applied
-                // the NetworkPolicyFilter so that we only see UO route responses
+    logger.debug(s"batch $batchId running shortest path searches")
+    val selectionRequestResult = for {
+      reqWithPath <- RoutingOps.findShortestPathForBatch(search, requests)
+      _ = logger.debug(s"shortest path search resulted in ${reqWithPath.length} paths")
+      filtered <- reqWithPath.traverse(filterFn).map(_.flatten)
+      _             = logger.debug(s"after filtering non-diverse pairs, ${filtered.length} paths")
+      requestOption = asSelectionRequest(batchId, filtered)
+      _             = logger.debug(s"selection request nonEmpty? ${requestOption.nonEmpty}")
+      result <- requestOption.map(runFn).getOrElse(IO.pure(None))
+      cnt = result.map { case (res, _) => res.responses.length }.getOrElse(0)
+      _   = logger.debug(s"batch $batchId resolved with $cnt responses")
+    } yield result
 
-                oneResult
-                  .map { selectionResult =>
-                    val result = RoutingAlgorithm.Result(
-                      responses = selectionResult.selection.selectedRoutes,
-                      agentHistory = batchingManager.storedHistory
-                    )
-                    (result, updatedBank)
-                  }
-              }
-          }
-      }
+    selectionRequestResult
+  }
+
+  /**
+    * filter cases where the current path and proposed path do not differ by
+    * some theta value.
+    *
+    * @param rn
+    * @param batchingManager
+    * @param theta
+    * @param tuple
+    * @return
+    */
+  def filterNonDiverseAlternatives(
+    rn: RoadNetworkIO,
+    batchingManager: BatchingManager,
+    theta: Double
+  )(tuple: (Request, Path)): IO[Option[(Request, List[Path])]] = {
+    val (req, newSpur) = tuple
+    // we need to compare the provided faster path, starting/ending at the Request locations,
+    // with just a spur with the same start location
+    for {
+      hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(req.agent))
+      currentPath <- getCurrentPath(rn, hist)
+      currentSpur = pathSpurFromCurrent(newSpur, currentPath)
+      diverse <- sufficientlyDiverse(rn, currentPath, newSpur, theta)
+      _ = logger.debug(s"request ${req.agent} has diverse paths? $diverse")
+    } yield if (diverse) Some((req, List(newSpur, currentSpur))) else None
+  }
+
+  def asSelectionRequest(
+    batchId: String,
+    filteredRequests: List[(Request, List[Path])]
+  ): Option[SelectionRunnerRequest] = {
+    filteredRequests match {
+      case reqs if reqs.length < 2 =>
+        // logger.debug(s"batch $batchId does not have enough requests that are sufficiently diverse")
+        None
+      case reqs =>
+        val msg = s"batch $batchId after generating new paths for agents, " +
+          s"${filteredRequests.length} are sufficiently diverse"
+        logger.debug(msg)
+        Some(SelectionRunnerRequest(batchId, filteredRequests.toMap))
+    }
+  }
+
+  def runSelection(
+    runner: SelectionRunner,
+    rn: RoadNetworkIO,
+    bm: BatchingManager,
+    bank: Map[String, Karma],
+    zoneLookup: Map[String, List[EdgeId]]
+  )(request: SelectionRunnerRequest): IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]] = {
+    import KarmaSelectionAlgorithmOps._
+    import RoutingOps._
+    val initFn = instantiateSelectionAlgorithm(runner, rn, bm, bank, zoneLookup) _
+    for {
+      initRunner      <- initFn(List(request))
+      selectionOutput <- runSelectionWithBank(List(request), rn, initRunner, bank)
+      (soResults, updatedBank) = selectionOutput
+      oneResult <- extractSingularBatchResult(soResults)
+    } yield {
+      // at this point, the underlying KarmaSelectionAlgorithm should have applied
+      // the NetworkPolicyFilter so that we only see UO route responses
+      logger.debug(s"finished selection for batch ${request.batchId}")
+      logger.debug(s"selection response non-empty? ${oneResult.nonEmpty}")
+      oneResult
+        .map { selectionResult =>
+          val result = RoutingAlgorithm.Result(
+            responses = selectionResult.selection.selectedRoutes,
+            agentHistory = bm.storedHistory
+          )
+          (result, updatedBank)
+        }
+    }
   }
 
   /**
@@ -250,17 +297,15 @@ object UserOptimalAuctionSelection extends LazyLogging {
     * @return the effect of finding if these paths are sufficiently diverse
     */
   def sufficientlyDiverse(rn: RoadNetworkIO, current: Path, proposed: Path, theta: Double): IO[Boolean] = {
-    val refSpur       = pathSpurFromCurrent(proposed, current)
-    val refDist       = refSpur.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
-    val proposedEdges = proposed.map(_.edgeId).toSet
+    val currentEdges = current.map(_.edgeId).toSet
 
-    val nonOverlapPctResult = current.filter(e => !proposedEdges.contains(e.edgeId)) match {
+    val nonOverlapPctResult = proposed.filterNot(e => currentEdges.contains(e.edgeId)) match {
       case Nil => IO.pure(0.0)
-      case overlapEdges =>
+      case nonOverlappingProposed =>
         for {
-          refDist     <- refSpur.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
-          overlapDist <- overlapEdges.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
-        } yield if (refDist == 0.0) 0.0 else overlapDist / refDist
+          proposedDist <- proposed.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+          uniqueDist   <- nonOverlappingProposed.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+        } yield if (proposedDist == 0.0) 0.0 else uniqueDist / proposedDist
     }
 
     nonOverlapPctResult.map(_ > theta)

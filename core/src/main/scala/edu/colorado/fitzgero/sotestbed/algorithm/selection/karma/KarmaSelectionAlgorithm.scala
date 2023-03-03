@@ -373,8 +373,6 @@ case class KarmaSelectionAlgorithm(
           val (assignedUo, assignedSo) = selections.partition { case (_, idx, _) => idx == 0 }
           val dropped                  = selections.length - filteredSelections.length
           logger.info(f"BATCH $batchId")
-          logger.info(f"KARMA - NETWORK SIGNAL $signal")
-          logger.info(f"BIDS - ${bids.mkString("[", ",", "]")}")
           logger.info(f"ROUTES - ${assignedUo.length} UO | ${assignedSo.length} SO")
           logger.info(f"AGENTS: ${responses.length} AVG_ALTS: $avgAlts%.2f SAMPLES: 1")
           logger.info(
@@ -432,6 +430,8 @@ case class KarmaSelectionAlgorithm(
                         rewards <- IO.fromOption(JainFairnessMath.userFairness(allocations))(
                           new Error(s"should not be called on empty batch")
                         )
+                        _              = logger.info(f"KARMA - NETWORK SIGNAL $signal")
+                        _              = logger.info(f"BIDS - ${bids.map(_.value).mkString("[", ",", "]")}")
                         _              = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
                         _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
                         rewardsByAgent = alts.keys.toList.map(r => AgentId(r.agent)).zip(rewards).toMap

@@ -20,6 +20,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 import java.sql.Driver
 
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.batchexternalities._
+import com.typesafe.scalalogging.LazyLogging
 
 /**
   * an ADT representing the different observation features for a driver agent
@@ -45,7 +46,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy
   */
 sealed trait DriverPolicySpaceV2
 
-object DriverPolicySpaceV2 {
+object DriverPolicySpaceV2 extends LazyLogging {
 
   final case class Combined(features: List[DriverPolicySpaceV2]) extends DriverPolicySpaceV2
 
@@ -156,6 +157,7 @@ object DriverPolicySpaceV2 {
           req  <- IO.fromEither(hist.currentRequest)
           dist = req.experiencedDistance.value / req.overallDistance.value
           obs <- feature.mapFeatureRange(dist)
+          _ = logger.debug(s"Distance - agent ${req.agent} value: $dist obs: $obs")
         } yield List(obs)
 
       case feature: FreeFlowOverTravelTimePercent =>
@@ -163,6 +165,7 @@ object DriverPolicySpaceV2 {
           hist      <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
           obsResult <- freeFlowOverTravelTimePercent(rn, hist)
           obs       <- feature.mapFeatureRange(obsResult)
+          _ = logger.debug(s"Delay - agent ${req.agent} value: $obsResult obs: $obs")
         } yield List(obs)
 
       case feature: RiskOffset =>
@@ -174,6 +177,9 @@ object DriverPolicySpaceV2 {
           soTime <- pathAlternativeTravelTimeEstimate(rn, hist, soSpur)
           offset = if (uoTime == 0.0) 0.0 else (soTime - uoTime) / uoTime
           obs <- feature.mapFeatureRange(offset)
+          _ = logger.debug(s"RiskOffset - agent ${req.agent} UO: $uoTime SO: $soTime offset: $offset obs: $obs")
+          _ = logger.debug(s"  UO path spur: ${uoSpur.map { _.edgeId }.mkString("[", "->", "]")}")
+          _ = logger.debug(s"  C  path spur: ${soSpur.map { _.edgeId }.mkString("[", "->", "]")}")
         } yield List(obs)
 
       case feature: BatchRisk =>
@@ -188,6 +194,7 @@ object DriverPolicySpaceV2 {
         for {
           result <- AssignmentFairnessExternality.calculate(rn, alts, hists, req.agent)
           obs    <- feature.mapFeatureRange(result)
+          _ = logger.debug(s"AssignmentFairness - agent ${req.agent} value: $result obs: $obs")
         } yield List(obs)
 
     }
