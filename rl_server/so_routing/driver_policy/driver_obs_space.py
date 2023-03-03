@@ -110,7 +110,7 @@ class DriverObsSpace(Enum):
             # DriverObsSpaceV2
             DriverObsSpace.EXPERIENCED_DISTANCE_PERCENT: [0, 1],
             DriverObsSpace.FREE_FLOW_OVER_TRAVEL_TIME_PERCENT: [0, 1],
-            DriverObsSpace.RISK_OFFSET: [0, 1],
+            DriverObsSpace.RISK_OFFSET: [0, 2],
             DriverObsSpace.BATCH_RISK: [-1, 1],
             DriverObsSpace.ASSIGNMENT_EXTERNALITIES: [-1, 1]
         }
