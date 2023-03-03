@@ -67,10 +67,8 @@ lazy val coreDependencies = List(
 //  "org.nd4j"           % "nd4j-native-platform" % "1.0.0-beta6",
 //  "org.deeplearning4j" % "rl4j-api"             % "1.0.0-beta6",
   // PURE FP LIBRARY
-//  "org.typelevel" %% "cats-core"   % "2.0.0",
-//  "org.typelevel" %% "cats-effect" % "2.0.0",
-  "org.typelevel" %% "cats-core"   % "2.3.0",
-  "org.typelevel" %% "cats-effect" % "3.2.5",
+  "org.typelevel" %% "cats-core"   % "2.9.0",
+  "org.typelevel" %% "cats-effect" % "3.4.8",
 // COMMAND LINE PARSING
   "com.monovore" %% "decline"        % "2.1.0",
   "com.monovore" %% "decline-effect" % "2.1.0",
@@ -95,9 +93,9 @@ lazy val coreDependencies = List(
   "org.scalactic" %% "scalactic" % "3.0.8",
   "org.scalatest" %% "scalatest" % "3.0.8" % "test",
   // NETWORKING
-  "com.softwaremill.sttp.client3" %% "core"                           % "3.3.14",
-  "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % "3.3.14",
-  "com.softwaremill.sttp.client3" %% "circe"                          % "3.3.14",
+  "com.softwaremill.sttp.client3" %% "core"                           % "3.8.12",
+  "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % "3.8.12",
+  "com.softwaremill.sttp.client3" %% "circe"                          % "3.8.12",
   "com.google.protobuf"           % "protobuf-java"                   % "3.17.2"
 ).map(_.exclude("org.slf4j", "*"))
 
