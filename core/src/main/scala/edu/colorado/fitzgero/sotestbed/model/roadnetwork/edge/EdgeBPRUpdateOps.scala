@@ -9,11 +9,7 @@ object EdgeBPRUpdateOps {
 
   def withSpeedUpdate(flowUpdate: (EdgeBPR, Flow) => EdgeBPR): (EdgeBPR, Option[Flow], MetersPerSecond) => EdgeBPR =
     (e: EdgeBPR, f: Option[Flow], s: MetersPerSecond) => {
-      val withFlowUpdate = f match {
-        case None            => e
-        case Some(flowValue) => flowUpdate(e, flowValue)
-      }
-      withFlowUpdate.copy(observedSpeed = s)
+      f.map { flow => flowUpdate(e, flow) }.getOrElse(e).copy(observedSpeed = s)
     }
 
   /**

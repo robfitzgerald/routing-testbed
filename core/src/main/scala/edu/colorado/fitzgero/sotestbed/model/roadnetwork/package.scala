@@ -9,6 +9,10 @@ package object roadnetwork {
   type Path = List[PathSegment]
   val EmptyPath: Path = List.empty[PathSegment]
 
+  object Path {
+    def mkString(path: Path): String = path.map { _.edgeId }.mkString("[", "->", "]")
+  }
+
   // a lot of this project was designed to sit atop a road network
   // abstraction but also to try and capture the simulation state
   // as a value. after a few years of work, it has become somewhat

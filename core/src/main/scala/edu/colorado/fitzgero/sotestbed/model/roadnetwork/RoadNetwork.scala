@@ -46,6 +46,6 @@ object RoadNetwork {
   )
 
   final case class EdgeTriplet[E](src: VertexId, edgeId: EdgeId, dst: VertexId, attr: E) {
-    override def toString: String = s"EdgeTriplet(${src.value} -[${edgeId.value}]-> ${dst.value})"
+    override def toString: String = s"${src.value} -[${edgeId.value}]-> ${dst.value}"
   }
 }
