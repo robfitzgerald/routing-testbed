@@ -11,11 +11,17 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 case class PathSegment(edgeId: EdgeId, cost: Cost) {
   override def toString: String = s"PathSegment($edgeId, $cost)"
 
-  def toEdgeData(rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]): IO[EdgeData] =
+  def toEdgeDataButRetainCost(rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]): IO[EdgeData] =
     PathSegment.toEdgeData(this, rn)
 
   def updateCostEstimate(rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]): IO[PathSegment] =
     PathSegment.updateCostEstimate(this, rn)
+
+  def toEdgeDataWithUpdatedCost(rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]): IO[EdgeData] =
+    for {
+      uc <- PathSegment.updateCostEstimate(this, rn)
+      ed <- PathSegment.toEdgeData(uc, rn)
+    } yield ed
 }
 
 object PathSegment {
