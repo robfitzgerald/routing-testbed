@@ -71,6 +71,13 @@ object NetworkPolicyConfig {
   case class ScaledProportionalThreshold(space: NetworkPolicySpace, scale: Double, seed: Option[Long])
       extends NetworkPolicyConfig
 
+  /**
+    * generates network policy signals from an external RL server
+    *
+    * @param underlying the underlying configuration which is used to describe the _how_ of generating signals
+    * @param structure structure of how messages are sent/received from the server
+    * @param client the HTTP client configuration used for messaging
+    */
   case class ExternalRLServer(
     underlying: NetworkPolicyConfig,
     structure: NetworkPolicyStructure,
