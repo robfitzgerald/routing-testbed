@@ -6,8 +6,10 @@ import cats.implicits._
 
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, RoadNetwork, TraverseDirection, VertexId}
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.TraverseDirection._
+import com.typesafe.scalalogging.LazyLogging
 
-object SpanningTree {
+object SpanningTree extends LazyLogging {
 
   /**
     * builds a Dijkstra's spanning tree rooted at a vertex, optionally with a stopping point
@@ -20,11 +22,13 @@ object SpanningTree {
     * @tparam E edge type
     * @return
     */
-  def edgeOrientedSpanningTree[F[_]: Monad, V, E](roadNetworkModel: RoadNetwork[F, V, E],
-                                                  costFunction: E => Cost,
-                                                  srcEdgeId: EdgeId,
-                                                  dstEdgeId: EdgeId,
-                                                  direction: TraverseDirection): F[Option[MinSpanningTree[E]]] = {
+  def edgeOrientedSpanningTree[F[_]: Monad, V, E](
+    roadNetworkModel: RoadNetwork[F, V, E],
+    costFunction: E => Cost,
+    srcEdgeId: EdgeId,
+    dstEdgeId: EdgeId,
+    direction: TraverseDirection
+  ): F[Option[MinSpanningTree[E]]] = {
     if (srcEdgeId == dstEdgeId) {
       Monad[F].pure {
         None
@@ -33,10 +37,10 @@ object SpanningTree {
 
       // pick from edge triplet depending on direction
       val rootVertexT: F[Option[VertexId]] =
-        if (direction == TraverseDirection.Forward) roadNetworkModel.destination(srcEdgeId)
+        if (direction == Forward) roadNetworkModel.destination(srcEdgeId)
         else roadNetworkModel.source(dstEdgeId)
       val dstVertexT: F[Option[VertexId]] =
-        if (direction == TraverseDirection.Forward) roadNetworkModel.source(dstEdgeId)
+        if (direction == Forward) roadNetworkModel.source(dstEdgeId)
         else roadNetworkModel.destination(srcEdgeId)
 
       val result: F[Option[MinSpanningTree[E]]] = {
@@ -56,11 +60,14 @@ object SpanningTree {
   }
 
   case class TreeBuildingAccumulator[E](
-    frontier: List[(RoadNetwork.EdgeTriplet[E], Cost)],
+    frontier: collection.immutable.SortedSet[(RoadNetwork.EdgeTriplet[E], Cost)],
     solution: MinSpanningTree[E],
     explored: Set[VertexId],
     foundTarget: Boolean = false
   )
+
+  def frontierOrdering[E]: Ordering[(RoadNetwork.EdgeTriplet[E], Cost)] =
+    Ordering.by { case (triplet, cost) => (cost.value, triplet.hashCode) }
 
   object TreeBuildingAccumulator {
 
@@ -68,16 +75,17 @@ object SpanningTree {
       source: VertexId,
       direction: TraverseDirection,
       roadNetwork: RoadNetwork[F, V, E],
-      costFunction: E => Cost): F[TreeBuildingAccumulator[E]] = {
+      costFunction: E => Cost
+    ): F[TreeBuildingAccumulator[E]] = {
+
+      implicit val frontierOrd: Ordering[(RoadNetwork.EdgeTriplet[E], Cost)] = frontierOrdering
 
       for {
         edgeTriplets <- roadNetwork.incidentEdgeTriplets(source, direction)
       } yield {
-        val edgeTripletsWithCost = edgeTriplets.map { t =>
-          (t, costFunction(t.attr))
-        }
+        val edgeTripletsWithCost = edgeTriplets.map { t => (t, Cost.Zero) }
         TreeBuildingAccumulator.apply[E](
-          frontier = edgeTripletsWithCost,
+          frontier = collection.immutable.SortedSet(edgeTripletsWithCost: _*),
           solution = MinSpanningTree[E](direction),
           explored = Set(source)
         )
@@ -100,127 +108,88 @@ object SpanningTree {
     */
   def vertexOrientedMinSpanningTree[F[_]: Monad, V, E](
     roadNetwork: RoadNetwork[F, V, E],
-    costFunction: E => Cost)(src: VertexId, dst: Option[VertexId], direction: TraverseDirection): F[Option[MinSpanningTree[E]]] = {
+    costFunction: E => Cost
+  )(src: VertexId, dst: Option[VertexId], direction: TraverseDirection): F[Option[MinSpanningTree[E]]] = {
 
-    // define the ordering needed for the SortedSet objects
-//    implicit val FrontierOrdering: Ordering[(RoadNetwork.EdgeTriplet[E], Cost)] = Ordering.by { tuple => tuple._2.value + (1.0 / tuple._1.edgeId.hashCode.toDouble) }
+    implicit val frontierOrd: Ordering[(RoadNetwork.EdgeTriplet[E], Cost)] = frontierOrdering
+    val stateUpdateFn                                                      = updateState(roadNetwork, costFunction) _
 
-    // tree routed at search source
-    val initialTree: F[TreeBuildingAccumulator[E]] =
-      TreeBuildingAccumulator.buildInitialAccumulator(src, direction, roadNetwork, costFunction)
+    // pulls the shortest frontier link
+    val searchResult = TreeBuildingAccumulator
+      .buildInitialAccumulator(src, direction, roadNetwork, costFunction)
+      .flatMap {
+        _.iterateUntilM { state =>
+          state.frontier.headOption match {
+            case None                    => Monad[F].pure { state }
+            case Some((fTriplet, fCost)) =>
+              // extract some details about this traversal
+              val linkCost                  = costFunction(fTriplet.attr)
+              val traversalVertex: VertexId = if (direction == Forward) fTriplet.dst else fTriplet.src
+              val thisTraversal: MinSpanningTraversal[E] =
+                MinSpanningTraversal(Some(fTriplet), traversalVertex, linkCost, fCost + linkCost)
 
-    // recursive tree search
-
-    for {
-      init <- initialTree
-    } yield {
-
-      // recursive spanning tree BFS
-      val searchResultF: F[TreeBuildingAccumulator[E]] = init.iterateUntilM { state =>
-        state.frontier.headOption match {
-          case None =>
-            Monad[F].pure { state }
-          case Some((thisEdgeTriplet, thisPathCost)) =>
-            val traversalVertex: VertexId = if (direction == TraverseDirection.Forward) thisEdgeTriplet.dst else thisEdgeTriplet.src
-
-            if (direction == TraverseDirection.Reverse) {
-              initialTree
-            }
-
-            if (state.explored.contains(traversalVertex)) {
-
-              // can only visit each vertex once!
-              Monad[F].pure {
-                state.copy(
-                  frontier = state.frontier.tail
-                )
+              // perform the correct update depending on whether there exists a destination and if has been reached
+              dst match {
+                case Some(dstVertex) if dstVertex == traversalVertex =>
+                  Monad[F].pure(reachedDestination(state, thisTraversal))
+                case _ => stateUpdateFn(state, thisTraversal, direction)
               }
-            } else {
-
-              // get the neighbors of the next vertex
-              for {
-                incidentEdgeTriplets <- roadNetwork.incidentEdgeTriplets(traversalVertex, direction)
-              } yield {
-
-                val discoveredVertices: List[MinSpanningTraversal[E]] = for {
-                  edgeTriplet <- incidentEdgeTriplets
-                  nextVertexId            = if (direction == TraverseDirection.Forward) edgeTriplet.dst else edgeTriplet.src
-                  frontierEdgeTripletCost = costFunction(edgeTriplet.attr)
-                } yield {
-                  MinSpanningTraversal(Some { edgeTriplet }, nextVertexId, thisPathCost, thisPathCost + frontierEdgeTripletCost)
-                }
-
-                // add this edge to the solution
-                val thisMinSpanningTraversal: MinSpanningTraversal[E] =
-                  MinSpanningTraversal(
-                    Some { thisEdgeTriplet },
-                    traversalVertex,
-                    costFunction(thisEdgeTriplet.attr),
-                    thisPathCost
-                  )
-
-                val updatedSolution: MinSpanningTree[E] =
-                  state.solution.copy(
-                    tree = state.solution.tree.updated(traversalVertex, thisMinSpanningTraversal)
-                  )
-
-                val updatedFrontier: List[(RoadNetwork.EdgeTriplet[E], Cost)] =
-                  for {
-                    minSpanningTraversal <- discoveredVertices
-                    edgeTriplet          <- minSpanningTraversal.traversalEdgeTriplet
-                  } yield {
-                    (edgeTriplet, minSpanningTraversal.pathCost)
-                  }
-
-                dst match {
-                  case None =>
-                    // no destination; continue to build spanning tree
-                    state.copy(
-                      frontier = state.frontier.tail ++ updatedFrontier,
-                      solution = updatedSolution,
-                      explored = state.explored + traversalVertex
-                    )
-                  case Some(dstVertex) =>
-                    if (traversalVertex == dstVertex) {
-                      // stop when we hit the provided solution
-                      state.copy(
-                        frontier = List.empty[(RoadNetwork.EdgeTriplet[E], Cost)],
-                        solution = updatedSolution,
-                        foundTarget = true
-                      )
-                    } else {
-                      // no destination found; continue to build spanning tree
-                      state.copy(
-                        frontier = state.frontier.tail ++ updatedFrontier,
-                        solution = updatedSolution,
-                        explored = state.explored + traversalVertex
-                      )
-                    }
-                }
-              }
-            }
-        }
-      }(state => state.frontier.headOption.isEmpty || state.foundTarget)
-
-      val result: F[Option[MinSpanningTree[E]]] = for {
-        searchResult <- searchResultF
-      } yield {
-        if (dst.isEmpty) {
-          Some {
-            searchResult.solution
           }
-        } else {
-          if (searchResult.foundTarget) {
-            Some {
-              searchResult.solution
-            }
-          } else {
-            None
-          }
-        }
+        }(state => state.frontier.isEmpty || state.foundTarget)
       }
 
-      result
-    }
-  }.flatten // F[F[_]] -> F[_]
+    searchResult.map { result => if (dst.isEmpty || result.foundTarget) Some(result.solution) else None }
+  }
+
+  /**
+    * found our destination, we can skip expansion of the frontier and quit
+    *
+    * @param state
+    * @param finalTraversal
+    * @return
+    */
+  def reachedDestination[E](
+    state: TreeBuildingAccumulator[E],
+    finalTraversal: MinSpanningTraversal[E]
+  ): TreeBuildingAccumulator[E] =
+    state.copy(
+      frontier = collection.immutable.SortedSet.empty[(RoadNetwork.EdgeTriplet[E], Cost)](frontierOrdering),
+      solution = state.solution.append(finalTraversal),
+      foundTarget = true
+    )
+
+  /**
+    * expand our frontier and update the search state. each link in the frontier will be given the cost of
+    * the traversed link (the cost to reach the link). the solution will be updated with this traversal.
+    *
+    * @param roadNetwork
+    * @param costFunction
+    * @param state
+    * @param traversal
+    * @param direction
+    * @return
+    */
+  def updateState[F[_]: Monad, V, E](roadNetwork: RoadNetwork[F, V, E], costFunction: E => Cost)(
+    state: TreeBuildingAccumulator[E],
+    traversal: MinSpanningTraversal[E],
+    direction: TraverseDirection
+  ) = {
+    val hasBeenVisitedFn = hasBeenVisited(state, direction) _
+    for {
+      incidentEdgeTriplets <- roadNetwork.incidentEdgeTriplets(traversal.traversalVertex, direction)
+      unvisitedDestinations = incidentEdgeTriplets.filterNot(hasBeenVisitedFn)
+      nextFrontier          = unvisitedDestinations.map { t => (t, traversal.pathCost) }
+    } yield state.copy(
+      frontier = state.frontier.tail ++ nextFrontier,
+      solution = state.solution.append(traversal),
+      explored = state.explored + traversal.traversalVertex
+    )
+  }
+
+  def hasBeenVisited[E](state: TreeBuildingAccumulator[E], direction: TraverseDirection)(
+    triplet: RoadNetwork.EdgeTriplet[E]
+  ): Boolean = {
+    val tripletDst = if (direction == Forward) triplet.dst else triplet.src
+    state.explored.contains(tripletDst)
+  }
 }

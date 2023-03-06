@@ -15,9 +15,9 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, PathSegment, V
   */
 final case class MinSpanningTraversal[E](
   traversalEdgeTriplet: Option[EdgeTriplet[E]],
-  traversalVertex     : VertexId,
-  linkCost            : Cost,
-  pathCost            : Cost
+  traversalVertex: VertexId,
+  linkCost: Cost,
+  pathCost: Cost
 ) {
 
   def toPathSegment: Option[PathSegment] = traversalEdgeTriplet.map { edgeTriplet =>
