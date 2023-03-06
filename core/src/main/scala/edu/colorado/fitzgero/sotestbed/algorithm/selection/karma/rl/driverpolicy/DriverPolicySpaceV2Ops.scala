@@ -14,8 +14,9 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.Karma
 import scala.collection.immutable
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.PathSegment
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import com.typesafe.scalalogging.LazyLogging
 
-object DriverPolicySpaceV2Ops {
+object DriverPolicySpaceV2Ops extends LazyLogging {
 
   // a couple of things to keep in mind here
   // - an experienced route has it's travel times recorded in the history on the edges
@@ -46,6 +47,66 @@ object DriverPolicySpaceV2Ops {
     } yield overall.value
 
   /**
+    * attempts to compute the delay offset with a whole lot more carefulness around making
+    * sure we are making an apples-to-apples comparison.
+    *
+    * @param rn
+    * @param hist
+    * @param request
+    * @param paths
+    * @return
+    */
+  def delayOffset(
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    hist: ActiveAgentHistory,
+    request: Request,
+    paths: List[Path]
+  ): IO[Double] = {
+    paths match {
+      case newPath :: oldPath :: _ =>
+        for {
+          forkEdgeId             <- grabForkEdgeId(newPath, oldPath)
+          newEdgeData            <- newPath.traverse(_.toEdgeDataWithUpdatedCost(rn)).map(_.dropRight(1).drop(1))
+          oldEdgeData            <- oldPath.traverse(_.toEdgeDataWithUpdatedCost(rn)).map(_.dropRight(1).drop(1))
+          agentHist              <- IO.fromEither(hist.getAgentHistoryOrError(request.agent))
+          currentHist            <- IO.fromEither(agentHist.currentRequest)
+          destinationLink        <- IO.fromOption(currentHist.route.lastOption)(new Error(s"agent route is empty"))
+          destinationLinkUpdated <- destinationLink.updateCost(rn)
+          remainingUpdated       <- currentHist.remainingRoute.traverse(_.updateCost(rn))
+          experienced     = currentHist.experiencedRoute
+          sharedRemaining = remainingUpdated.takeWhile(_.edgeId != forkEdgeId)
+          oldCost         = costOfFullPath(experienced, sharedRemaining, oldEdgeData, destinationLinkUpdated)
+          newCost         = costOfFullPath(experienced, sharedRemaining, newEdgeData, destinationLinkUpdated)
+          offset          = if (oldCost == 0.0) 0.0 else (newCost - oldCost) / oldCost
+          _               = logger.info(s"shared path: ${EdgeData.mkString(experienced :++ sharedRemaining)}")
+          _               = logger.info(s"old: $oldCost ${EdgeData.mkString(oldEdgeData)}")
+          _               = logger.info(s"new: $newCost ${EdgeData.mkString(newEdgeData)}")
+          _               = logger.info(s"shared destination link: $destinationLinkUpdated")
+          _               = logger.info(s"final offset value: ($newCost - $oldCost) / $oldCost = $offset")
+        } yield offset
+      case other => IO.raiseError(new Error(s"expected 2 paths, found ${other.length}"))
+    }
+  }
+
+  def costOfFullPath(
+    experienced: List[EdgeData],
+    middle: List[EdgeData],
+    spur: List[EdgeData],
+    dest: EdgeData
+  ): Double = {
+    val fullPath = experienced :++ middle :++ spur :+ dest
+    fullPath.foldLeft(0.0)(_ + _.estimatedTimeAtEdge.map(_.value.toDouble).getOrElse(0.0))
+  }
+
+  def grabForkEdgeId(newPath: Path, oldPath: Path): IO[EdgeId] = {
+    val matchResult = (newPath.headOption, oldPath.headOption).flatMapN {
+      case (newEdge, oldEdge) =>
+        if (newEdge.edgeId != oldEdge.edgeId) None else Some(newEdge.edgeId)
+    }
+    IO.fromOption(matchResult)(new Error(s"generatePathPair paths don't start at same Edge"))
+  }
+
+  /**
     * estimates the total trip travel time after replacing some later
     * segment of the trip with a path spur.
     *
@@ -64,9 +125,10 @@ object DriverPolicySpaceV2Ops {
   ): IO[Double] =
     for {
       current   <- IO.fromEither(history.currentRequest)
-      edgesSpur <- pathSpur.traverse { _.toEdgeData(rn) }
+      edgesSpur <- pathSpur.traverse { _.toEdgeDataWithUpdatedCost(rn) }
       remWithSpur = coalesceFuturePath(current.remainingRoute, edgesSpur)
       tts <- travelTime(rn, current.experiencedRoute, remWithSpur)
+      _  = logger.info(s"travel times: ${tts.map { t => f"$t%.2f".padTo(6, ' ') }}")
       tt = tts.foldLeft(0.0) { _ + _ }
     } yield tt
 
@@ -174,9 +236,7 @@ object DriverPolicySpaceV2Ops {
         ea    <- IO.fromOption(eaOpt)(new Error(s"edge ${ed.edgeId} missing attr"))
       } yield ea.attribute.observedTravelTime.value
 
-    for {
-      remTT <- remaining.traverse(_tt)
-    } yield expTT ::: remTT
+    for { remTT <- remaining.traverse(_tt) } yield expTT ::: remTT
   }
 
   /**

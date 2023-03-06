@@ -58,8 +58,8 @@ object BatchFairnessExternalities extends LazyLogging {
           _.traverse {
             case (req, best, worst) =>
               for {
-                bestEdges  <- best.traverse(_.toEdgeData(rn))
-                worstEdges <- worst.traverse(_.toEdgeData(rn))
+                bestEdges  <- best.traverse(_.toEdgeDataButRetainCost(rn))
+                worstEdges <- worst.traverse(_.toEdgeDataButRetainCost(rn))
                 hist       <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
                 bestCost   <- freeFlowOverTravelTimePercent(rn, hist, bestEdges)
                 worstCost  <- freeFlowOverTravelTimePercent(rn, hist, worstEdges)

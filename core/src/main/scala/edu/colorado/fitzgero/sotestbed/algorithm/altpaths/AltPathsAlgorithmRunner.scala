@@ -143,9 +143,11 @@ object AltPathsAlgorithmRunner extends LazyLogging {
           // modified route plan.
           // transform our Path into a List[EdgeData] to leverage the coalesceFuturePath method
           for {
-            hist     <- IO.fromEither(activeAgentHistory.getAgentHistoryOrError(req.agent))
-            current  <- IO.fromEither(hist.currentRequest)
-            altEdges <- alts.traverse { alt => alt.traverse(_.toEdgeData(rn)).map { edges => (alt, edges) } }
+            hist    <- IO.fromEither(activeAgentHistory.getAgentHistoryOrError(req.agent))
+            current <- IO.fromEither(hist.currentRequest)
+            altEdges <- alts.traverse { alt =>
+              alt.traverse(_.toEdgeDataButRetainCost(rn)).map { edges => (alt, edges) }
+            }
           } yield {
             val (loopsRemoved, _) = altEdges.filter {
               case (alt, edges) =>

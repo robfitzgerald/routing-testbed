@@ -124,7 +124,7 @@ object BatchWiseAllocationMetric {
       hist       <- IO.fromEither(aah.getAgentHistoryOrError(request.agent))
       current    <- DriverPolicySpaceV2Ops.currentRoute(hist)
       currentReq <- IO.fromEither(hist.currentRequest)
-      spurEdges  <- selectedPathSpur.traverse(_.toEdgeData(rn))
+      spurEdges  <- selectedPathSpur.traverse(_.toEdgeDataButRetainCost(rn))
       remWithSpur = DriverPolicySpaceV2Ops.coalesceFuturePath(currentReq.remainingRoute, spurEdges)
       futurePath  = DriverPolicySpaceV2Ops.coalesceFuturePath(current, spurEdges)
       dists       = futurePath.map(_.linkDistance)

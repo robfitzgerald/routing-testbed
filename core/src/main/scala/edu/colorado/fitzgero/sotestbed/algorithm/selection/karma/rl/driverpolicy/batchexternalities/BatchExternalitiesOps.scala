@@ -47,7 +47,7 @@ object BatchExternalitiesOps {
   ): IO[Double] = {
     import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2Ops._
     for {
-      spurEdgeData <- spurPath.traverse(_.toEdgeData(rn))
+      spurEdgeData <- spurPath.traverse(_.toEdgeDataButRetainCost(rn))
       hist         <- IO.fromEither(history.getAgentHistoryOrError(agentId))
       cost         <- freeFlowOverTravelTimePercent(rn, hist, spurEdgeData)
     } yield cost

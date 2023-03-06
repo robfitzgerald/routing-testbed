@@ -170,17 +170,22 @@ object DriverPolicySpaceV2 extends LazyLogging {
 
       case feature: RiskOffset =>
         for {
-          hist   <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
-          uoSpur <- getUoPathAlternative(req, alts)
-          soSpur <- getSoPathAlternative(req, alts)
-          uoTime <- pathAlternativeTravelTimeEstimate(rn, hist, uoSpur)
-          soTime <- pathAlternativeTravelTimeEstimate(rn, hist, soSpur)
-          offset = if (uoTime == 0.0) 0.0 else (soTime - uoTime) / uoTime
-          obs <- feature.mapFeatureRange(offset)
-          _ = logger.debug(s"RiskOffset - agent ${req.agent} UO: $uoTime SO: $soTime offset: $offset obs: $obs")
-          _ = logger.debug(s"  UO path spur: ${uoSpur.map { _.edgeId }.mkString("[", "->", "]")}")
-          _ = logger.debug(s"  C  path spur: ${soSpur.map { _.edgeId }.mkString("[", "->", "]")}")
+          paths  <- IO.fromOption(alts.get(req))(new Error("agent has no paths"))
+          offset <- delayOffset(rn, hists, req, paths)
+          obs    <- feature.mapFeatureRange(offset)
         } yield List(obs)
+      // for {
+      //   hist    <- IO.fromEither(hists.getAgentHistoryOrError(req.agent))
+      //   newSpur <- getUoPathAlternative(req, alts)
+      //   oldSpur <- getSoPathAlternative(req, alts)
+      //   newTime <- pathAlternativeTravelTimeEstimate(rn, hist, newSpur)
+      //   oldTime <- pathAlternativeTravelTimeEstimate(rn, hist, oldSpur)
+      //   offset = if (newTime == 0.0) 0.0 else (oldTime - newTime) / newTime
+      //   obs <- feature.mapFeatureRange(offset)
+      //   _ = logger.info(s"RiskOffset - agent ${req.agent} new: $newTime old: $oldTime offset: $offset obs: $obs")
+      //   _ = logger.info(s"  new path spur: ${Path.mkString(newSpur)}")
+      //   _ = logger.info(s"  old path spur: ${Path.mkString(oldSpur)}")
+      // } yield List(obs)
 
       case feature: BatchRisk =>
         // could be a config parameter if we explore alternatives like t-test

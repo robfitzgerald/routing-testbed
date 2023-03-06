@@ -30,8 +30,6 @@ final case class UserOptimalAuctionSelection(
 
   import UserOptimalAuctionSelection._
 
-  def observedTravelTimeCost(edge: EdgeBPR): Cost = Cost(edge.observedTravelTime.value)
-
   /**
     * uses auctions to select agents which can receive an update to their
     * path, using a path generated based on the current network state.
@@ -50,12 +48,6 @@ final case class UserOptimalAuctionSelection(
     batchingManager: BatchingManager,
     bank: Map[String, Karma]
   ): IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])] = {
-
-    val search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]] =
-      DijkstraSearch.edgeOrientedShortestPath[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR](
-        roadNetwork,
-        observedTravelTimeCost
-      )
 
     // apply the batching strategy and then filter out batches based on some
     // basic rules like whether or not agents can replan at the same link as
@@ -77,7 +69,6 @@ final case class UserOptimalAuctionSelection(
       case (batches, zones) =>
         val resolveFn = resolveBatch(
           selectionRunner = selectionRunner,
-          search = search,
           roadNetwork = roadNetwork,
           batchingManager = batchingManager,
           zoneLookup = zones,
@@ -143,7 +134,6 @@ object UserOptimalAuctionSelection extends LazyLogging {
     * request for each agent.
     *
     * @param selectionRunner runs route selection algorithm
-    * @param search routing algorithm, assumed optimal such as Dijkstra's
     * @param roadNetwork current network conditions
     * @param batchingManager current knowlege of route histories and batch-building function
     * @param bank current balance of money (karma) for each agent
@@ -154,7 +144,6 @@ object UserOptimalAuctionSelection extends LazyLogging {
     */
   def resolveBatch(
     selectionRunner: SelectionRunner,
-    search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]],
     roadNetwork: RoadNetworkIO,
     batchingManager: BatchingManager,
     zoneLookup: Map[String, List[EdgeId]],
@@ -164,16 +153,14 @@ object UserOptimalAuctionSelection extends LazyLogging {
     batchId: String,
     requests: List[Request]
   ): IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]] = {
-    val filterFn = filterNonDiverseAlternatives(roadNetwork, batchingManager, theta) _
-    val runFn    = runSelection(selectionRunner, roadNetwork, batchingManager, bank, zoneLookup) _
+    val pathFn = generatePathPair(roadNetwork, batchingManager, theta) _
+    val runFn  = runSelection(selectionRunner, roadNetwork, batchingManager, bank, zoneLookup) _
 
     logger.debug(s"batch $batchId running shortest path searches")
     val selectionRequestResult = for {
-      reqWithPath <- RoutingOps.findShortestPathForBatch(search, requests)
-      _ = logger.debug(s"shortest path search resulted in ${reqWithPath.length} paths")
-      filtered <- reqWithPath.traverse(filterFn).map(_.flatten)
-      _             = logger.debug(s"after filtering non-diverse pairs, ${filtered.length} paths")
-      requestOption = asSelectionRequest(batchId, filtered)
+      reqsWithPaths <- requests.traverse(pathFn).map(_.flatten)
+      _             = logger.debug(s"after generating diverse path pairs, ${reqsWithPaths.length} requests remain")
+      requestOption = asSelectionRequest(batchId, reqsWithPaths)
       _             = logger.debug(s"selection request nonEmpty? ${requestOption.nonEmpty}")
       result <- requestOption.map(runFn).getOrElse(IO.pure(None))
       cnt = result.map { case (res, _) => res.responses.length }.getOrElse(0)
@@ -184,8 +171,8 @@ object UserOptimalAuctionSelection extends LazyLogging {
   }
 
   /**
-    * filter cases where the current path and proposed path do not differ by
-    * some theta value.
+    * generate the current path spur and, if it differs from the proposed spur by
+    * some theta, return the pair with the request.
     *
     * @param rn
     * @param batchingManager
@@ -193,21 +180,32 @@ object UserOptimalAuctionSelection extends LazyLogging {
     * @param tuple
     * @return
     */
-  def filterNonDiverseAlternatives(
+  def generatePathPair(
     rn: RoadNetworkIO,
     batchingManager: BatchingManager,
     theta: Double
-  )(tuple: (Request, Path)): IO[Option[(Request, List[Path])]] = {
-    val (req, newSpur) = tuple
-    // we need to compare the provided faster path, starting/ending at the Request locations,
-    // with just a spur with the same start location
-    for {
-      hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(req.agent))
-      currentPath <- getCurrentPath(rn, hist)
-      currentSpur = pathSpurFromCurrent(newSpur, currentPath)
-      diverse <- sufficientlyDiverse(rn, currentPath, newSpur, theta)
-      _ = logger.debug(s"request ${req.agent} has diverse paths? $diverse")
-    } yield if (diverse) Some((req, List(newSpur, currentSpur))) else None
+  )(request: Request): IO[Option[(Request, List[Path])]] = {
+    val search: (EdgeId, EdgeId, TraverseDirection) => IO[Option[Path]] =
+      DijkstraSearch.edgeOrientedShortestPath[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR](
+        rn,
+        (edge: EdgeBPR) => Cost(edge.observedTravelTime.value)
+      )
+    RoutingOps
+      .findShortestPathForRequest(search, request)
+      .flatMap {
+        case None          => IO.pure(None)
+        case Some(newSpur) =>
+          // extract this agent's current path and strip to the current path spur with matching o/d to the $newSpur.
+          //
+          for {
+            hist        <- IO.fromEither(batchingManager.storedHistory.getNewestDataOrError(request.agent))
+            forkEdge    <- IO.fromOption(newSpur.headOption)(new Error(s"shortest path found is empty"))
+            currentPath <- getCurrentPathWithCurrentCosts(rn, hist)
+            currentSpur = currentPath.dropWhile(_.edgeId != forkEdge.edgeId)
+            diverse <- sufficientlyDiverse(rn, currentPath, newSpur, theta)
+            _ = logger.debug(s"request ${request.agent} has diverse paths? $diverse")
+          } yield if (diverse) Some((request, List(newSpur, currentSpur))) else None
+      }
   }
 
   def asSelectionRequest(
@@ -264,24 +262,8 @@ object UserOptimalAuctionSelection extends LazyLogging {
     * @param rrd current data stored for this route request
     * @return the latest route plan with updated network costs
     */
-  def getCurrentPath(rn: RoadNetworkIO, rrd: AgentBatchData.RouteRequestData): IO[Path] =
+  def getCurrentPathWithCurrentCosts(rn: RoadNetworkIO, rrd: AgentBatchData.RouteRequestData): IO[Path] =
     rrd.route.traverse { _.toPathSegment.updateCostEstimate(rn) }
-
-  /**
-    * picks a path spur from the current path which shares the same start location
-    * as some newly-computed path spur (and assumed destination)
-    *
-    * @param newPathSpur
-    * @param currentPath
-    * @return
-    */
-  def pathSpurFromCurrent(newPathSpur: Path, currentPath: Path): Path = {
-
-    newPathSpur match {
-      case Nil            => currentPath
-      case firstEdge :: _ => currentPath.dropWhile(_.edgeId != firstEdge.edgeId)
-    }
-  }
 
   /**
     * checks the overlap percentage (by distance) of the new path to the current path,
@@ -303,8 +285,10 @@ object UserOptimalAuctionSelection extends LazyLogging {
       case Nil => IO.pure(0.0)
       case nonOverlappingProposed =>
         for {
-          proposedDist <- proposed.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
-          uniqueDist   <- nonOverlappingProposed.traverse(_.toEdgeData(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+          proposedDist <- proposed.traverse(_.toEdgeDataButRetainCost(rn)).map(_.foldLeft(0.0)(_ + _.linkDistance))
+          uniqueDist <- nonOverlappingProposed
+            .traverse(_.toEdgeDataButRetainCost(rn))
+            .map(_.foldLeft(0.0)(_ + _.linkDistance))
         } yield if (proposedDist == 0.0) 0.0 else uniqueDist / proposedDist
     }
 
