@@ -78,11 +78,11 @@ object DriverPolicySpaceV2Ops extends LazyLogging {
           oldCost         = costOfFullPath(experienced, sharedRemaining, oldEdgeData, destinationLinkUpdated)
           newCost         = costOfFullPath(experienced, sharedRemaining, newEdgeData, destinationLinkUpdated)
           offset          = if (oldCost == 0.0) 0.0 else (newCost - oldCost) / oldCost
-          _               = logger.info(s"shared path: ${EdgeData.mkString(experienced :++ sharedRemaining)}")
-          _               = logger.info(s"old: $oldCost ${EdgeData.mkString(oldEdgeData)}")
-          _               = logger.info(s"new: $newCost ${EdgeData.mkString(newEdgeData)}")
-          _               = logger.info(s"shared destination link: $destinationLinkUpdated")
-          _               = logger.info(s"final offset value: ($newCost - $oldCost) / $oldCost = $offset")
+          // _               = logger.info(s"shared path: ${EdgeData.mkString(experienced :++ sharedRemaining)}")
+          // _               = logger.info(s"old: $oldCost ${EdgeData.mkString(oldEdgeData)}")
+          // _               = logger.info(s"new: $newCost ${EdgeData.mkString(newEdgeData)}")
+          // _               = logger.info(s"shared destination link: $destinationLinkUpdated")
+          // _               = logger.info(s"final offset value: ($newCost - $oldCost) / $oldCost = $offset")
         } yield offset
       case other => IO.raiseError(new Error(s"expected 2 paths, found ${other.length}"))
     }
@@ -128,7 +128,7 @@ object DriverPolicySpaceV2Ops extends LazyLogging {
       edgesSpur <- pathSpur.traverse { _.toEdgeDataWithUpdatedCost(rn) }
       remWithSpur = coalesceFuturePath(current.remainingRoute, edgesSpur)
       tts <- travelTime(rn, current.experiencedRoute, remWithSpur)
-      _  = logger.info(s"travel times: ${tts.map { t => f"$t%.2f".padTo(6, ' ') }}")
+      // _  = logger.info(s"travel times: ${tts.map { t => f"$t%.2f".padTo(6, ' ') }}")
       tt = tts.foldLeft(0.0) { _ + _ }
     } yield tt
 
