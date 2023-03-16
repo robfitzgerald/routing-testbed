@@ -5,6 +5,9 @@ from typing import List, Optional
 from gym import spaces
 import numpy as np
 from json import JSONEncoder
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class NetworkObsSpace(Enum):
@@ -42,7 +45,24 @@ class NetworkObsSpace(Enum):
 
 def build_observation_space(
         feature_names: list[NetworkObsSpace],
-        agents: Optional[List[str]] = None) -> spaces.Space:
+        agents: Optional[List[str]] = None,
+        n_agents: Optional[int] = None
+) -> spaces.Space:
+
+    if n_agents is not None and agents is not None:
+        msg = (
+            f'build_observation_space called with both "agents" and '
+            f'"n_agents" specified, cannot submit both. agents is used '
+            f'for multiagent spaces and n_agents for tuple spaces.'
+        )
+        raise KeyError(msg)
+    if n_agents is None and agents is None:
+        msg = (
+            f'must specify either "agents" or "n_agents". agents is used '
+            f'for multiagent spaces and n_agents for tuple spaces.'
+        )
+        raise KeyError(msg)
+    multiagent = agents is not None
 
     # grab the range of values for each feature requested
     low, high = [], []
@@ -68,15 +88,18 @@ def build_observation_space(
         low=np.array(low),
         high=np.array(high),
         shape=(n_dims,),
-        dtype=np.float64
+        dtype=np.float32
     )
 
-    if agents is None:
-        return space
-    else:
-        # expand into a multiagent space
+    if multiagent:
+        log.info(f'building multiagent observation space of type spaces.Dict')
         mapping = {agent: space for agent in agents}
         return spaces.Dict(mapping)
+    else:
+        log.info(
+            f'building tupled observation space of type spaces.Tuple, vector size {n_agents}')
+        vector = [space for _ in range(n_agents)]
+        return spaces.Tuple(vector)
 
 
 def build_marl_obs_space(

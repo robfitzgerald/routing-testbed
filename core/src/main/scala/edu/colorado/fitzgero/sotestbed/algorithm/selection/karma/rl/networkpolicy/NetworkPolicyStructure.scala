@@ -32,6 +32,7 @@ object NetworkPolicyStructure {
   /**
     * a single agent policy maps to a single agent RLLib
     * configuration where obs|act|rew are not grouped by agent id
+    * - observation is Tupled
     */
   case object SingleAgentPolicy extends NetworkPolicyStructure
 
@@ -70,12 +71,11 @@ object NetworkPolicyStructure {
       nps match {
         case SingleAgentPolicy =>
           for {
-            reward            <- space.encodeReward(roadNetwork, previousBatch)
-            singleAgentReward <- reward.asSingleAgentReward
-          } yield PolicyClientRequest.LogReturnsRequest(
-            episode_id = episodeId,
-            reward = singleAgentReward
-          )
+            reward <- space.encodeReward(roadNetwork, previousBatch)
+            mar    <- reward.asMultiAgentReward
+            flattened = mar.reward.toList.sortBy { case (agentId, _) => agentId }.map { case (_, r) => r }
+            tupled    = Reward.TupledReward(flattened)
+          } yield PolicyClientRequest.LogReturnsRequest(episodeId, tupled)
         case MultiAgentPolicy =>
           space.encodeReward(roadNetwork, previousBatch).map { rew =>
             PolicyClientRequest.LogReturnsRequest(episodeId, rew)
@@ -108,7 +108,16 @@ object NetworkPolicyStructure {
       space: NetworkPolicySpace
     ): IO[PolicyClientRequest.GetActionRequest] =
       nps match {
-        case SingleAgentPolicy => IO.raiseError(new NotImplementedError)
+        case SingleAgentPolicy =>
+          space.encodeObservation(roadNetwork, zoneLookup).flatMap {
+            case mao: Observation.MultiAgentObservation =>
+              val flattened = mao.observation.toList
+                .sortBy { case (agentId, _) => agentId }
+                .map { case (_, obs) => obs }
+              val req = PolicyClientRequest.GetActionRequest(episodeId, Observation.TupledAgentObservation(flattened))
+              IO.pure(req)
+            case other => IO.raiseError(new Error(s"single agent observation encoding not as expected"))
+          }
         case MultiAgentPolicy =>
           space.encodeObservation(roadNetwork, zoneLookup).map { obs =>
             PolicyClientRequest.GetActionRequest(episodeId, obs)
@@ -143,7 +152,19 @@ object NetworkPolicyStructure {
       agents: List[String]
     ): IO[Map[String, NetworkPolicySignal]] = nps match {
       case SingleAgentPolicy =>
-        IO.raiseError(new NotImplementedError)
+        action match {
+          case a: Action.TupledAgentRealAction =>
+            if (a.action.lengthCompare(agents) != 0) {
+              val nActions = a.action.length
+              val nAgents  = agents.length
+              IO.raiseError(new Error(s"$nActions actions from server but $nAgents agents, must be equal"))
+            } else {
+              val agentIds = agents.map { s => AgentId(s) }
+              val mara     = Action.MultiAgentRealAction(agentIds.sorted.zip(a.action).toMap)
+              gen.generateSignalsForZones(mara)
+            }
+          case other => IO.raiseError(new Error(s"expected Tupled action, found ${other.getClass.getSimpleName}"))
+        }
       case MultiAgentPolicy => space.decodeAction(action, gen)
       case SingleGroupMultiAgentPolicy(groupId) =>
         for {

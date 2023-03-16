@@ -7,6 +7,7 @@ import threading
 import time
 import traceback
 import json
+import numpy as np
 
 from typing import List
 # import ray.cloudpickle as pickle
@@ -235,6 +236,16 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
             print("received input:")
             parsed_input = json.loads(raw_body)
             print(json.dumps(parsed_input))
+
+            obs = parsed_input.get('observation')
+            if obs is not None and isinstance(obs, list):
+                nested = all(isinstance(i, list) for i in obs)
+                if nested:
+                    # convert inner lists to np.array
+                    obs_np = tuple([np.asarray(x, dtype=np.float32)
+                                   for x in obs])
+                    parsed_input['observation'] = obs_np
+
             try:
                 response = self.execute_command(parsed_input)
                 self.send_response(200)

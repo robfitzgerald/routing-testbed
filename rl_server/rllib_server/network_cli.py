@@ -112,17 +112,18 @@ parser.add_argument(
     type=Path,
     help="file with list of agents under control used in multiagent RL",
     # default=None
-    required=True
+    required=False
 )
-# parser.add_argument(
-#     "--n-agents",
-#     type=int,
-#     help=(
-#         "in lieu of a grouping file, the number of network agents to build "
-#         "an enumeration from"
-#     ),
-#     default=None
-# )
+
+parser.add_argument(
+    "--n-agents",
+    type=int,
+    help=(
+        "in lieu of a grouping file, the number of network agents to build "
+        "an enumeration from"
+    ),
+    required=False
+)
 # parser.add_argument(
 #     '--agents-grid',
 #     type=str,

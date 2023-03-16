@@ -3,12 +3,31 @@ from typing import List, Optional
 from gym import spaces
 import numpy as np
 from json import JSONEncoder
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def build_action_space(
         space_idx: int,
         max_k: Optional[int] = None,
-        agents: Optional[List[str]] = None) -> spaces.Space:
+        agents: Optional[List[str]] = None,
+        n_agents: Optional[int] = None) -> spaces.Space:
+
+    if n_agents is not None and agents is not None:
+        msg = (
+            f'build_observation_space called with both "agents" and '
+            f'"n_agents" specified, cannot submit both. agents is used '
+            f'for multiagent spaces and n_agents for tuple spaces.'
+        )
+        raise KeyError(msg)
+    if n_agents is None and agents is None:
+        msg = (
+            f'must specify either "agents" or "n_agents". agents is used '
+            f'for multiagent spaces and n_agents for tuple spaces.'
+        )
+        raise KeyError(msg)
+    multiagent = agents is not None
 
     if space_idx == 0 and max_k is None:
         raise ValueError("discrete action space requires a k value")
@@ -33,12 +52,18 @@ def build_action_space(
         )
         raise IndexError(msg) from e
 
-    if agents is None:
-        return space
-    else:
-        # expand into a multiagent space
+    if multiagent:
+        log.info(f'building multiagent action space of type spaces.Dict')
         mapping = {agent: space for agent in agents}
-        return spaces.Dict(mapping)
+        dict_space = spaces.Dict(mapping)
+        log.info(dict_space)
+        return dict_space
+    else:
+        log.info(
+            f'building tupled action space of type spaces.Tuple, vector size {n_agents}:')
+        vector = [space for _ in range(n_agents)]
+        log.info(vector)
+        return spaces.Tuple(vector)
 
 
 def build_marl_act_space(n_agents: int) -> spaces.Space:

@@ -5,6 +5,7 @@ import io.circe.{Decoder, Encoder}
 final case class AgentId(value: String) extends AnyVal
 
 object AgentId {
-  implicit val enc: Encoder[AgentId] = Encoder[String].contramap { _.value }
-  implicit val dec: Decoder[AgentId] = Decoder[String].emap { s => Right(AgentId(s)) }
+  implicit val ord: Ordering[AgentId] = Ordering.by(_.value)
+  implicit val enc: Encoder[AgentId]  = Encoder[String].contramap { _.value }
+  implicit val dec: Decoder[AgentId]  = Decoder[String].emap { s => Right(AgentId(s)) }
 }

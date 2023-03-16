@@ -97,9 +97,20 @@ def run():
     except Exception as e:
         raise Exception(f"failed parsing observation features") from e
 
-    grouping = Grouping.build(args.grouping_file)
-    obs_space = rsnnos.build_marl_obs_space(grouping.n_agents, features)
-    act_space = rsnnas.build_marl_act_space(grouping.n_agents)
+    # tupled spaces are currently hard-coded
+    # grouping = Grouping.build(args.grouping_file)
+    obs_space = rsnnos.build_observation_space(
+        feature_names=features,
+        agents=None,
+        n_agents=args.n_agents)
+    act_space = rsnnas.build_action_space(
+        space_idx=1,
+        max_k=None,
+        agents=None,
+        n_agents=args.n_agents)
+
+    # obs_space = rsnnos.build_marl_obs_space(grouping.n_agents, features)
+    # act_space = rsnnas.build_marl_act_space(grouping.n_agents)
     # obs_space_instance = list(obs_space.values())[0]
     # act_space_instance = list(act_space.values())[0]
 
@@ -180,6 +191,8 @@ def run():
         "count_steps_by": "env_steps",
     }
 
+    multiagent_conf = multiagent if args.grouping_file is not None else {}
+
     # Trainer config. Note that this config is sent to the client only in case
     # the client needs to create its own policy copy for local inference.
     config = {
@@ -235,7 +248,7 @@ def run():
         # Disable OPE, since the rollouts are coming from online clients.
         "off_policy_estimation_methods": {},
         # Create a "chatty" client/server or not.
-        "callbacks": MyCallbacks if args.callbacks_verbose else None,
+        # "callbacks": MyCallbacks if args.callbacks_verbose else None,
         # DL framework to use.
         "framework": args.framework,
         # Set to INFO so we'll see the server's actual address:port.
@@ -268,7 +281,7 @@ def run():
         #     "action_space": act_space,
         #     "multiagent": multiagent
         # },
-        "multiagent": multiagent
+        "multiagent": multiagent_conf
     }
 
     if args.run == "QMIX":
@@ -298,51 +311,51 @@ def run():
         print(alg_config)
         config.update(alg_config)
 
-    if args.run == "PPO":
+    # if args.run == "PPO":
         # defaults - see https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#proximal-policy-optimization-ppo
 
         # updated_model = config.get("model", {})
         # updated_model['vf_share_layers'] = False
-        config.update(
-            {
-                # PPO specific settings
-                #         "lr_schedule": None,
-                #         "use_critic": True,
-                #         "use_gae": True,
-                #         "lambda": 1.0,
-                #         "kl_coeff": 0.2,
-                #         "sgd_minibatch_size": 128,
-                #         "num_sgd_iter": 30,
-                #         "shuffle_sequences": True,
-                #         "vf_loss_coeff": 1.0,
-                #         "entropy_coeff": 0.0,
-                #         "entropy_coeff_schedule": None,
-                #         "clip_param": 0.3,
-                #         "vf_clip_param": 10.0,
-                #         "grad_clip": None,
-                #         "kl_target": 0.01,
-                #         "gamma": 0.99,
-                # "rollout_fragment_length": 200,
-                # "train_batch_size": 2000,
-                "lr": 5e-5,
-                #         "config": updated_model
-            }
-        )
+        # config.update(
+        #     {
+        #         # PPO specific settings
+        #         #         "lr_schedule": None,
+        #         #         "use_critic": True,
+        #         #         "use_gae": True,
+        #         #         "lambda": 1.0,
+        #         #         "kl_coeff": 0.2,
+        #         #         "sgd_minibatch_size": 128,
+        #         #         "num_sgd_iter": 30,
+        #         #         "shuffle_sequences": True,
+        #         #         "vf_loss_coeff": 1.0,
+        #         #         "entropy_coeff": 0.0,
+        #         #         "entropy_coeff_schedule": None,
+        #         #         "clip_param": 0.3,
+        #         #         "vf_clip_param": 10.0,
+        #         #         "grad_clip": None,
+        #         #         "kl_target": 0.01,
+        #         #         "gamma": 0.99,
+        #         # "rollout_fragment_length": 200,
+        #         # "train_batch_size": 2000,
+        #         "lr": 5e-5,
+        #         #         "config": updated_model
+        #     }
+        # )
 
         # adding our own flavor based on ideas from the PPO paper, someone's notes, and a unity PPO setup:
         # https://docs.google.com/spreadsheets/d/1fNVfqgAifDWnTq-4izPPW_CVAUu9FXl3dWkqWIXz04o/edit#gid=0
         # https://arxiv.org/pdf/1707.06347.pdf
         # https://github.com/ray-project/ray/blob/master/rllib/tuned_examples/ppo/unity3d-soccer-strikers-vs-goalie-ppo.yaml
-        config.update(
-            {
-                "sgd_minibatch_size": 64,
-                # "num_sgd_iter": 20,
-                "lambda": 0.95,
-                "clip_param": 0.2
-            }
-        )
+        # config.update(
+        #     {
+        #         "sgd_minibatch_size": 64,
+        #         # "num_sgd_iter": 20,
+        #         "lambda": 0.95,
+        #         "clip_param": 0.2
+        #     }
+        # )
 
-        pass  # extension poin
+        # pass  # extension poin
 
     if not args.as_test:
         config.update(
