@@ -67,7 +67,12 @@ final case class UserOptimalAuctionSelection(
 
     val selectionResults = batchingResult.flatMap {
       case (batches, zones) =>
-        val resolveFn = resolveBatch(
+        // given a bank state, batch id, and list of requests for that batch, return either a
+        // routing algorithm result and updated bank state, or None if no responses are to be sent +
+        // the bank state stays the same.
+        type ResolveFn =
+          (Map[String, Karma], String, List[Request]) => IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]]
+        val resolveFn: ResolveFn = resolveBatch(
           selectionRunner = selectionRunner,
           roadNetwork = roadNetwork,
           batchingManager = batchingManager,
@@ -78,6 +83,7 @@ final case class UserOptimalAuctionSelection(
         val nBatches = batches.length
         logger.debug(s"running user optimal auction selection on $nBatches batches")
 
+        // below we fold batches into this State record type using the Monad[IO].iterateUntilM method
         case class State(
           batches: List[(String, List[Request])] = batches,
           responses: List[(String, RoutingAlgorithm.Result)] = List.empty,
