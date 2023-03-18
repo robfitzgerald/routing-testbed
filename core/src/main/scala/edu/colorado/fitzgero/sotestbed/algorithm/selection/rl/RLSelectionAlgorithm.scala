@@ -20,6 +20,7 @@ import edu.colorado.fitzgero.sotestbed.rllib.PolicyClientRequest.{
   StartEpisodeRequest
 }
 import edu.colorado.fitzgero.sotestbed.rllib.{AgentId, EpisodeId, Observation, PolicyClientOps}
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 final class RLSelectionAlgorithm(
   val host: String,
@@ -42,6 +43,7 @@ final class RLSelectionAlgorithm(
   def selectRoutes(
     batchId: String,
     alts: Map[Request, List[Path]],
+    currentSimTime: SimTime,
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],

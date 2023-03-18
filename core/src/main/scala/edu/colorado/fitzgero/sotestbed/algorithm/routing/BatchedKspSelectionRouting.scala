@@ -61,6 +61,11 @@ case class BatchedKspSelectionRouting(
   /**
     * performs all steps related to solving SO route plans
     *
+    * NOTE: don't use this one for Karma-based routing, please. too many monkeypatches for running
+    * KarmaSelectionAlgorithm led to developing UserOptimalAuctionSelection which is the better
+    * RoutingAlgorithm implementation for those cases. for example, it enforces that the network
+    * policy signal always has a chance to send, even when there's no requests.
+    *
     * @param roadNetwork the current road network state
     * @param requests the requests at this time step
     * @param currentSimTime the current time
@@ -71,6 +76,7 @@ case class BatchedKspSelectionRouting(
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     requests: List[RouteRequestData],
     currentSimTime: SimTime,
+    batchWindow: SimTime,
     batchingManager: BatchingManager,
     bank: Map[String, Karma]
   ): IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])] = {
@@ -125,9 +131,11 @@ case class BatchedKspSelectionRouting(
 
             // handle the special case of additional context required for running the karma algorithm
             // when working within the constraints of the SelectionAlgorithm trait
-            def instantiateSelection: List[SelectionRunnerRequest] => IO[SelectionRunner] =
+            def instantiateSelection: IO[SelectionRunner] =
               KarmaSelectionAlgorithmOps.instantiateSelectionAlgorithm(
                 selectionRunner,
+                currentSimTime,
+                batchWindow,
                 roadNetwork,
                 batchingManager,
                 bank,
@@ -148,9 +156,10 @@ case class BatchedKspSelectionRouting(
                 val selectionAlts = b.filteredAlts.getOrElse(b.alts)
                 SelectionRunnerRequest(b.batchId, selectionAlts)
               }
-              selectionRunnerFixed <- instantiateSelection(selectionRunnerRequests)
+              selectionRunnerFixed <- instantiateSelection
               selectionOutput <- KarmaSelectionAlgorithmOps.runSelectionWithBank(
                 selectionRunnerRequests,
+                currentSimTime,
                 roadNetwork,
                 selectionRunnerFixed,
                 bank

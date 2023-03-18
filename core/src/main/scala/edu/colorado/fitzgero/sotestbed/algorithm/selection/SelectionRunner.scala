@@ -14,6 +14,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 final case class SelectionRunner(
   selectionAlgorithm: SelectionAlgorithm,
@@ -33,6 +34,7 @@ final case class SelectionRunner(
     */
   def run(
     req: SelectionRunnerRequest,
+    currentSimTime: SimTime,
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma]
   ): IO[Option[(SelectionRunnerResult, Map[String, Karma])]] = {
@@ -44,6 +46,7 @@ final case class SelectionRunner(
         .selectRoutes(
           req.batchId,
           req.finalAlternatePaths,
+          currentSimTime,
           roadNetwork,
           bank,
           pathToMarginalFlowsFunction,

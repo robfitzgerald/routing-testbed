@@ -67,7 +67,7 @@ abstract class RoutingExperiment2
             b1        <- b0.updateAgentBatchData(soUpdate, r1)
             (b2, batchRequests) = b1.submitActiveRouteRequestsForReplanning(currentSimTime)
             soOutput <- soRoutingAlgorithm
-              .map { _.route(r1, batchRequests, currentSimTime, b2, k0) }
+              .map { _.route(r1, batchRequests, currentSimTime, batchWindow, b2, k0) }
               .getOrElse(IO.pure((List.empty, k0)))
             (soResults, k1) = soOutput
             ueResolved      = BatchingManager.resolveRoutingResultBatches(List(ueResults))

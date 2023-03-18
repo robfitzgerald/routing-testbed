@@ -16,6 +16,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{Path, RoadNetwork}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.algorithm.altpaths.AltPathsAlgorithmRunner
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 /**
   * as the underlying MCTS library enforces/misuses IO, this class accomodates for that
@@ -105,6 +106,7 @@ class TwoPhaseLocalMCTSEdgeBPRKSPFilterRoutingAlgorithm(
             .selectRoutes(
               "unbatched",
               altsFiltered.getOrElse(Map.empty),
+              SimTime.Zero, // placeholder
               roadNetwork,
               Map.empty,
               pathToMarginalFlowsFunction,

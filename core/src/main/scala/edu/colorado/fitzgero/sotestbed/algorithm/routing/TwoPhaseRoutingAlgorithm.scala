@@ -12,6 +12,7 @@ import edu.colorado.fitzgero.sotestbed.model.numeric.{Cost, Flow, RunTime}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, Path, RoadNetwork}
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 /**
   *
@@ -54,6 +55,7 @@ class TwoPhaseRoutingAlgorithm(
         selectionResult <- selectionAlgorithm.selectRoutes(
           "unbatched",
           altsResult.alternatives,
+          SimTime.Zero,
           roadNetwork,
           Map.empty,
           pathToMarginalFlowsFunction,

@@ -14,6 +14,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork._
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.util.MultiSetIterator
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 abstract class SelectionAlgorithm {
 
@@ -23,6 +24,7 @@ abstract class SelectionAlgorithm {
   def selectRoutes(
     batchId: String,
     alts: Map[Request, List[Path]],
+    currentSimTime: SimTime,
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],

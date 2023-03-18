@@ -23,6 +23,7 @@ trait RoutingAlgorithmV3 {
     roadNetwork: RoadNetworkIO,
     requests: List[RouteRequestData],
     currentSimTime: SimTime,
+    batchWindow: SimTime,
     batchingManager: BatchingManager,
     bank: Map[String, Karma]
   ): IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])]
