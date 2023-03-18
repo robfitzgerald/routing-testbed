@@ -16,6 +16,7 @@ import java.io.File
 import kantan.csv._
 import kantan.csv.ops._
 import org.locationtech.jts.io.WKTReader
+import com.typesafe.scalalogging.LazyLogging
 
 /**
   * revised coordinate grid which uses JTS polygons + spatial tree search
@@ -36,7 +37,7 @@ final class CoordinateGrid2(
     CoordinateGrid2.getGridId(this.lookup, this.geometryFactory)(x, y)
 }
 
-object CoordinateGrid2 {
+object CoordinateGrid2 extends LazyLogging {
 
   object TableDefaults {
     def IdColumnName       = "grid_id"
@@ -70,6 +71,7 @@ object CoordinateGrid2 {
       .left
       .map { t => new Error("failure reading grid table", t) }
       .flatMap { table =>
+        logger.info(f"read CSV grid source with ${table.length} rows")
         // lazy, i just don't want to dig out MathTransform and CRS.decode right now
         if (srid != 3857) Left(new Error("currently only supports EPSG:3857 grids"))
         else {
@@ -146,6 +148,7 @@ object CoordinateGrid2 {
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     gf: GeometryFactory
   ): Either[Error, CoordinateGrid2] = {
+    logger.info(f"building CoordinateGrid2 from ${gridCells.length} grid cells")
     Try {
       val tree = new STRtree()
 
@@ -160,9 +163,11 @@ object CoordinateGrid2 {
       val lookupQueries = for {
         edgeTriplet <- rn.edgeTriplets.unsafeRunSync
         src         <- rn.vertex(edgeTriplet.src).unsafeRunSync
-        dst         <- rn.vertex(edgeTriplet.dst).unsafeRunSync
-        midpoint = LocalAdjacencyListFlowNetwork.midpoint(src.attribute, dst.attribute)
-      } yield (edgeTriplet.edgeId, midpoint)
+        // 2023-13-17: this should match the way getId is invoked, and that seems to
+        //             get called with the source coordinate as its argument.
+        // dst         <- rn.vertex(edgeTriplet.dst).unsafeRunSync
+        // midpoint = LocalAdjacencyListFlowNetwork.midpoint(src.attribute, dst.attribute)
+      } yield (edgeTriplet.edgeId, src.attribute)
 
       val gridIdFn: (Double, Double) => Option[String] =
         (x, y) => {
@@ -181,8 +186,15 @@ object CoordinateGrid2 {
             val (_, edgeIds) = grouped.unzip
             batchId -> edgeIds
         }
+      val edgeLookupComplete = gridCells.foldLeft(edgeLookup) {
+        case (lookup, (batchId, _)) =>
+          lookup.get(batchId) match {
+            case None    => lookup.updated(batchId, List.empty)
+            case Some(_) => lookup
+          }
+      }
 
-      new CoordinateGrid2(gridCellsLookup, gf, tree, edgeLookup)
+      new CoordinateGrid2(gridCellsLookup, gf, tree, edgeLookupComplete)
     }.toEither.left.map { t => new Error("failed building coordinate grid", t) }
   }
 
