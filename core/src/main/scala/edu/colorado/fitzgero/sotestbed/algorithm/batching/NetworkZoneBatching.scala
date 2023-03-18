@@ -14,12 +14,14 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.BatchingFunction
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkZone
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2
+import com.typesafe.scalalogging.LazyLogging
 
 final case class NetworkZoneBatching[T](
   extractIndex: RoadNetwork[IO, Coordinate, EdgeBPR] => RouteRequestData => IO[(T, RouteRequestData)],
   batchIdLookup: T => Option[String],
   zones: Map[String, List[EdgeId]]
-) extends BatchingFunction {
+) extends BatchingFunction
+    with LazyLogging {
 
   /**
     * assigns incoming requests to batches based on their "zone".
@@ -39,6 +41,7 @@ final case class NetworkZoneBatching[T](
     currentTime: SimTime
   ): IO[Option[BatchingFunction.BatchingResult]] = {
 
+    // find, for each request, which index / batch identifier it is associated with
     val extractFnInstance = extractIndex(roadNetwork)
     val requestsByIndex   = activeRouteRequests.traverse { extractFnInstance }
 
