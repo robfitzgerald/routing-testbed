@@ -8,6 +8,29 @@ import logging
 log = logging.getLogger(__name__)
 
 
+def build_space_instance(space_idx: int, max_k: Optional[int] = None, dims: int = 1):
+    _SPACE = [
+        # DISCRETE SPACES
+        spaces.Discrete(max_k if max_k is not None else 1),
+        # CONTINUOUS SPACES
+        spaces.Box(
+            low=np.array([0.0 for _ in range(dims)]),
+            high=np.array([1.0 for _ in range(dims)]),
+            shape=(dims,),
+            dtype=np.float32
+        )
+    ]
+    try:
+        space = _SPACE[space_idx]
+        return space
+    except IndexError as e:
+        msg = (
+            f'no space with provided index {space_idx}, please pick '
+            f'an index in the range [0, {len(_SPACE)})'
+        )
+        raise IndexError(msg) from e
+
+
 def build_action_space(
         space_idx: int,
         max_k: Optional[int] = None,
@@ -32,28 +55,9 @@ def build_action_space(
     if space_idx == 0 and max_k is None:
         raise ValueError("discrete action space requires a k value")
 
-    _SPACE = [
-        # DISCRETE SPACES
-        spaces.Discrete(max_k if max_k is not None else 1),
-        # CONTINUOUS SPACES
-        spaces.Box(
-            low=np.array([0.0]),
-            high=np.array([1.0]),
-            shape=(1,),
-            dtype=np.float32
-        )
-    ]
-    try:
-        space = _SPACE[space_idx]
-    except IndexError as e:
-        msg = (
-            f'no space with provided index {space_idx}, please pick '
-            f'an index in the range [0, {len(_SPACE)})'
-        )
-        raise IndexError(msg) from e
-
     if multiagent:
         log.info(f'building multiagent action space of type spaces.Dict')
+        space = build_space_instance(space_idx, max_k, dims=1)
         mapping = {agent: space for agent in agents}
         dict_space = spaces.Dict(mapping)
         log.info(dict_space)
@@ -61,9 +65,11 @@ def build_action_space(
     else:
         log.info(
             f'building tupled action space of type spaces.Tuple, vector size {n_agents}:')
-        vector = [space for _ in range(n_agents)]
-        log.info(vector)
-        return spaces.Tuple(vector)
+        space = build_space_instance(space_idx, dims=n_agents)
+        # vector = [space for _ in range(n_agents)]
+        log.info(space)
+        # return spaces.Tuple(vector)
+        return space
 
 
 def build_marl_act_space(n_agents: int) -> spaces.Space:

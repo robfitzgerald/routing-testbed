@@ -166,7 +166,7 @@ object MATSimConfig {
       edgeUpdateFunction: EdgeUpdateFunctionConfig,
       marginalCostFunction: MarginalCostFunctionConfig,
       selectionAlgorithm: SelectionAlgorithmConfig,
-      batchingFunction: BatchingFunctionConfig,
+      networkZoneBatching: BatchingFunctionConfig.NetworkZoneBatching,
       grid: GridConfig,
       useFreeFlowNetworkCostsInPathSearch: Boolean,
       newRouteDissimilarityPercent: Double

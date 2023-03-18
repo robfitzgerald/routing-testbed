@@ -53,6 +53,7 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig.A
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPRCostOps
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.FlowObservationOps
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithmV3
+import edu.colorado.fitzgero.sotestbed.algorithm.batching.NetworkZoneBatching
 
 //import kantan.csv._
 //import kantan.csv.ops._
@@ -306,8 +307,9 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             val algResult = for {
               grid <- gridResult
               bank <- bankResult
+              batchingFunction = auction.networkZoneBatching.build(grid).asInstanceOf[NetworkZoneBatching[_]]
             } yield UserOptimalAuctionSelection(
-              batchingFunction = auction.batchingFunction.build(grid),
+              networkZoneBatching = batchingFunction,
               selectionRunner = sel,
               replanAtSameLink = config.routing.replanAtSameLink,
               useCurrentLinkFlows = !auction.useFreeFlowNetworkCostsInPathSearch,

@@ -18,6 +18,7 @@ import edu.colorado.fitzgero.sotestbed.rllib.AgentId
 import edu.colorado.fitzgero.sotestbed.rllib.Observation
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import com.typesafe.scalalogging.LazyLogging
 
 /**
   * at this point we aren't using this abstraction because all
@@ -27,7 +28,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySi
   */
 sealed trait NetworkPolicyStructure
 
-object NetworkPolicyStructure {
+object NetworkPolicyStructure extends LazyLogging {
 
   /**
     * a single agent policy maps to a single agent RLLib
@@ -70,12 +71,14 @@ object NetworkPolicyStructure {
     ): IO[PolicyClientRequest.LogReturnsRequest] =
       nps match {
         case SingleAgentPolicy =>
+          // combine the rewards for all zones/agents into a single agent reward
           for {
             reward <- space.encodeReward(roadNetwork, previousBatch)
             mar    <- reward.asMultiAgentReward
-            flattened = mar.reward.toList.sortBy { case (agentId, _) => agentId }.map { case (_, r) => r }
-            tupled    = Reward.TupledReward(flattened)
-          } yield PolicyClientRequest.LogReturnsRequest(episodeId, tupled)
+            r = mar.reward.values.foldLeft(0.0) { _ + _ }
+            // flattened = mar.reward.toList.sortBy { case (agentId, _) => agentId }.map { case (_, r) => r }
+            sar = Reward.SingleAgentReward(r)
+          } yield PolicyClientRequest.LogReturnsRequest(episodeId, sar)
         case MultiAgentPolicy =>
           space.encodeReward(roadNetwork, previousBatch).map { rew =>
             PolicyClientRequest.LogReturnsRequest(episodeId, rew)
@@ -114,6 +117,8 @@ object NetworkPolicyStructure {
               val flattened = mao.observation.toList
                 .sortBy { case (agentId, _) => agentId }
                 .map { case (_, obs) => obs }
+              logger.info(f"space generated multiagent observation with ${mao.observation.size} entries")
+              logger.info(f"flattened into a tupled observation with ${flattened.length} entries")
               val req = PolicyClientRequest.GetActionRequest(episodeId, Observation.TupledAgentObservation(flattened))
               IO.pure(req)
             case other => IO.raiseError(new Error(s"single agent observation encoding not as expected"))

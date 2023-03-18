@@ -16,12 +16,13 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkZone
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import com.typesafe.scalalogging.LazyLogging
 
 sealed trait BatchingFunctionConfig {
   def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction
 }
 
-object BatchingFunctionConfig {
+object BatchingFunctionConfig extends LazyLogging {
 
   case object NoBatching extends BatchingFunctionConfig {
 
@@ -115,8 +116,12 @@ object BatchingFunctionConfig {
 
     override def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction = {
       zones match {
-        case Some(zs) => batching.NetworkZoneBatching(zs)
-        case None     => batching.NetworkZoneBatching(coordinateGrid2)
+        case Some(zs) =>
+          logger.info(s"user provided ${zs.length} zones for batching")
+          batching.NetworkZoneBatching(zs)
+        case None =>
+          logger.info(s"user provided grid file with ${coordinateGrid2.gridCells.size} grid cells as batching zones")
+          batching.NetworkZoneBatching(coordinateGrid2)
       }
 
     }

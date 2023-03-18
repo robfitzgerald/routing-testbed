@@ -14,14 +14,15 @@ import edu.colorado.fitzgero.sotestbed.model.agent.Request
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.numeric.Cost
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
-import edu.colorado.fitzgero.sotestbed.model.roadnetwork.TraverseDirection
+import edu.colorado.fitzgero.sotestbed.model.roadnetwork.{EdgeId, TraverseDirection}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.SelectionAlgorithm._
 
 final case class UserOptimalAuctionSelection(
-  batchingFunction: BatchingFunction,
+  // batchingFunction: BatchingFunction,
+  networkZoneBatching: NetworkZoneBatching[_],
   selectionRunner: SelectionRunner,
+  // networkZones: Map[String, List[EdgeId]],
   theta: Double,
   replanAtSameLink: Boolean,
   useCurrentLinkFlows: Boolean
@@ -45,85 +46,100 @@ final case class UserOptimalAuctionSelection(
     roadNetwork: RoadNetworkIO,
     requests: List[AgentBatchData.RouteRequestData],
     currentSimTime: SimTime,
+    batchWindow: SimTime,
     batchingManager: BatchingManager,
     bank: Map[String, Karma]
   ): IO[(List[(String, RoutingAlgorithm.Result)], Map[String, Karma])] = {
+
+    val runnerAfterFix =
+      KarmaSelectionAlgorithmOps.instantiateSelectionAlgorithm(
+        selectionRunner,
+        currentSimTime,
+        batchWindow,
+        roadNetwork,
+        batchingManager,
+        bank,
+        networkZoneBatching.zones
+      )
 
     // apply the batching strategy and then filter out batches based on some
     // basic rules like whether or not agents can replan at the same link as
     // a previous replanning
     val batchingResult =
-      batchingFunction.updateBatchingStrategy(roadNetwork, requests, currentSimTime).map {
-        case None => (List.empty, Map.empty[String, List[EdgeId]])
-        case Some(BatchingFunction.BatchingResult(routeRequests, zoneLookup)) =>
+      networkZoneBatching.updateBatchingStrategy(roadNetwork, requests, currentSimTime).map {
+        case None => List.empty
+        case Some(BatchingFunction.BatchingResult(routeRequests, _)) =>
           val preFiltered = RoutingOps.preFilterBatches(
             batchingManager = batchingManager,
             minBatchSize = 1,
             replanAtSameLink = replanAtSameLink,
             batches = routeRequests
           )
-          (preFiltered, zoneLookup)
+          preFiltered
       }
 
-    val selectionResults = batchingResult.flatMap {
-      case (batches, zones) =>
-        // given a bank state, batch id, and list of requests for that batch, return either a
-        // routing algorithm result and updated bank state, or None if no responses are to be sent +
-        // the bank state stays the same.
-        type ResolveFn =
-          (Map[String, Karma], String, List[Request]) => IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]]
-        val resolveFn: ResolveFn = resolveBatch(
-          selectionRunner = selectionRunner,
-          roadNetwork = roadNetwork,
-          batchingManager = batchingManager,
-          zoneLookup = zones,
-          theta = theta
-        ) _
+    val selectionResults =
+      runnerAfterFix.flatMap { runner =>
+        batchingResult.flatMap { batches =>
+          // given a bank state, batch id, and list of requests for that batch, return either a
+          // routing algorithm result and updated bank state, or None if no responses are to be sent +
+          // the bank state stays the same.
+          type ResolveFn =
+            (Map[String, Karma], String, List[Request]) => IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]]
+          val resolveFn: ResolveFn = resolveBatch(
+            selectionRunner = runner,
+            currentSimTime = currentSimTime,
+            roadNetwork = roadNetwork,
+            batchingManager = batchingManager,
+            zoneLookup = networkZoneBatching.zones,
+            theta = theta
+          ) _
 
-        val nBatches = batches.length
-        logger.debug(s"running user optimal auction selection on $nBatches batches")
+          val nBatches = batches.length
+          logger.debug(s"running user optimal auction selection on $nBatches batches")
 
-        // below we fold batches into this State record type using the Monad[IO].iterateUntilM method
-        case class State(
-          batches: List[(String, List[Request])] = batches,
-          responses: List[(String, RoutingAlgorithm.Result)] = List.empty,
-          bank: Map[String, Karma] = bank
-        ) {
-          override def toString = s"State(${batches.length} batches, ${responses.length} responses)"
-        }
-
-        val runResult = State().iterateUntilM { state =>
-          state.batches match {
-            case Nil =>
-              logger.debug(s"done running batches")
-              IO.pure(state)
-            case (batchId, requests) :: nextBatches =>
-              val nRemaining = state.batches.length
-              logger.debug(s"running batch $batchId ($nRemaining/$nBatches remaining) - run state: $state")
-              for {
-                response <- resolveFn(state.bank, batchId, requests)
-              } yield {
-                response match {
-                  case None =>
-                    logger.debug(s"batch $batchId yielded no responses, remaining: ${nextBatches.length}")
-                    state.copy(nextBatches)
-                  case Some((result, updatedBank)) =>
-                    val msg = s"batch $batchId yielded ${result.responses.length} responses. " +
-                      s"remaining batches: ${nextBatches.length}"
-                    logger.debug(msg)
-                    state.copy(nextBatches, (batchId, result) +: state.responses, updatedBank)
-                }
-              }
+          // below we fold batches into this State record type using the Monad[IO].iterateUntilM method
+          case class State(
+            batches: List[(String, List[Request])] = batches,
+            responses: List[(String, RoutingAlgorithm.Result)] = List.empty,
+            bank: Map[String, Karma] = bank
+          ) {
+            override def toString = s"State(${batches.length} batches, ${responses.length} responses)"
           }
-        } { s =>
-          val stop = s.batches.isEmpty
-          logger.debug(s"iteration state: $s - stop iteration? $stop")
-          stop
+
+          val runResult = State().iterateUntilM { state =>
+            state.batches match {
+              case Nil =>
+                logger.debug(s"done running batches")
+                IO.pure(state)
+              case (batchId, requests) :: nextBatches =>
+                val nRemaining = state.batches.length
+                logger.debug(s"running batch $batchId ($nRemaining/$nBatches remaining) - run state: $state")
+                for {
+                  response <- resolveFn(state.bank, batchId, requests)
+                } yield {
+                  response match {
+                    case None =>
+                      logger.debug(s"batch $batchId yielded no responses, remaining: ${nextBatches.length}")
+                      state.copy(nextBatches)
+                    case Some((result, updatedBank)) =>
+                      val msg = s"batch $batchId yielded ${result.responses.length} responses. " +
+                        s"remaining batches: ${nextBatches.length}"
+                      logger.debug(msg)
+                      state.copy(nextBatches, (batchId, result) +: state.responses, updatedBank)
+                  }
+                }
+            }
+          } { s =>
+            val stop = s.batches.isEmpty
+            logger.debug(s"iteration state: $s - stop iteration? $stop")
+            stop
+          }
+
+          runResult.map { state => (state.responses, state.bank) }
+
         }
-
-        runResult.map { state => (state.responses, state.bank) }
-
-    }
+      }
 
     selectionResults
   }
@@ -150,6 +166,7 @@ object UserOptimalAuctionSelection extends LazyLogging {
     */
   def resolveBatch(
     selectionRunner: SelectionRunner,
+    currentSimTime: SimTime,
     roadNetwork: RoadNetworkIO,
     batchingManager: BatchingManager,
     zoneLookup: Map[String, List[EdgeId]],
@@ -160,7 +177,7 @@ object UserOptimalAuctionSelection extends LazyLogging {
     requests: List[Request]
   ): IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]] = {
     val pathFn = generatePathPair(roadNetwork, batchingManager, theta) _
-    val runFn  = runSelection(selectionRunner, roadNetwork, batchingManager, bank, zoneLookup) _
+    val runFn  = runSelection(selectionRunner, currentSimTime, roadNetwork, batchingManager, bank, zoneLookup) _
 
     logger.debug(s"batch $batchId running shortest path searches")
     val selectionRequestResult = for {
@@ -230,8 +247,22 @@ object UserOptimalAuctionSelection extends LazyLogging {
     }
   }
 
+  /**
+    * runs the selection algorithm.
+    * - for RL-based network policies, this first means calling the server with a GET ACTION
+    *   request in order to generate network policy signals for each network zone
+    *
+    * @param runner
+    * @param rn
+    * @param bm
+    * @param bank
+    * @param zoneLookup
+    * @param request
+    * @return
+    */
   def runSelection(
     runner: SelectionRunner,
+    currentSimTime: SimTime,
     rn: RoadNetworkIO,
     bm: BatchingManager,
     bank: Map[String, Karma],
@@ -239,10 +270,8 @@ object UserOptimalAuctionSelection extends LazyLogging {
   )(request: SelectionRunnerRequest): IO[Option[(RoutingAlgorithm.Result, Map[String, Karma])]] = {
     import KarmaSelectionAlgorithmOps._
     import RoutingOps._
-    val initFn = instantiateSelectionAlgorithm(runner, rn, bm, bank, zoneLookup) _
     for {
-      initRunner      <- initFn(List(request))
-      selectionOutput <- runSelectionWithBank(List(request), rn, initRunner, bank)
+      selectionOutput <- runSelectionWithBank(List(request), currentSimTime, rn, runner, bank)
       (soResults, updatedBank) = selectionOutput
       oneResult <- extractSingularBatchResult(soResults)
     } yield {
