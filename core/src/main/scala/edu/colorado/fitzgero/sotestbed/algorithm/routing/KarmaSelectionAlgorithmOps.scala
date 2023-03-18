@@ -16,12 +16,13 @@ import io.circe.syntax._
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicySpace
 import edu.colorado.fitzgero.sotestbed.rllib.Observation
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 object KarmaSelectionAlgorithmOps {
 
   /**
     * adds context to the selection algorithm specific to this time step.
-    * this was created to deal with the Karma-based selection algorithm's requirements.
+    * this was created to deal with the Karma and RL-based selection algorithm requirements.
     * @param selectionRunner
     * @param roadNetwork
     * @param selectionRunnerRequest
@@ -31,11 +32,13 @@ object KarmaSelectionAlgorithmOps {
     */
   def instantiateSelectionAlgorithm(
     selectionRunner: SelectionRunner,
+    currentSimTime: SimTime,
+    batchWindow: SimTime,
     roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     batchingManager: BatchingManager,
     bank: Map[String, Karma],
     zoneLookup: Map[String, List[EdgeId]]
-  )(selectionRunnerRequest: List[SelectionRunnerRequest]): IO[SelectionRunner] = {
+  ): IO[SelectionRunner] = {
     selectionRunner.selectionAlgorithm match {
       case k: KarmaSelectionAlgorithm =>
         // generate a signal for each batch
@@ -49,16 +52,17 @@ object KarmaSelectionAlgorithmOps {
             // we assume here that everything is correctly configured so that batching
             // was informed by the NetworkPolicySpace and therefore ZoneIds match.
             for {
+              _     <- k.setZoneLookupIfNotSet(zoneLookup) // sorry
               epId  <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
               space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
-              // log reward since last time step
-              lastBatch = k.getPreviousBatch()
-              _ <- if (lastBatch.isEmpty) IO.pure(())
+              // log reward since last time step (unless this is t_0, then do nothing)
+              _ <- if (k.noExistingGetActionQuery) IO.pure(()) // nothing to log returns about
               else
                 for {
-                  req <- structure.generateLogReturnsRequest(epId, roadNetwork, lastBatch, space)
+                  req <- structure.generateLogReturnsRequest(epId, roadNetwork, zoneLookup, space)
                   _   <- client.sendOne(req)
                   _ = k.networkClientPw.write(req.toBase.asJson.noSpaces.toString + "\n")
+                  _ <- k.logReturnsHandled(currentSimTime)
                 } yield ()
               // get action for this time step
               actReq <- structure.generateGetActionRequest(epId, roadNetwork, zoneLookup, space)
@@ -66,12 +70,12 @@ object KarmaSelectionAlgorithmOps {
               _ = k.networkClientPw.write(actReq.toBase.asJson.noSpaces.toString + "\n")
               _ = k.networkClientPw.write(actRes.asJson.noSpaces.toString + "\n")
               act  <- actRes.getAction
-              sigs <- structure.extractActions(act, space, k.gen, lastBatch.keys.toList)
+              sigs <- structure.extractActions(act, space, k.gen, zoneLookup.keys.toList)
+              _    <- k.getActionsSent(currentSimTime)
               // record zone batches to log rewards for at next time step
               // this doesn't change from timestep to timestep for now, but it may in the future
               sigIdLookup   = sigs.keySet
               batchesUpdate = zoneLookup.filter { case (k, _) => sigIdLookup.contains(k) }
-              _             = k.updatePreviousBatch(batchesUpdate)
             } yield sigs
 
           case otherPolicy =>
@@ -117,6 +121,7 @@ object KarmaSelectionAlgorithmOps {
     */
   def runSelectionWithBank(
     requests: List[SelectionRunnerRequest],
+    currentSimTime: SimTime,
     roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
     runner: SelectionRunner,
     bank: Map[String, Karma]
@@ -126,7 +131,7 @@ object KarmaSelectionAlgorithmOps {
     requests.foldLeft(initial) { (acc, r) =>
       acc.flatMap {
         case (results, innerBank) =>
-          runner.run(r, roadNetwork, innerBank).map {
+          runner.run(r, currentSimTime, roadNetwork, innerBank).map {
             case None                             => (None +: results, innerBank)
             case Some((result, updatedInnerBank)) => (Some(result) +: results, updatedInnerBank)
           }

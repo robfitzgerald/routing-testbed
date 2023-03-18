@@ -114,18 +114,40 @@ case class KarmaSelectionAlgorithm(
 
   val gen: NetworkPolicySignalGenerator = networkPolicy.buildGenerator
 
-  // RL-based network policy needs to know what "agents" submitted GET_ACTION
-  // requests last time step in order to reward them in the future
-  private var previousBatch: Map[String, List[EdgeId]] = Map.empty
+  // actions are requested at t-1 and then rewards are logged at t
+  // in order to not log reward at t_0, we watch for at least one get
+  // action request has been sent
+  // we hold onto the zones for sending the final messages during the close() method
+  private var zoneLookupOption: Option[Map[String, List[EdgeId]]] = None
 
-  def updatePreviousBatch(batch: Map[String, List[EdgeId]]): Unit = {
-    previousBatch = batch
+  def setZoneLookupIfNotSet(zones: Map[String, List[EdgeId]]): IO[Unit] = {
+    zoneLookupOption match {
+      case None    => IO { this.zoneLookupOption = Some(zones) }
+      case Some(_) => IO.unit
+    }
   }
-  def getPreviousBatchIds(): List[String]           = previousBatch.keys.toList
-  def getPreviousBatch(): Map[String, List[EdgeId]] = previousBatch
+
+  private var lastGetActionTime: Option[SimTime] = None
+  def noExistingGetActionQuery(): Boolean        = this.lastGetActionTime.isEmpty
+
+  def getActionsSent(t: SimTime): IO[Unit] = IO {
+    logger.info(s"requesting action at simtime $t, expecting response at next time step")
+    this.lastGetActionTime = Some(t)
+  }
+
+  def logReturnsHandled(t1: SimTime): IO[Unit] =
+    this.lastGetActionTime match {
+      case None =>
+        IO.raiseError(new Error(s"handled log returns without a tracked get actions request time"))
+      case Some(t) =>
+        IO {
+          logger.info(s"GET_ACTION request at time $t logged at time $t1")
+          this.lastGetActionTime = None
+        }
+    }
 
   /**
-    * this close method is used as it is called in RoutingExperiment2's .close() method
+    * this close method is called from RoutingExperiment2's .close() method
     */
   def close(
     finalBank: Map[String, Karma],
@@ -143,10 +165,11 @@ case class KarmaSelectionAlgorithm(
           IO.fromOption(this.multiAgentNetworkPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
         for {
           epId <- episodeId
-          lastBatches = this.getPreviousBatch()
-          space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
-          rew   <- space.encodeReward(roadNetwork, lastBatches)
-          mao   <- space.encodeObservation(roadNetwork, lastBatches)
+          // lastBatches = this.getPreviousBatch()
+          zoneLookup <- IO.fromOption(zoneLookupOption)(new Error(s"internal error, 'zoneLookup' was never set"))
+          space      <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
+          rew        <- space.encodeReward(roadNetwork, zoneLookup)
+          mao        <- space.encodeObservation(roadNetwork, zoneLookup)
           req1: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
           req2: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, mao)
           res1 <- client.sendOne(req1)
@@ -211,6 +234,7 @@ case class KarmaSelectionAlgorithm(
   def selectRoutes(
     batchId: String,
     alts: Map[Request, List[Path]],
+    currentSimTime: SimTime,
     roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
     bank: Map[String, Karma],
     pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
@@ -238,6 +262,7 @@ case class KarmaSelectionAlgorithm(
     def selectRoutes(
       batchId: String,
       alts: Map[Request, List[Path]],
+      currentSimTime: SimTime,
       roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
       bank: Map[String, Karma],
       pathToMarginalFlowsFunction: (RoadNetwork[IO, Coordinate, EdgeBPR], Path) => IO[List[(EdgeId, Flow)]],
@@ -253,6 +278,7 @@ case class KarmaSelectionAlgorithm(
         TrueShortestSelectionAlgorithm().selectRoutes(
           "user-optimal",
           alts,
+          currentSimTime,
           roadNetwork,
           bank,
           pathToMarginalFlowsFunction,
