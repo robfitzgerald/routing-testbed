@@ -22,6 +22,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma._
 import edu.colorado.fitzgero.sotestbed.model.agent.RequestClass
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.RewardOps
+import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 
 object RLDriverPolicyEpisodeOps extends LazyLogging {
 
@@ -129,6 +130,19 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
         val result = agentIds.zip(rewards)
         result
       }
+  }
+
+  def endOfEpisodeRewardByReplanningsPerUnitDistance(
+    tripLogs: List[TripLogRow]
+  ): IO[List[(String, Double)]] = {
+    val result = tripLogs.map {
+      case row if row.finalDistance == Meters.Zero =>
+        (row.agentId, 0.0)
+      case row =>
+        val distKm = row.finalDistance.value / 1000.0
+        (row.agentId, row.replannings.toDouble / distKm)
+    }
+    IO.pure(result)
   }
 
   def finalObservations(

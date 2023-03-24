@@ -50,6 +50,16 @@ object AllocationMetric extends LazyLogging {
     */
   case object FreeFlowDiffProportion extends AllocationMetric
 
+  /**
+    * considers the protected resource to be "replannings" aka path updates.
+    * reports the average distance per replanning event as replannings per trip distance (meters).
+    * if replannings is zero, reports an allocation of zero.
+    *
+    * to avoid the asymptote, and to reflect the existence of the original trip route
+    * assignment, we always add 1 to the number of replannings.
+    */
+  case object ReplanningsPerUnitDistance extends AllocationMetric
+
   implicit class AllocationMetricExtension(am: AllocationMetric) {
 
     def collectFinalRewardsAndObservations(
@@ -97,6 +107,19 @@ object AllocationMetric extends LazyLogging {
             tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory, includeUoAgents = false)
             tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
             rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByFreeFlowDiff(tripsWithEpisodes)
+            observations <- RLDriverPolicyEpisodeOps.finalObservations(
+              tripsWithEpisodes,
+              driverPolicySpace,
+              networkPolicyConfig,
+              finalBank
+            )
+          } yield (rewards, observations)
+
+        case ReplanningsPerUnitDistance =>
+          for {
+            tripLogs <- RLDriverPolicyEpisodeOps.getTripLog(experimentDirectory, includeUoAgents = false)
+            tripsWithEpisodes = tripLogs.filter(row => agentsWithEpisodes.contains(row.agentId))
+            rewards <- RLDriverPolicyEpisodeOps.endOfEpisodeRewardByReplanningsPerUnitDistance(tripsWithEpisodes)
             observations <- RLDriverPolicyEpisodeOps.finalObservations(
               tripsWithEpisodes,
               driverPolicySpace,

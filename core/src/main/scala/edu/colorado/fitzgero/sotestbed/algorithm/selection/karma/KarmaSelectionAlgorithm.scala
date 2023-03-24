@@ -462,22 +462,32 @@ case class KarmaSelectionAlgorithm(
                     )
 
                   // create a batch-wise allocation for each agent
-                  val allocationsResult = alts.toList
-                    .zip(selections)
+                  // it's possible that selections does not include all of the original alts for this selection request
+                  val selectionsLookup =
+                    selections.map { case (bid, idx, path) => (bid.request, (bid, idx, path)) }.toMap
+                  val allocResult = alts.toList
                     .traverse {
-                      case (((req, _), (_, _, path))) =>
-                        batchWiseAllocationMetric.batchWiseAllocation(
-                          request = req,
-                          selectedPathSpur = path,
-                          aah = activeAgentHistory,
-                          rn = roadNetwork
-                        )
+                      case (req, paths) =>
+                        val selectedPathSpurOption = selectionsLookup.get(req).map { case (_, _, path) => path }
+                        batchWiseAllocationMetric
+                          .batchWiseAllocation(
+                            request = req,
+                            selectedPathSpur = selectedPathSpurOption,
+                            aah = activeAgentHistory,
+                            rn = roadNetwork
+                          )
+                          .map {
+                            case None        => None
+                            case Some(alloc) => Some((req, alloc))
+                          }
                     }
                     .map(_.flatten)
 
-                  allocationsResult.flatMap {
-                    case Nil         => IO.unit // when 'selections' is empty
-                    case allocations =>
+                  allocResult.flatMap {
+                    case Nil => IO.unit // when 'selections' is empty
+                    case reqsWithAllocations =>
+                      val (reqs, allocations) = reqsWithAllocations.unzip
+                      val agentIds            = reqs.map { r => AgentId(r.agent) }
                       // compute rewards from allocations
                       // log rewards to the RLlib server for this batch
                       // this is done at the same time step but is an estimate of the reward value
@@ -491,7 +501,7 @@ case class KarmaSelectionAlgorithm(
                         _              = logger.info(f"BIDS - ${bids.map(_.value).mkString("[", ",", "]")}")
                         _              = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
                         _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
-                        rewardsByAgent = alts.keys.toList.map(r => AgentId(r.agent)).zip(rewards).toMap
+                        rewardsByAgent = agentIds.zip(rewards).toMap
                         req = PolicyClientRequest
                           .LogReturnsRequest(episodeId, Reward.MultiAgentReward(rewardsByAgent))
                         _ <- client.sendOne(req, logFn = Some(RayRLlibClient.standardSendOneLogFn(driverClientPw)))

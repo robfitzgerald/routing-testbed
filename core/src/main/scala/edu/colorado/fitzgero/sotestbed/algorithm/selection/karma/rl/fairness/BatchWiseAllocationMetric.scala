@@ -18,6 +18,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.ActiveAgentHistory
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.driverpolicy.DriverPolicySpaceV2Ops
+import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 
 sealed trait BatchWiseAllocationMetric
 
@@ -41,6 +42,14 @@ object BatchWiseAllocationMetric {
     */
   case object MarginalFreeFlowDiffProportion extends BatchWiseAllocationMetric
 
+  /**
+    * considers the protected resource to be "replannings" aka path updates.
+    * reports the average distance per replanning event as replannings per trip distance (km).
+    * if replannings is zero, reports an allocation of zero.
+    *
+    */
+  case object ReplanningsPerUnitDistance extends BatchWiseAllocationMetric
+
   implicit class BWAMExtension(mwam: BatchWiseAllocationMetric) {
 
     /**
@@ -57,13 +66,19 @@ object BatchWiseAllocationMetric {
       */
     def batchWiseAllocation(
       request: Request,
-      selectedPathSpur: Path,
+      selectedPathSpur: Option[Path],
       aah: ActiveAgentHistory,
       rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
     ): IO[Option[Double]] = mwam match {
       case NoBatchWiseAllocation => IO.pure(None)
       case FreeFlowDiffProportion =>
-        getFutureAllocation(request, selectedPathSpur, aah, rn).map(alloc => Some(alloc))
+        selectedPathSpur match {
+          case Some(spur) =>
+            getFutureFreeFlowAllocation(request, spur, aah, rn).map(alloc => Some(alloc))
+          case None =>
+            getCurrentFreeFlowAllocation(request, aah, rn).map { alloc => Some(alloc) }
+        }
+
       case MarginalFreeFlowDiffProportion =>
         // values in the range [0, 2] from
         // - when future < current, we should lose allocation (100% - 120% = -20%)
@@ -71,11 +86,29 @@ object BatchWiseAllocationMetric {
         // - to move these values so they are non-negative (requirement for Jain's Index)
         //   - we add 1
         //   - we force the result to be greater than zero
+        selectedPathSpur match {
+          case None =>
+            getCurrentFreeFlowAllocation(request, aah, rn).map { alloc => Some(alloc) }
+          case Some(spur) =>
+            for {
+              current <- getCurrentFreeFlowAllocation(request, aah, rn)
+              future  <- getFutureFreeFlowAllocation(request, spur, aah, rn)
+              alloc = math.max(0.0, 1.0 + future - current)
+            } yield Some(alloc)
+        }
+
+      case ReplanningsPerUnitDistance =>
+        val newReplanning = if (selectedPathSpur.nonEmpty) 1 else 0
         for {
-          current <- getCurrentAllocation(request, aah, rn)
-          future  <- getFutureAllocation(request, selectedPathSpur, aah, rn)
-          alloc = math.max(0.0, 1.0 + future - current)
-        } yield Some(alloc)
+          hist <- IO.fromEither(aah.getAgentHistoryOrError(request.agent))
+          replannings = hist.replanningEvents + newReplanning
+          current <- IO.fromEither(hist.currentRequest)
+        } yield
+          if (current.experiencedDistance == Meters.Zero) None
+          else {
+            val distKm = current.experiencedDistance.value / 1000.0
+            Some(replannings.toDouble / distKm)
+          }
     }
 
   }
@@ -88,7 +121,7 @@ object BatchWiseAllocationMetric {
     * @param rn current road network state
     * @return "allocation" as speed/free flow speed of current route (including estimated segment)
     */
-  def getCurrentAllocation(
+  def getCurrentFreeFlowAllocation(
     request: Request,
     aah: ActiveAgentHistory,
     rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR]
@@ -114,7 +147,7 @@ object BatchWiseAllocationMetric {
     * @param rn current road network state
     * @return "allocation" as speed/free flow speed of current route with spur modification
     */
-  def getFutureAllocation(
+  def getFutureFreeFlowAllocation(
     request: Request,
     selectedPathSpur: Path,
     aah: ActiveAgentHistory,
