@@ -128,7 +128,7 @@ case class KarmaSelectionAlgorithm(
   }
 
   private var lastGetActionTime: Option[SimTime] = None
-  def noExistingGetActionQuery(): Boolean        = this.lastGetActionTime.isEmpty
+  def noExistingGetActionQuery: Boolean          = this.lastGetActionTime.isEmpty
 
   def getActionsSent(t: SimTime): IO[Unit] = IO {
     logger.info(s"requesting action at simtime $t, expecting response at next time step")
@@ -163,20 +163,51 @@ case class KarmaSelectionAlgorithm(
       case ExternalRLServer(underlying, structure, client) =>
         val episodeId =
           IO.fromOption(this.multiAgentNetworkPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
-        for {
-          epId <- episodeId
-          // lastBatches = this.getPreviousBatch()
+
+        // if needed, generate a final log returns message
+        val finalLogReturnsResult = if (this.noExistingGetActionQuery) {
+          IO.unit
+        } else {
+
+          for {
+            epId       <- episodeId
+            zoneLookup <- IO.fromOption(zoneLookupOption)(new Error(s"internal error, 'zoneLookup' was never set"))
+            space      <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
+            req        <- structure.generateLogReturnsRequest(epId, roadNetwork, zoneLookup, space)
+            _          <- client.sendOne(req)
+            _ = networkClientPw.write(req.toBase.asJson.noSpaces.toString + "\n")
+          } yield ()
+        }
+
+        val endEpisodeResult = for {
+          epId       <- episodeId
           zoneLookup <- IO.fromOption(zoneLookupOption)(new Error(s"internal error, 'zoneLookup' was never set"))
           space      <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
-          rew        <- space.encodeReward(roadNetwork, zoneLookup)
-          mao        <- space.encodeObservation(roadNetwork, zoneLookup)
-          req1: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
-          req2: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, mao)
-          res1 <- client.sendOne(req1)
-          res2 <- client.sendOne(req2)
-          _ = networkClientPw.write(req1.asJson.noSpaces.toString + "\n")
-          _ = networkClientPw.write(req2.asJson.noSpaces.toString + "\n")
+          obs        <- space.encodeObservation(roadNetwork, zoneLookup)
+          req: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, obs)
+          res <- client.sendOne(req)
+          _ = networkClientPw.write(req.asJson.noSpaces.toString + "\n")
         } yield ()
+
+        for {
+          _ <- finalLogReturnsResult
+          _ <- endEpisodeResult
+        } yield ()
+
+      // for {
+      //   epId <- episodeId
+      //   // lastBatches = this.getPreviousBatch()
+      //   zoneLookup <- IO.fromOption(zoneLookupOption)(new Error(s"internal error, 'zoneLookup' was never set"))
+      //   space      <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
+      //   rew        <- space.encodeReward(roadNetwork, zoneLookup)
+      //   mao        <- space.encodeObservation(roadNetwork, zoneLookup)
+      //   req1: PolicyClientRequest = PolicyClientRequest.LogReturnsRequest(epId, rew)
+      //   req2: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, mao)
+      //   res1 <- client.sendOne(req1)
+      //   res2 <- client.sendOne(req2)
+      //   _ = networkClientPw.write(req1.asJson.noSpaces.toString + "\n")
+      //   _ = networkClientPw.write(req2.asJson.noSpaces.toString + "\n")
+      // } yield ()
       case _ => IO.unit
     }
     val driverPolicyResult = driverPolicy match {
