@@ -73,6 +73,7 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
     val diffs =
       tripLogs.map { r => (r.agentId, r.travelTimeDiff.value.toDouble) }
     val result = generateSingleAgentRewardValues(diffs, allocationTransform)
+    throw new NotImplementedError("update generateSingleAgentRewardValues to use Jain Fairness (not user fairness)")
     IO.fromEither(result)
   }
 
@@ -103,8 +104,10 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
       }
     allocationsOrError.flatMap { allocationByAgent =>
       val (agentIds, allocations) = allocationByAgent.unzip
-      IO.fromOption(JainFairnessMath.userFairness(allocations))(new Error(s"should not be called on empty logs"))
-        .map { rewards => agentIds.zip(rewards) }
+      IO.fromOption(JainFairnessMath.fairness(allocations, JainFairnessMath.CovType.Unbiased))(
+          new Error(s"should not be called on empty logs")
+        )
+        .map { reward => agentIds.map { a => (a, reward) } }
     }
   }
 
@@ -125,9 +128,11 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
       }
     }
     val (agentIds, allocations) = result.unzip
-    IO.fromOption(JainFairnessMath.userFairness(allocations))(new Error(s"should not be called on empty logs"))
-      .map { rewards =>
-        val result = agentIds.zip(rewards)
+    IO.fromOption(JainFairnessMath.fairness(allocations, JainFairnessMath.CovType.Unbiased))(
+        new Error(s"should not be called on empty logs")
+      )
+      .map { reward =>
+        val result = agentIds.map { a => (a, reward) }
         result
       }
   }
@@ -135,14 +140,22 @@ object RLDriverPolicyEpisodeOps extends LazyLogging {
   def endOfEpisodeRewardByReplanningsPerUnitDistance(
     tripLogs: List[TripLogRow]
   ): IO[List[(String, Double)]] = {
-    val result = tripLogs.map {
+    val agentsWithAllocations = tripLogs.map {
       case row if row.finalDistance == Meters.Zero =>
         (row.agentId, 0.0)
       case row =>
         val distKm = row.finalDistance.value / 1000.0
         (row.agentId, row.replannings.toDouble / distKm)
     }
-    IO.pure(result)
+    val (agentIds, allocations) = agentsWithAllocations.unzip
+
+    IO.fromOption(JainFairnessMath.fairness(allocations, JainFairnessMath.CovType.Unbiased))(
+        new Error(s"should not be called on empty logs")
+      )
+      .map { reward =>
+        val result = agentIds.map { a => (a, reward) }
+        result
+      }
   }
 
   def finalObservations(
