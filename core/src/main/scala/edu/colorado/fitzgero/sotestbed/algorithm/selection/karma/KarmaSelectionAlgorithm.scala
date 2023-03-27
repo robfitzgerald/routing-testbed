@@ -301,28 +301,18 @@ case class KarmaSelectionAlgorithm(
       ignoreMeToo: EdgeBPR => Flow => Cost
     ): IO[SelectionAlgorithm.SelectionAlgorithmResult] = {
 
-      if (alts.isEmpty) IO {
-        SelectionAlgorithm.SelectionAlgorithmResult(updatedBank = bank)
-      }
-      else if (alts.size == 1) {
+      val notEnoughRequests = alts.size < 2
+      val invalidBatchId    = !networkPolicySignals.isDefinedAt(batchId)
 
-        TrueShortestSelectionAlgorithm().selectRoutes(
-          "user-optimal",
-          alts,
-          currentSimTime,
-          roadNetwork,
-          bank,
-          pathToMarginalFlowsFunction,
-          combineFlowsFunction,
-          marginalCostFunction
-        )
-      } else if (!networkPolicySignals.isDefinedAt(batchId)) {
+      if (notEnoughRequests) {
+        IO(SelectionAlgorithm.SelectionAlgorithmResult(updatedBank = bank))
+      } else if (invalidBatchId) {
         logger.error(
           f"""batch $batchId not present in network signals! 
              |found ${networkPolicySignals.size} batchIds present""".stripMargin
         )
         val result = SelectionAlgorithm.SelectionAlgorithmResult(updatedBank = bank)
-        IO.pure(result)
+        IO(result)
       } else {
 
         // we may need to start some RL episodes. RLlib has undefined behavior when we
@@ -488,20 +478,26 @@ case class KarmaSelectionAlgorithm(
                     case reqsWithAllocations =>
                       val (reqs, allocations) = reqsWithAllocations.unzip
                       val agentIds            = reqs.map { r => AgentId(r.agent) }
+
+                      val fairnessOpt = JainFairnessMath.fairness(allocations, JainFairnessMath.CovType.Unbiased)
+
                       // compute rewards from allocations
                       // log rewards to the RLlib server for this batch
                       // this is done at the same time step but is an estimate of the reward value
                       // due to the action chosen and outcome of the bidding process.
                       for {
                         episodeId <- episodeIdResult
-                        rewards <- IO.fromOption(JainFairnessMath.userFairness(allocations))(
-                          new Error(s"should not be called on empty batch")
-                        )
-                        _              = logger.info(f"KARMA - NETWORK SIGNAL $signal")
-                        _              = logger.info(f"BIDS - ${bids.map(_.value).mkString("[", ",", "]")}")
-                        _              = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
-                        _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
-                        rewardsByAgent = agentIds.zip(rewards).toMap
+                        reward    <- IO.fromOption(fairnessOpt)(new Error(s"called on empty batch"))
+                        // rewards <- IO.fromOption(JainFairnessMath.userFairness(allocations))(
+                        //   new Error(s"should not be called on empty batch")
+                        // )
+                        _ = logger.info(f"KARMA - NETWORK SIGNAL $signal")
+                        _ = logger.info(f"BIDS - ${bids.map(_.value).mkString("[", ",", "]")}")
+                        _ = logger.info(f"BATCH-WISE ALLOCATIONS: ${allocations.mkString("[", ", ", "]")}")
+                        // _              = logger.info(f"BATCH-WISE REWARDS: ${rewards.mkString("[", ", ", "]")}")
+                        _              = logger.info(f"BATCH-WISE REWARD (applied to every agent): $reward")
+                        rewardsByAgent = agentIds.map { a => (a, reward) }.toMap
+                        // rewardsByAgent = agentIds.zip(rewards).toMap
                         req = PolicyClientRequest
                           .LogReturnsRequest(episodeId, Reward.MultiAgentReward(rewardsByAgent))
                         _ <- client.sendOne(req, logFn = Some(RayRLlibClient.standardSendOneLogFn(driverClientPw)))
