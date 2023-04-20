@@ -112,21 +112,15 @@ object NetworkPolicyStructure extends LazyLogging {
     ): IO[PolicyClientRequest.GetActionRequest] =
       nps match {
         case SingleAgentPolicy =>
-          space.encodeObservation(roadNetwork, zoneLookup).flatMap {
-            case mao: Observation.MultiAgentObservation =>
-              val flattened = mao.observation.toList
-                .sortBy { case (agentId, _) => agentId }
-                .map { case (_, obs) => obs }
-              logger.info(f"space generated multiagent observation with ${mao.observation.size} entries")
-              logger.info(f"flattened into a tupled observation with ${flattened.length} entries")
-              val req = PolicyClientRequest.GetActionRequest(episodeId, Observation.TupledAgentObservation(flattened))
-              IO.pure(req)
-            case other => IO.raiseError(new Error(s"single agent observation encoding not as expected"))
-          }
+          NetworkPolicyStructureOps
+            .encodeTupledObservation(episodeId, roadNetwork, zoneLookup, space)
+            .map { obs => PolicyClientRequest.GetActionRequest(episodeId, obs) }
+
         case MultiAgentPolicy =>
           space.encodeObservation(roadNetwork, zoneLookup).map { obs =>
             PolicyClientRequest.GetActionRequest(episodeId, obs)
           }
+
         case SingleGroupMultiAgentPolicy(groupId) =>
           MultiAgentPolicy
             .generateGetActionRequest(episodeId, roadNetwork, zoneLookup, space)
@@ -135,6 +129,44 @@ object NetworkPolicyStructure extends LazyLogging {
               val grouped            = group(groupId, observation.observation)
               val groupedObservation = Observation.GroupedMultiAgentObservation(grouped)
               PolicyClientRequest.GetActionRequest(episodeId, groupedObservation)
+            }
+      }
+
+    /**
+      * observes the network state and wraps it in a request to the RL server
+      * to end the episode.
+      *
+      * @param episodeId the episode that is running
+      * @param roadNetwork the current road network state
+      * @param zoneLookup maps names of network agents to links in the network
+      * @param space the way we are encoding this environment
+      *
+      */
+    def generateEndEpisodeRequest(
+      episodeId: EpisodeId,
+      roadNetwork: RoadNetwork[IO, Coordinate, EdgeBPR],
+      zoneLookup: Map[String, List[EdgeId]],
+      space: NetworkPolicySpace
+    ): IO[PolicyClientRequest.EndEpisodeRequest] =
+      nps match {
+        case SingleAgentPolicy =>
+          NetworkPolicyStructureOps
+            .encodeTupledObservation(episodeId, roadNetwork, zoneLookup, space)
+            .map { obs => PolicyClientRequest.EndEpisodeRequest(episodeId, obs) }
+
+        case MultiAgentPolicy =>
+          space.encodeObservation(roadNetwork, zoneLookup).map { obs =>
+            PolicyClientRequest.EndEpisodeRequest(episodeId, obs)
+          }
+
+        case SingleGroupMultiAgentPolicy(groupId) =>
+          MultiAgentPolicy
+            .generateGetActionRequest(episodeId, roadNetwork, zoneLookup, space)
+            .flatMap { _.observation.asMultiAgentObservation }
+            .map { observation =>
+              val grouped            = group(groupId, observation.observation)
+              val groupedObservation = Observation.GroupedMultiAgentObservation(grouped)
+              PolicyClientRequest.EndEpisodeRequest(episodeId, groupedObservation)
             }
       }
 
