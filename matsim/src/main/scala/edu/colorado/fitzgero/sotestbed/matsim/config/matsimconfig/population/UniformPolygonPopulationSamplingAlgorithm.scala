@@ -18,6 +18,7 @@ import org.geotools.geometry.jts.JTS
 import org.geotools.referencing.CRS
 import org.opengis.referencing.crs.CoordinateReferenceSystem
 import org.opengis.referencing.operation.MathTransform
+import com.typesafe.scalalogging.LazyLogging
 
 case class UniformPolygonPopulationSamplingAlgorithm(
   mapBoundingGeometry: Geometry,
@@ -30,7 +31,8 @@ case class UniformPolygonPopulationSamplingAlgorithm(
   workActivityMaxTime: LocalTime,
   workDurationHours: Int,
   seedOption: Option[Long]
-) extends PopSamplingAlgorithm {
+) extends PopSamplingAlgorithm
+    with LazyLogging {
 
   val random: Random = seedOption match {
     case Some(seed) => new Random(seed)
