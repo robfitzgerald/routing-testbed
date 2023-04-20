@@ -34,8 +34,8 @@ object KarmaSelectionAlgorithmOps {
     selectionRunner: SelectionRunner,
     currentSimTime: SimTime,
     batchWindow: SimTime,
-    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
-    batchingManager: BatchingManager,
+    rn: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    bm: BatchingManager,
     bank: Map[String, Karma],
     zoneLookup: Map[String, List[EdgeId]]
   ): IO[SelectionRunner] = {
@@ -43,40 +43,19 @@ object KarmaSelectionAlgorithmOps {
       case k: KarmaSelectionAlgorithm =>
         // generate a signal for each batch
         val batchesWithSignals: IO[Map[String, NetworkPolicySignal]] = k.networkPolicy match {
-          case UserOptimal                                     => IO.pure(Map.empty)
-          case ExternalRLServer(underlying, structure, client) =>
-            // v2: special handling for Karma-based selection
-            // that integrates with an external control module when generating
-            // network policy signals
+          case UserOptimal           => IO.pure(Map.empty)
+          case ext: ExternalRLServer =>
+            // update signals if 1) first time, or 2) duration between steps exceeds window duration
+            val updateSignals = k.getLastGetActionTime match {
+              case None                    => true
+              case Some(lastGetActionTime) => currentSimTime - lastGetActionTime > ext.stepWindowDuration
+            }
 
-            // we assume here that everything is correctly configured so that batching
-            // was informed by the NetworkPolicySpace and therefore ZoneIds match.
-            for {
-              _     <- k.setZoneLookupIfNotSet(zoneLookup) // sorry
-              epId  <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
-              space <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
-              // log reward since last time step (unless this is t_0, then do nothing)
-              _ <- if (k.noExistingGetActionQuery) IO.pure(()) // nothing to log returns about
-              else
-                for {
-                  req <- structure.generateLogReturnsRequest(epId, roadNetwork, zoneLookup, space)
-                  _   <- client.sendOne(req)
-                  _ = k.networkClientPw.write(req.toBase.asJson.noSpaces.toString + "\n")
-                  _ <- k.logReturnsHandled(currentSimTime)
-                } yield ()
-              // get action for this time step
-              actReq <- structure.generateGetActionRequest(epId, roadNetwork, zoneLookup, space)
-              actRes <- client.sendOne(actReq)
-              _ = k.networkClientPw.write(actReq.toBase.asJson.noSpaces.toString + "\n")
-              _ = k.networkClientPw.write(actRes.asJson.noSpaces.toString + "\n")
-              act  <- actRes.getAction
-              sigs <- structure.extractActions(act, space, k.gen, zoneLookup.keys.toList)
-              _    <- k.getActionsSent(currentSimTime)
-              // record zone batches to log rewards for at next time step
-              // this doesn't change from timestep to timestep for now, but it may in the future
-              sigIdLookup   = sigs.keySet
-              batchesUpdate = zoneLookup.filter { case (k, _) => sigIdLookup.contains(k) }
-            } yield sigs
+            if (updateSignals) {
+              performNetworkPolicyServerUpdate(k, ext, currentSimTime, rn, bm, bank, zoneLookup)
+            } else {
+              k.getLastSigs
+            }
 
           case otherPolicy =>
             val spaceResult: IO[NetworkPolicySpace] =
@@ -87,7 +66,7 @@ object KarmaSelectionAlgorithmOps {
 
             for {
               space <- spaceResult
-              obs   <- space.encodeObservation(roadNetwork, zoneLookup)
+              obs   <- space.encodeObservation(rn, zoneLookup)
               sigs  <- multiAgentObsToSignals(obs, k.gen)
             } yield sigs
 
@@ -96,7 +75,7 @@ object KarmaSelectionAlgorithmOps {
         batchesWithSignals.map { batches =>
           val signals = batches
           val fixedKarmaSelection = k.build(
-            batchingManager.storedHistory,
+            bm.storedHistory,
             signals,
             k.selectionPw,
             k.networkPw,
@@ -107,6 +86,61 @@ object KarmaSelectionAlgorithmOps {
         }
       case _ => IO.pure(selectionRunner)
     }
+  }
+
+  /**
+    * encapsulates the full effect of
+    * 1. rewarding the action from the previous step
+    * 2. computing an observation
+    * 3. sending the observation to the server, receiving an action
+    * 4. decoding the action as a policy signal for each batch
+    *
+    * @param k karma selection algorithm state at currentSimTime
+    * @param ext external rl server configuration
+    * @param currentSimTime current simulation time
+    * @param roadNetwork current road network state
+    * @param batchingManager source of re-routing requests for this batch
+    * @param bank current bank state at currentSimTime
+    * @param zoneLookup finds zone by edges in the network
+    * @return effect of building the network policy signals for these batches
+    */
+  def performNetworkPolicyServerUpdate(
+    k: KarmaSelectionAlgorithm,
+    ext: ExternalRLServer,
+    currentSimTime: SimTime,
+    roadNetwork: RoadNetwork[IO, LocalAdjacencyListFlowNetwork.Coordinate, EdgeBPR],
+    batchingManager: BatchingManager,
+    bank: Map[String, Karma],
+    zoneLookup: Map[String, List[EdgeId]]
+  ): IO[Map[String, NetworkPolicySignal]] = {
+    for {
+      _     <- k.setZoneLookupIfNotSet(zoneLookup) // sorry
+      epId  <- IO.fromOption(k.multiAgentNetworkPolicyEpisodeId)(new Error("missing episode id"))
+      space <- IO.fromOption(ext.underlying.space)(new Error("network policy has no 'space'"))
+      // log reward since last time step (unless this is t_0, then do nothing)
+      _ <- if (k.noExistingGetActionQuery) IO.pure(()) // nothing to log returns about
+      else
+        for {
+          req <- ext.structure.generateLogReturnsRequest(epId, roadNetwork, zoneLookup, space)
+          _   <- ext.client.sendOne(req)
+          _ = k.networkClientPw.write(req.toBase.asJson.noSpaces.toString + "\n")
+          _ <- k.logReturnsHandled(currentSimTime)
+        } yield ()
+      // get action for this time step
+      actReq <- ext.structure.generateGetActionRequest(epId, roadNetwork, zoneLookup, space)
+      actRes <- ext.client.sendOne(actReq)
+      _ = k.networkClientPw.write(actReq.toBase.asJson.noSpaces.toString + "\n")
+      _ = k.networkClientPw.write(actRes.asJson.noSpaces.toString + "\n")
+      act  <- actRes.getAction
+      sigs <- ext.structure.extractActions(act, space, k.gen, zoneLookup.keys.toList)
+      _    <- k.setLastGetActionTime(currentSimTime)
+      // record zone batches to log rewards for at next time step
+      // this doesn't change from timestep to timestep for now, but it may in the future
+      // sigIdLookup   = sigs.keySet
+      // batchesUpdate = zoneLookup.filter { case (k, _) => sigIdLookup.contains(k) }
+      // store the signals for use until the next time we perform a policy server update
+      _ <- k.setLastSigs(sigs)
+    } yield sigs
   }
 
   /**

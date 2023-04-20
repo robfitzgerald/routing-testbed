@@ -13,6 +13,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.RayRLlibClient
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicySpace
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkPolicyStructure
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 sealed trait NetworkPolicyConfig
 
@@ -77,11 +78,13 @@ object NetworkPolicyConfig {
     * @param underlying the underlying configuration which is used to describe the _how_ of generating signals
     * @param structure structure of how messages are sent/received from the server
     * @param client the HTTP client configuration used for messaging
+    * @param stepWindowDuration step size duration between communication with the RL server for the observation/action/reward cycle
     */
   case class ExternalRLServer(
     underlying: NetworkPolicyConfig,
     structure: NetworkPolicyStructure,
-    client: RayRLlibClient
+    client: RayRLlibClient,
+    stepWindowDuration: SimTime
   ) extends NetworkPolicyConfig
 
   implicit class NetworkPolicyExtensionMethods(policy: NetworkPolicyConfig) {
@@ -92,7 +95,7 @@ object NetworkPolicyConfig {
       case CongestionWeightedSampling(space, _)     => Some(space)
       case CongestionThreshold(space, _)            => Some(space)
       case ScaledProportionalThreshold(space, _, _) => Some(space)
-      case ExternalRLServer(underlying, _, _)       => underlying.space
+      case ExternalRLServer(underlying, _, _, _)    => underlying.space
     }
 
     def buildGenerator: NetworkPolicySignalGenerator = policy match {

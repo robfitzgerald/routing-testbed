@@ -95,7 +95,7 @@ case class KarmaSelectionAlgorithm(
   }
 
   val multiAgentNetworkPolicyEpisodeId: Option[EpisodeId] = networkPolicy match {
-    case ExternalRLServer(underlying, structure, client) =>
+    case ExternalRLServer(underlying, structure, client, _) =>
       // only multi-agent
       val episodeId = EpisodeId()
       KarmaSelectionRlOps.startMultiAgentEpisode(client, Some(episodeId)).unsafeRunSync()
@@ -129,8 +129,9 @@ case class KarmaSelectionAlgorithm(
 
   private var lastGetActionTime: Option[SimTime] = None
   def noExistingGetActionQuery: Boolean          = this.lastGetActionTime.isEmpty
+  def getLastGetActionTime: Option[SimTime]      = lastGetActionTime
 
-  def getActionsSent(t: SimTime): IO[Unit] = IO {
+  def setLastGetActionTime(t: SimTime): IO[Unit] = IO {
     logger.info(s"requesting action at simtime $t, expecting response at next time step")
     this.lastGetActionTime = Some(t)
   }
@@ -146,6 +147,17 @@ case class KarmaSelectionAlgorithm(
         }
     }
 
+  private var lastSigs: Option[Map[String, NetworkPolicySignal]] = None
+
+  def getLastSigs: IO[Map[String, NetworkPolicySignal]] = this.lastSigs match {
+    case None       => IO.raiseError(new Error(s"getLastSigs called before setting lastSigs"))
+    case Some(sigs) => IO(sigs)
+  }
+
+  def setLastSigs(sigs: Map[String, NetworkPolicySignal]): IO[Unit] = IO {
+    this.lastSigs = Some(sigs)
+  }
+
   /**
     * this close method is called from RoutingExperiment2's .close() method
     */
@@ -160,7 +172,7 @@ case class KarmaSelectionAlgorithm(
     driverClientPw.close()
     networkClientPw.close()
     val networkPolicyResult = networkPolicy match {
-      case ExternalRLServer(underlying, structure, client) =>
+      case ExternalRLServer(underlying, structure, client, _) =>
         val episodeId =
           IO.fromOption(this.multiAgentNetworkPolicyEpisodeId)(new Error("missing EpisodeId for multiagent policy"))
 
@@ -183,10 +195,9 @@ case class KarmaSelectionAlgorithm(
           epId       <- episodeId
           zoneLookup <- IO.fromOption(zoneLookupOption)(new Error(s"internal error, 'zoneLookup' was never set"))
           space      <- IO.fromOption(underlying.space)(new Error("network policy has no 'space'"))
-          obs        <- space.encodeObservation(roadNetwork, zoneLookup)
-          req: PolicyClientRequest = PolicyClientRequest.EndEpisodeRequest(epId, obs)
-          res <- client.sendOne(req)
-          _ = networkClientPw.write(req.asJson.noSpaces.toString + "\n")
+          req        <- structure.generateEndEpisodeRequest(epId, roadNetwork, zoneLookup, space)
+          res        <- client.sendOne(req)
+          _ = networkClientPw.write(req.toBase.asJson.noSpaces.toString + "\n")
         } yield ()
 
         for {
