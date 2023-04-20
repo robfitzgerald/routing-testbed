@@ -1,24 +1,22 @@
 import sbtassembly.MergeStrategy
+// find Version.scala in project/
 
-val packageVersion = "2.14.3"
-val sVersion       = "2.13.10"
-val circeVersion   = "0.14.1"
+ThisBuild / name := "so-testbed"
+ThisBuild / version := Version.pkg
+ThisBuild / scalaVersion := Version.scala
 
-name := "so-testbed"
-version := packageVersion
-scalacOptions ++= scalac
-scalaVersion := sVersion
-//javacOptions ++= javac
-
-lazy val routingTestbed = project.in(file(".")).aggregate(core, matsim)
+lazy val routingTestbed = project
+  .in(file("."))
+  // .settings(scalaVersion := Version.scala)
+  .aggregate(core, matsim)
 
 lazy val core = project
   .in(file("core"))
   .settings(
     name := "so-testbed-core",
-    version := packageVersion,
-    scalaVersion := sVersion,
-    scalacOptions ++= scalac,
+    // version := Version.pkg,
+    // scalaVersion := Version.scala,
+    scalacOptions ++= scalaCompilerSettings,
 //    javacOptions ++= javac,
     libraryDependencies ++= coreDependencies ++ loggingDependencies,
     assembly / assemblyMergeStrategy := {
@@ -34,9 +32,9 @@ lazy val matsim = project
   .in(file("matsim"))
   .settings(
     name := "so-testbed-matsim",
-    version := packageVersion,
-    scalaVersion := sVersion,
-    scalacOptions ++= scalac,
+    // version := Version.pkg,
+    // scalaVersion := Version.scala,
+    scalacOptions ++= scalaCompilerSettings,
 //    javacOptions ++= javac,
     matsimAssemblyStrategy,
     resolvers ++= matsimResolvers,
@@ -53,7 +51,7 @@ lazy val matsimResolvers = Seq(
 //  "OpenGeo Maven Repository".at("http://repo.opengeo.org")
 )
 
-lazy val scalac = List(
+lazy val scalaCompilerSettings = List(
 //  "-target:jvm-1.8",
   "-language:higherKinds", // Cats
 //  "-Ypartial-unification",                   // Cats to traverse things like List[Either[A, B]] -> Either[A, List[B]]
@@ -75,18 +73,19 @@ lazy val coreDependencies = List(
   // CONFIG
   "com.github.pureconfig" %% "pureconfig" % "0.14.1",
   // GIS
-  "org.locationtech.proj4j" % "proj4j"   % "1.1.1",
-  "org.locationtech.jts"    % "jts-core" % "1.17.1",
-  "com.uber"                % "h3"       % "3.0.3",
+  "org.locationtech.proj4j" % "proj4j"        % "1.1.1",
+  "org.locationtech.jts"    % "jts-core"      % "1.17.1",
+  "org.locationtech.jts.io" % "jts-io-common" % "1.17.1",
+  "com.uber"                % "h3"            % "3.0.3",
   // XML
   "org.scala-lang.modules" %% "scala-xml" % "1.2.0",
   // CSV
   "com.nrinaudo" %% "kantan.csv" % "0.6.0",
 //  "com.nrinaudo" %% "kantan.csv-generic" % "0.6.0",
   // JSON
-  "io.circe" %% "circe-core"    % circeVersion,
-  "io.circe" %% "circe-generic" % circeVersion,
-  "io.circe" %% "circe-parser"  % circeVersion,
+  "io.circe" %% "circe-core"    % Version.circe,
+  "io.circe" %% "circe-generic" % Version.circe,
+  "io.circe" %% "circe-parser"  % Version.circe,
   // MATH
   "org.apache.commons" % "commons-math" % "2.2",
   // TEST
