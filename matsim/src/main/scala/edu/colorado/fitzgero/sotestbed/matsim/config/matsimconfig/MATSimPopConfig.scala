@@ -158,7 +158,7 @@ object MATSimPopConfig {
 
       def build(matsimPopConfig: MATSimPopConfig): Either[PopSamplingFailure, PopSamplingAlgorithm] = {
         val result: Either[io.Serializable, UniformPolygonPopulationSamplingAlgorithm] = for {
-          geometry      <- PopulationSamplingOps.readBoundingGeometryFile(geometryPath)
+          geometry      <- PopulationSamplingOps.readBoundingGeometryCsv(geometryPath)
           matsimNetwork <- Try { NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
         } yield {
           UniformPolygonPopulationSamplingAlgorithm(

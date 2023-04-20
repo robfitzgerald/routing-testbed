@@ -1,12 +1,28 @@
 package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.File
+import scala.io.Source
 
 import kantan.csv._
 import kantan.csv.ops._
 import org.locationtech.jts.geom.{Coordinate, Geometry, GeometryFactory, PrecisionModel}
+import org.locationtech.jts.io.geojson.GeoJsonReader
+import scala.util.Try
 
 object PopulationSamplingOps {
+
+  def readBoundingGeometryGeoJson(geometryFile: File, srid: Int = 4326): Either[Exception, Geometry] = {
+
+    val result = for {
+      reader <- Try { new GeoJsonReader(new GeometryFactory(new PrecisionModel(), srid)) }
+      source <- Try { Source.fromFile(geometryFile) }
+      string <- Try { source.getLines.mkString }
+      _ = source.close()
+      geometry <- Try { reader.read(string) }
+    } yield geometry
+
+    result.toEither.left.map { t => new Exception(f"reading GeoJson failed", t) }
+  }
 
   /**
     * takes a csv file with lat/lon values and reads it in as a boundary for the road network for sampling populations
@@ -17,11 +33,11 @@ object PopulationSamplingOps {
     * @param geometrySRID the SRID of the polygon geometry
     * @return
     */
-  def readBoundingGeometryFile(geometryFile: File, geometrySRID: Int = 4326): Either[Exception, Geometry] = {
+  def readBoundingGeometryCsv(geometryFile: File, geometrySRID: Int = 4326): Either[Exception, Geometry] = {
 
     val geometryFactory: GeometryFactory = new GeometryFactory(new PrecisionModel(), geometrySRID)
-    implicit val headerDecoder: HeaderDecoder[Coordinate] = HeaderDecoder.decoder("lat", "lon") { (lat: Double, lon: Double) =>
-      new Coordinate(lat, lon)
+    implicit val headerDecoder: HeaderDecoder[Coordinate] = HeaderDecoder.decoder("lat", "lon") {
+      (lat: Double, lon: Double) => new Coordinate(lat, lon)
     }
     case class Acc(points: List[Coordinate] = List.empty, errors: List[String] = List.empty)
     val result: Acc = geometryFile

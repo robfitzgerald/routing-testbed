@@ -23,8 +23,9 @@ import pureconfig.ConfigSource
 import pureconfig.generic.auto._
 import MATSimPopConfig.localDateConvert
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.UniformEdgePopSamplingSingleTrip
+import com.typesafe.scalalogging.LazyLogging
 
-object MATSimPopulationRunner {
+object MATSimPopulationRunner extends LazyLogging {
 
   sealed trait UniformPopAlgType
 
@@ -44,7 +45,8 @@ object MATSimPopulationRunner {
     workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
     workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
     workDurationHours: Int = 8,
-    seed: Option[Long] = None
+    seed: Option[Long] = None,
+    geometrySourceIsGeoJson: Boolean = true
   ): Either[PopSamplingFailure, Unit] = {
     val result: Either[io.Serializable, PopSamplingAlgorithm] =
       polygonFileOption match {
@@ -66,8 +68,15 @@ object MATSimPopulationRunner {
             )
           }
         case Some(polygonFile) =>
+          val readGeometryResult = if (geometrySourceIsGeoJson) {
+            logger.info(s"reading GeoJson boundary")
+            PopulationSamplingOps.readBoundingGeometryGeoJson(polygonFile)
+          } else {
+            logger.info(s"reading csv boundary")
+            PopulationSamplingOps.readBoundingGeometryCsv(polygonFile)
+          }
           for {
-            geometry      <- PopulationSamplingOps.readBoundingGeometryFile(polygonFile)
+            geometry      <- readGeometryResult
             matsimNetwork <- Try { NetworkUtils.readNetwork(networkFile.toString) }.toEither
           } yield {
             UniformPolygonPopulationSamplingAlgorithm(
