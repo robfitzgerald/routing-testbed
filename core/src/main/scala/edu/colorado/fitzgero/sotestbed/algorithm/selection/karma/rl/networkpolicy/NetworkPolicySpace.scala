@@ -36,9 +36,18 @@ object NetworkPolicySpace {
     * this assumes the CostFunction provided when encoding produces Costs
     * which are also in Meters Per Second.
     *
-    * @param zones
     */
   final case class ZonalSpeedDelta(observation: ObservationAggregation, reward: ObservationAggregation)
+      extends NetworkPolicySpace
+
+  /**
+    * encodes a network space where there batchZoneLookup Map[String, List[EdgeId]]
+    * has keys which are EdgeIds that represent a single Edge that is a "pinch point"
+    * or "choke point" in the network. we observe congestion and rewards only at this
+    * location. the Map.values of the zone lookup are the links that are adjacent to
+    * the choke point. agents on these links are collected together into a batch.
+    */
+  final case class ChokePointZones(observation: ObservationAggregation, reward: ObservationAggregation)
       extends NetworkPolicySpace
 
   final case class FixedSignal(value: Double) extends NetworkPolicySpace
@@ -100,7 +109,7 @@ object NetworkPolicySpace {
         // for each zone, collect the network edge attributes and apply the chosen aggregation function
         val obsByZone = batchZoneLookup.toList.traverse {
           case (batchId, zoneEdges) =>
-            ObservationAggregationOps
+            NetworkAgentAggregationOps
               .applyAggregation(zoneEdges, network, observation)
               .map { x =>
                 val y        = (m * x) + b
@@ -129,10 +138,22 @@ object NetworkPolicySpace {
         // for each zone, collect the network edge attributes and apply the chosen aggregation function
         val obsByZone = batchZoneLookup.toList.traverse {
           case (batchId, zoneEdges) =>
-            ObservationAggregationOps
+            NetworkAgentAggregationOps
               .applyAggregation(zoneEdges, network, observation)
               .map { o => (AgentId(batchId), List(o)) }
         }
+        obsByZone.map { obs => Observation.MultiAgentObservation(obs.toMap) }
+      case ChokePointZones(observation, reward) =>
+        val obsByZone = batchZoneLookup.keys.toList
+          .traverse { chokePointEdgeId =>
+            for {
+              _ <- network.edge(EdgeId(chokePointEdgeId)) // validate batch id **is** an EdgeId
+              agg <- NetworkAgentAggregationOps
+                .applyAggregation(List(EdgeId(chokePointEdgeId)), network, observation)
+                .map { o => (AgentId(chokePointEdgeId), List(o)) }
+            } yield agg
+
+          }
         obsByZone.map { obs => Observation.MultiAgentObservation(obs.toMap) }
     }
 
@@ -154,12 +175,24 @@ object NetworkPolicySpace {
           previousZones.toList
             .traverse {
               case (batchId, zoneEdges) =>
-                ObservationAggregationOps
+                NetworkAgentAggregationOps
                   .applyAggregation(zoneEdges, network, reward)
                   .map { r => (AgentId(batchId), r) }
             }
 
-        rewardByZone.map { obs => Reward.MultiAgentReward(obs.toMap) }
+        rewardByZone.map { rew => Reward.MultiAgentReward(rew.toMap) }
+
+      case ChokePointZones(observation, reward) =>
+        val rewardByZone = previousZones.keys.toList
+          .traverse { chokePointEdgeId =>
+            for {
+              _ <- network.edge(EdgeId(chokePointEdgeId)) // validate batch id **is** an EdgeId
+              agg <- NetworkAgentAggregationOps
+                .applyAggregation(List(EdgeId(chokePointEdgeId)), network, reward)
+                .map { r => (AgentId(chokePointEdgeId), r) }
+            } yield agg
+          }
+        rewardByZone.map { rew => Reward.MultiAgentReward(rew.toMap) }
       case _ =>
         IO.raiseError(new Error(s"encodeReward only defined for ZonalSpeedDelta NetworkPolicySpace"))
     }

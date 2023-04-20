@@ -15,6 +15,8 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolic
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import edu.colorado.fitzgero.sotestbed.algorithm.grid.CoordinateGrid2
 import com.typesafe.scalalogging.LazyLogging
+import java.nio.file.Path
+import io.circe.parser.decode
 
 final case class NetworkZoneBatching[T](
   extractIndex: RoadNetwork[IO, Coordinate, EdgeBPR] => RouteRequestData => IO[(T, RouteRequestData)],
@@ -95,16 +97,23 @@ object NetworkZoneBatching {
     * @return a NetworkZoneBatching instance that indexes BatchIds by
     * EdgeIds
     */
-  def apply(zones: List[NetworkZone]): NetworkZoneBatching[EdgeId] = {
+  def fromFile(zonesFilePath: Path): IO[NetworkZoneBatching[EdgeId]] = {
 
-    val idxFn = (_: RoadNetwork[IO, Coordinate, EdgeBPR]) =>
-      (rrd: RouteRequestData) => IO.pure((rrd.request.location, rrd))
+    for {
+      source <- IO(scala.io.Source.fromFile(zonesFilePath.toFile))
+      string <- IO.delay(source.getLines.mkString)
+      zones  <- IO.fromEither(decode[List[NetworkZone]](string))
+    } yield {
 
-    val lookupData = zones.flatMap { z => z.edges.map { e => (e, z) } }.toMap
-    val lookupFn   = (edgeId: EdgeId) => lookupData.get(edgeId).map { _.batchId }
-    val edgeLookup = zones.map { z => z.batchId -> z.edges }.toMap
+      val idxFn = (_: RoadNetwork[IO, Coordinate, EdgeBPR]) =>
+        (rrd: RouteRequestData) => IO.pure((rrd.request.location, rrd))
 
-    NetworkZoneBatching(idxFn, lookupFn, edgeLookup)
+      val lookupData = zones.flatMap { z => z.edges.map { e => (e, z) } }.toMap
+      val lookupFn   = (edgeId: EdgeId) => lookupData.get(edgeId).map { _.batchId }
+      val edgeLookup = zones.map { z => z.batchId -> z.edges }.toMap
+
+      NetworkZoneBatching(idxFn, lookupFn, edgeLookup)
+    }
   }
 
   /**

@@ -17,6 +17,8 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyList
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolicy.NetworkZone
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
 import com.typesafe.scalalogging.LazyLogging
+import java.nio.file.Path
+import cats.effect.unsafe.implicits.global
 
 sealed trait BatchingFunctionConfig {
   def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction
@@ -112,13 +114,13 @@ object BatchingFunctionConfig extends LazyLogging {
     )
   }
 
-  case class NetworkZoneBatching(zones: Option[List[NetworkZone]]) extends BatchingFunctionConfig {
+  case class NetworkZoneBatching(zonesFile: Option[Path]) extends BatchingFunctionConfig {
 
     override def build(coordinateGrid2: CoordinateGrid2): batching.BatchingFunction = {
-      zones match {
-        case Some(zs) =>
-          logger.info(s"user provided ${zs.length} zones for batching")
-          batching.NetworkZoneBatching(zs)
+      zonesFile match {
+        case Some(zoneFilePath) =>
+          logger.info(s"user provided batching file ${zoneFilePath}")
+          batching.NetworkZoneBatching.fromFile(zoneFilePath).unsafeRunSync
         case None =>
           logger.info(s"user provided grid file with ${coordinateGrid2.gridCells.size} grid cells as batching zones")
           batching.NetworkZoneBatching(coordinateGrid2)
