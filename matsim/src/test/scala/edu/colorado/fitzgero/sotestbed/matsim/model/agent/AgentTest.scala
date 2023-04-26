@@ -20,13 +20,13 @@ class AgentTest extends SoTestBedBaseTest {
             FirstActivity(
               ActivityType.Home,
               EdgeId("e1"),
-              new Coord(0, 0),
+              Some(new Coord(0, 0)),
               LocalTime.parse("08:00:00")
             ),
             Activity(
               ActivityType.Work,
               EdgeId("e2"),
-              new Coord(10, 10),
+              Some(new Coord(10, 10)),
               LocalTime.parse("09:00:00"),
               LocalTime.parse("17:00:00")
             ),
@@ -36,14 +36,14 @@ class AgentTest extends SoTestBedBaseTest {
             Activity(
               ActivityType.Work,
               EdgeId("e2"),
-              new Coord(10, 10),
+              Some(new Coord(10, 10)),
               LocalTime.parse("09:00:00"),
               LocalTime.parse("17:00:00")
             ),
             FinalActivity(
               ActivityType.Home,
               EdgeId("e1"),
-              new Coord(0, 0),
+              Some(new Coord(0, 0))
             ),
             TravelMode.Car
           )

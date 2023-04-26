@@ -10,7 +10,6 @@ import scala.xml.dtd.{DocType, SystemID}
 
 import com.typesafe.config.ConfigFactory
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimPopConfig
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimPopConfig.PopSampling.PopSamplingFailure
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.{
   PopSamplingAlgorithm,
   UniformEdgePopulationSamplingAlgorithm,
@@ -47,12 +46,12 @@ object MATSimPopulationRunner extends LazyLogging {
     workDurationHours: Int = 8,
     seed: Option[Long] = None,
     geometrySourceIsGeoJson: Boolean = true
-  ): Either[PopSamplingFailure, Unit] = {
-    val result: Either[io.Serializable, PopSamplingAlgorithm] =
+  ): Either[Error, Unit] = {
+    val result: Either[Throwable, PopSamplingAlgorithm] =
       polygonFileOption match {
         case None =>
           for {
-            roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(networkFile)
+            roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(networkFile).left.map { new Error(_) }
             matsimNetwork <- Try { NetworkUtils.readNetwork(networkFile.toString) }.toEither
           } yield {
             // rjf 2022-08-06 let's break each "person" into two, each with one trip
@@ -73,7 +72,7 @@ object MATSimPopulationRunner extends LazyLogging {
             PopulationSamplingOps.readBoundingGeometryGeoJson(polygonFile)
           } else {
             logger.info(s"reading csv boundary")
-            PopulationSamplingOps.readBoundingGeometryCsv(polygonFile)
+            PopulationSamplingOps.readBoundingGeometryXYCsv(polygonFile)
           }
           for {
             geometry      <- readGeometryResult
@@ -94,25 +93,24 @@ object MATSimPopulationRunner extends LazyLogging {
           }
       }
 
-    result.left.map { s => PopSamplingFailure.BuildPopSamplingAlgorithmFailure(s.toString) } match {
-      case Left(e) => Left(e)
-      case Right(alg) =>
-        val population: List[Agent] = alg.generate
-        // converts each agent to xml, announcing any errors along the way
-        val (agents, failures) = population.foldLeft((List.empty[xml.Elem], 0)) { (acc, agent) =>
-          agent.toXML match {
-            case Right(a) =>
-              (a +: acc._1, acc._2)
-            case Left(e) =>
-              println(e)
-              (acc._1, acc._2 + 1)
-          }
+    val x = for {
+      alg        <- result
+      population <- alg.generate
+    } yield {
+      // converts each agent to xml, announcing any errors along the way
+      val (agents, failures) = population.foldLeft((List.empty[xml.Elem], 0)) { (acc, agent) =>
+        agent.toXML match {
+          case Right(a) =>
+            (a +: acc._1, acc._2)
+          case Left(e) =>
+            println(e)
+            (acc._1, acc._2 + 1)
         }
+      }
 
-        if (failures > 0) {
-          println(s"$failures agent generation failures resulting in population of size ${agents.length}")
-        }
-
+      if (failures > 0) {
+        Left(new Error(s"$failures agent generation failures resulting in population of size ${agents.length}"))
+      } else {
         // write new population to disk
         XML.save(
           popFileDestination.toString,
@@ -123,8 +121,43 @@ object MATSimPopulationRunner extends LazyLogging {
           xmlDecl = true,
           DocType("population", SystemID("matsim/src/main/resources/matsim-dtd/population_v6.dtd"), Nil)
         )
-        Right()
+        Right(())
+      }
     }
+
+    x.flatten.left.map { t => new Error(t) }
+
+    // result.left.map { s => new Error(s.toString) } match {
+    //   case Left(e) => Left(e)
+    //   case Right(alg) =>
+    //     val population: List[Agent] = alg.generate
+    //     // converts each agent to xml, announcing any errors along the way
+    //     val (agents, failures) = population.foldLeft((List.empty[xml.Elem], 0)) { (acc, agent) =>
+    //       agent.toXML match {
+    //         case Right(a) =>
+    //           (a +: acc._1, acc._2)
+    //         case Left(e) =>
+    //           println(e)
+    //           (acc._1, acc._2 + 1)
+    //       }
+    //     }
+
+    //     if (failures > 0) {
+    //       println(s"$failures agent generation failures resulting in population of size ${agents.length}")
+    //     }
+
+    //     // write new population to disk
+    //     XML.save(
+    //       popFileDestination.toString,
+    //       <population>
+    //         {agents}
+    //       </population>,
+    //       "UTF8",
+    //       xmlDecl = true,
+    //       DocType("population", SystemID("matsim/src/main/resources/matsim-dtd/population_v6.dtd"), Nil)
+    //     )
+    //     Right()
+    // }
   }
 
   def generatePopulationFromConfig(populationConfig: File, seed: Long): Unit = {
@@ -132,7 +165,7 @@ object MATSimPopulationRunner extends LazyLogging {
       config <- ConfigSource.fromConfig(ConfigFactory.parseFile(populationConfig)).load[MATSimPopConfig]
       configWithSeed = config.updateSeed(seed)
       popSamplingAlgorithm <- configWithSeed.pop.popSampling.build(configWithSeed)
-      population = popSamplingAlgorithm.generate
+      population           <- popSamplingAlgorithm.generate
     } yield {
 
       // converts each agent to xml, announcing any errors along the way

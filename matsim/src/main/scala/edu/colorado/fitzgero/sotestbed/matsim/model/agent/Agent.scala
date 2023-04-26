@@ -5,10 +5,11 @@ import java.time.format.DateTimeFormatter
 
 import edu.colorado.fitzgero.sotestbed.model.agent.{Request, RequestClass, TravelMode}
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.EdgeId
+import org.matsim.api.core.v01.Coord
 
 final case class Agent(
   id: String,
-  activities: List[AgentActivityPair],
+  activities: List[AgentActivityPair]
 ) {
 
   def homeLocation: Option[EdgeId] =
@@ -62,6 +63,24 @@ final case class Agent(
 
 object Agent {
 
+  /**
+    * builds an agent that takes a single trip from a source to a destination
+    */
+  def singleTripAgent(
+    agentId: String,
+    srcLoc: EdgeId,
+    dstLoc: EdgeId,
+    departureTime: LocalTime,
+    srcCoord: Option[Coord] = None,
+    dstCoord: Option[Coord] = None,
+    srcActivity: ActivityType = ActivityType.Home,
+    dstActivity: ActivityType = ActivityType.Work
+  ): Agent = {
+    val src = AgentActivity.FirstActivity(ActivityType.Home, srcLoc, srcCoord, departureTime)
+    val dst = AgentActivity.FinalActivity(ActivityType.Work, dstLoc, dstCoord)
+    Agent(agentId, List(AgentActivityPair(src, dst, TravelMode.Car)))
+  }
+
   sealed trait AgentFailure
   final case class MissingHomeLocation(id: String) extends AgentFailure
 
@@ -75,7 +94,9 @@ object Agent {
     for {
       homeLocation <- agent.homeLocation.toRight(Agent.MissingHomeLocation(agent.id))
     } yield {
-      <activity type={ActivityType.Home.toString} link={homeLocation.value} end_time={leaveHomeTimeString.format(DateTimeFormatter.ofPattern("HH:mm:ss"))}/>
+      <activity type={ActivityType.Home.toString} link={homeLocation.value} end_time={
+        leaveHomeTimeString.format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+      }/>
     }
   }
 

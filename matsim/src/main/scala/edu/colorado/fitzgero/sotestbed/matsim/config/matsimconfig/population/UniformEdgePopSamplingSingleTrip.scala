@@ -29,7 +29,7 @@ case class UniformEdgePopSamplingSingleTrip(
     case None       => Random
   }
 
-  def generate: List[Agent] = {
+  def generate: Either[Error, List[Agent]] = {
 
     val links: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
     val edgesArray: Array[EdgeId]  = roadNetwork.edgesMap.keys.toArray
@@ -68,13 +68,13 @@ case class UniformEdgePopSamplingSingleTrip(
             FirstActivity(
               ActivityType.Home,
               homeLocation,
-              homeCoord,
+              Some(homeCoord),
               homeEndTime
             ),
             FinalActivity(
               ActivityType.Work,
               workLocation,
-              workCoord
+              Some(workCoord)
             ),
             TravelMode.Car
           )
@@ -88,13 +88,13 @@ case class UniformEdgePopSamplingSingleTrip(
             FirstActivity(
               ActivityType.Work,
               workLocation,
-              workCoord,
+              Some(workCoord),
               leaveWorkTime
             ),
             FinalActivity(
               ActivityType.Home,
               homeLocation,
-              homeCoord
+              Some(homeCoord)
             ),
             TravelMode.Car
           )
@@ -104,6 +104,6 @@ case class UniformEdgePopSamplingSingleTrip(
       Seq(agent1, agent2)
     }
 
-    agents.flatten.toList
+    Right(agents.flatten.toList)
   }
 }

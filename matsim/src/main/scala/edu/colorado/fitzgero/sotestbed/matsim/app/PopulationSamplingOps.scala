@@ -6,11 +6,19 @@ import scala.io.Source
 import kantan.csv._
 import kantan.csv.ops._
 import org.locationtech.jts.geom.{Coordinate, Geometry, GeometryFactory, PrecisionModel}
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population._
+import org.locationtech.jts.io.WKTReader
 import org.locationtech.jts.io.geojson.GeoJsonReader
 import scala.util.Try
+import cats.effect.IO
+import java.time.LocalTime
 
 object PopulationSamplingOps {
 
+  /**
+    * reads in a GeoJSON file
+    * @deprecated
+    */
   def readBoundingGeometryGeoJson(geometryFile: File, srid: Int = 4326): Either[Exception, Geometry] = {
 
     val result = for {
@@ -33,7 +41,7 @@ object PopulationSamplingOps {
     * @param geometrySRID the SRID of the polygon geometry
     * @return
     */
-  def readBoundingGeometryCsv(geometryFile: File, geometrySRID: Int = 4326): Either[Exception, Geometry] = {
+  def readBoundingGeometryXYCsv(geometryFile: File, geometrySRID: Int = 4326): Either[Exception, Geometry] = {
 
     val geometryFactory: GeometryFactory = new GeometryFactory(new PrecisionModel(), geometrySRID)
     implicit val headerDecoder: HeaderDecoder[Coordinate] = HeaderDecoder.decoder("lat", "lon") {

@@ -39,7 +39,7 @@ case class UniformPolygonPopulationSamplingAlgorithm(
     case None       => Random
   }
 
-  def generate: List[Agent] = {
+  def generate: Either[Error, List[Agent]] = {
 
     val links: Map[Id[Link], Link]           = matsimNetwork.getLinks.asScala.toMap
     val geometryFactory: GeometryFactory     = new GeometryFactory(new PrecisionModel(), boundingGeometrySRID)
@@ -101,13 +101,13 @@ case class UniformPolygonPopulationSamplingAlgorithm(
             FirstActivity(
               ActivityType.Home,
               homeLocation,
-              homeCoord,
+              Some(homeCoord),
               homeEndTime
             ),
             Activity(
               ActivityType.Work,
               workLocation,
-              workCoord,
+              Some(workCoord),
               workTime,
               workTime.plusHours(workDurationHours)
             ),
@@ -117,14 +117,14 @@ case class UniformPolygonPopulationSamplingAlgorithm(
             Activity(
               ActivityType.Work,
               workLocation,
-              workCoord,
+              Some(workCoord),
               workTime,
               workTime.plusHours(workDurationHours)
             ),
             FinalActivity(
               ActivityType.Home,
               homeLocation,
-              homeCoord
+              Some(homeCoord)
             ),
             TravelMode.Car
           )
@@ -134,7 +134,7 @@ case class UniformPolygonPopulationSamplingAlgorithm(
       agent
     }
 
-    agents.toList
+    Right(agents.toList)
   }
 }
 

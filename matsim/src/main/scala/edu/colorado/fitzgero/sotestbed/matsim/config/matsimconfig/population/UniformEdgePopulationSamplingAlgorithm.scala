@@ -29,7 +29,7 @@ case class UniformEdgePopulationSamplingAlgorithm(
     case None       => Random
   }
 
-  def generate: List[Agent] = {
+  def generate: Either[Error, List[Agent]] = {
 
     val links: Map[Id[Link], Link] = matsimNetwork.getLinks.asScala.toMap
     val edgesArray: Array[EdgeId]  = roadNetwork.edgesMap.keys.toArray
@@ -61,13 +61,13 @@ case class UniformEdgePopulationSamplingAlgorithm(
       val homeMorning: FirstActivity = FirstActivity(
         ActivityType.Home,
         homeLocation,
-        homeCoord,
+        Some(homeCoord),
         homeEndTime
       )
       val work: Activity = Activity(
         ActivityType.Work,
         workLocation,
-        workCoord,
+        Some(workCoord),
         workTime,
         LocalTime.of(workDurationHours, 0, 0)
 //        workTime.plusHours(workDurationHours)
@@ -75,7 +75,7 @@ case class UniformEdgePopulationSamplingAlgorithm(
       val homeEvening: FinalActivity = FinalActivity(
         ActivityType.Home,
         homeLocation,
-        homeCoord
+        Some(homeCoord)
       )
 
       val agent = Agent(
@@ -89,6 +89,6 @@ case class UniformEdgePopulationSamplingAlgorithm(
       agent
     }
 
-    agents.toList
+    Right(agents.toList)
   }
 }

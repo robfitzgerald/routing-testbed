@@ -1,4 +1,5 @@
 package edu.colorado.fitzgero.sotestbed.matsim.model.agent
+
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -19,31 +20,52 @@ object AgentActivity {
   final case class FirstActivity(
     activityType: ActivityType,
     location: EdgeId,
-    coord: Coord,
+    coord: Option[Coord],
     endTime: LocalTime
   ) extends AgentActivity {
 
     def toXML: xml.Elem =
-      <activity type={activityType.toString} link={location.value}  x={coord.getX.toString} y={coord.getY.toString} end_time={endTime.format(MATSimTextTimeFormat)}/>
+      coord match {
+        case None =>
+          <activity type={activityType.toString} link={location.value} end_time={endTime.format(MATSimTextTimeFormat)}/>
+        case Some(c) =>
+          <activity type={activityType.toString} link={location.value}  x={c.getX.toString} y={c.getY.toString} end_time={
+            endTime.format(MATSimTextTimeFormat)
+          }/>
+      }
   }
 
   final case class Activity(
     activityType: ActivityType,
     location: EdgeId,
-    coord: Coord,
+    coord: Option[Coord],
     startTime: LocalTime,
-    duration: LocalTime,
+    duration: LocalTime
   ) extends AgentActivity {
 
     def toXML: xml.Elem =
-      <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString} max_dur={duration.format(MATSimTextTimeFormat)}/>
+      coord match {
+        case None =>
+          <activity type={activityType.toString} link={location.value} max_dur={duration.format(MATSimTextTimeFormat)}/>
+        case Some(c) =>
+          <activity type={activityType.toString} link={location.value}  x={c.getX.toString} y={c.getY.toString} max_dur={
+            duration.format(MATSimTextTimeFormat)
+          }/>
+      }
+
   }
 
   final case class FinalActivity(
     activityType: ActivityType,
     location: EdgeId,
-    coord: Coord
+    coord: Option[Coord]
   ) extends AgentActivity {
-    def toXML: xml.Elem = <activity type={activityType.toString} link={location.value} x={coord.getX.toString} y={coord.getY.toString}/>
+
+    def toXML: xml.Elem =
+      coord match {
+        case None => <activity type={activityType.toString} link={location.value}/>
+        case Some(c) =>
+          <activity type={activityType.toString} link={location.value}  x={c.getX.toString} y={c.getY.toString}/>
+      }
   }
 }

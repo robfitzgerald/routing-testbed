@@ -13,15 +13,19 @@ import pureconfig.generic.auto._
 import MATSimPopConfig.localDateConvert
 
 object MATSimPopulationApp extends App {
+
   val result = for {
-    config <- ConfigSource.fromConfig(ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/rye/default-population.conf"))).load[MATSimPopConfig]
+    config <- ConfigSource
+      .fromConfig(
+        ConfigFactory.parseFile(new File("matsim/src/main/resources/matsim-conf/rye/default-population.conf"))
+      )
+      .load[MATSimPopConfig]
     popSamplingAlgorithm <- config.pop.popSampling.build(config)
-    population = popSamplingAlgorithm.generate
+    population           <- popSamplingAlgorithm.generate
   } yield {
 
     // converts each agent to xml, announcing any errors along the way
-    val (agents, failures) = population.foldLeft((List.empty[xml.Elem], 0)){ (acc, agent) =>
-
+    val (agents, failures) = population.foldLeft((List.empty[xml.Elem], 0)) { (acc, agent) =>
       agent.toXML match {
         case Right(a) =>
           (a +: acc._1, acc._2)
