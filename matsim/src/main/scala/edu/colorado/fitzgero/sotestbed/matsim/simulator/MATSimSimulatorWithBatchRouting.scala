@@ -47,6 +47,7 @@ import org.matsim.core.population.routes.RouteUtils
 import org.matsim.core.trafficmonitoring.TravelTimeCalculator
 import org.matsim.vehicles.Vehicle
 import org.matsim.core.router.util.TravelTime
+import edu.colorado.fitzgero.sotestbed.matsim.simulator.flowhandler.RoadNetworkFlowHandler
 
 /**
   * performs [[HandCrankedSimulator]] on a MATSim simulation which allows it to be used in a [[edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment]]
@@ -68,6 +69,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var maxPathAssignments: Int                                   = _
   var minimumReplanningLeadTime: TravelTimeSeconds              = _
   var minimumRemainingRouteTimeForReplanning: TravelTimeSeconds = _
+  var minimumNetworkUpdateThreshold: SimTime                    = _
   var simulationTailTimeout: Duration                           = _
 
   // simulation state variables
@@ -133,6 +135,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       self.maxPathAssignments = config.routing.maxPathAssignments
       self.minimumReplanningLeadTime = config.routing.minimumReplanningLeadTime
       self.minimumRemainingRouteTimeForReplanning = config.routing.minimumReplanningLeadTime
+      self.minimumNetworkUpdateThreshold = config.routing.minNetworkUpdateThreshold
       self.simulationTailTimeout = config.run.simulationTailTimeout
 
       // MATSimProxy Selfish Routing Mode
@@ -850,14 +853,24 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
     */
   override def getUpdatedEdges: IO[List[(EdgeId, Option[Flow], MetersPerSecond)]] = IO {
 
+    val binStartTime = SimTime(this.playPauseSimulationControl.getLocalTime) - this.minimumNetworkUpdateThreshold
+
+    // collects the current flow count and average trip duration travel time for each link
+    // and then resets the observations for the next window of time
+    val updates = this.roadNetworkFlowHandler.collectObservations(binStartTime)
+
     val tt = self.travelTimeCalculator.getLinkTravelTimes
     val rows = this.qSim.getNetsimNetwork.getNetwork.getLinks.values.asScala.toList.map {
       case link: Link =>
-        val linkId     = link.getId
-        val edgeId     = EdgeId(linkId.toString)
-        val travelTime = MATSimRouteOps.getLinkTravelTime(tt, link, currentTime)
-        val speed      = MetersPerSecond(Meters(link.getLength.toLong), TravelTimeSeconds(travelTime.value))
-        val flow       = roadNetworkFlowHandler.getFlow(linkId)
+        val linkId = link.getId
+        val edgeId = EdgeId(linkId.toString)
+        val obs    = updates.get(linkId)
+        val travelTime = obs
+          .flatMap(_.averageTraversalDurationSeconds)
+          .getOrElse { math.max(1.0, link.getLength / link.getFreespeed) }
+        // val travelTime = MATSimRouteOps.getLinkTravelTime(tt, link, currentTime)
+        val speed = MetersPerSecond(Meters(link.getLength.toLong), TravelTimeSeconds(travelTime))
+        val flow  = obs.map { o => Flow(o.flowCount) }
         (edgeId, flow, speed)
     }
 
