@@ -197,7 +197,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
       val speedTraceFilePath: String = config.experimentLoggingDirectory.resolve("speedTrace.csv").toString
       self.speedTracePrintWriter = new PrintWriter(speedTraceFilePath)
-      self.speedTracePrintWriter.write("time,avgSpeedMph")
+      self.speedTracePrintWriter.write("time,avgSpeedMph\n")
 
       // initialize intermediary data structures holding data between route algorithms + simulation
       self.soAgentReplanningHandler = new SOAgentReplanningHandler(
