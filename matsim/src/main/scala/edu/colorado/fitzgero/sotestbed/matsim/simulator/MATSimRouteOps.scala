@@ -201,7 +201,7 @@ object MATSimRouteOps extends LazyLogging {
     person: Person,
     vehicle: Vehicle,
     currentTime: SimTime,
-    tt: TravelTime
+    tt: Id[Link] => SimTime
   ) {
 
     /**
@@ -219,7 +219,7 @@ object MATSimRouteOps extends LazyLogging {
       * @return estimated travel time
       */
     def getTravelTime(link: Link): SimTime = {
-      getLinkTravelTime(this.tt, link, this.currentTime, Some(this.vehicle))
+      tt(link.getId)
     }
   }
 
@@ -245,7 +245,7 @@ object MATSimRouteOps extends LazyLogging {
   def convertRouteToEdgeData(
     path: List[Id[Link]],
     qSim: QSim,
-    travelTimeRequest: Option[EdgeDataRequestWithTravelTime] = None
+    travelTime: Option[Id[Link] => SimTime] = None
   ): List[EdgeData] = {
 
     @tailrec
@@ -258,7 +258,7 @@ object MATSimRouteOps extends LazyLogging {
           val srcCoordinate: Coordinate = Coordinate(src.getX, src.getY)
           val dst                       = link.getToNode.getCoord
           val dstCoordinate: Coordinate = Coordinate(dst.getX, dst.getY)
-          val linkTravelTime            = travelTimeRequest.map { _.getTravelTime(link) }
+          val linkTravelTime            = travelTime.map { _(link.getId) }
           val linkDistance              = link.getLength
 
           val edgeData = EdgeData(EdgeId(head.toString), srcCoordinate, dstCoordinate, linkDistance, linkTravelTime)

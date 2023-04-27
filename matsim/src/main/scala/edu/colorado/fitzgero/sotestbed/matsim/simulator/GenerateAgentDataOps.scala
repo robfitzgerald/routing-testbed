@@ -33,7 +33,7 @@ object GenerateAgentDataOps extends LazyLogging {
     */
   def generateUeAgentRouteRequest(
     qSim: QSim,
-    travelTime: TravelTime,
+    travelTime: Id[Link] => SimTime,
     minimumReplanningLeadTime: TravelTimeSeconds,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
   )(vehicleId: Id[Vehicle], personId: Id[Person], timeEnteredVehicle: SimTime): IO[Option[AgentBatchData]] = {
@@ -78,7 +78,7 @@ object GenerateAgentDataOps extends LazyLogging {
   def generateSoAgentRouteRequest(
     qSim: QSim,
     replanningHandler: SOAgentReplanningHandler,
-    travelTime: TravelTime,
+    travelTime: Id[Link] => SimTime,
     minimumReplanningLeadTime: TravelTimeSeconds,
     minimumRemainingRouteTimeForReplanning: TravelTimeSeconds
   )(agentData: AgentData): IO[Option[AgentBatchData]] = {

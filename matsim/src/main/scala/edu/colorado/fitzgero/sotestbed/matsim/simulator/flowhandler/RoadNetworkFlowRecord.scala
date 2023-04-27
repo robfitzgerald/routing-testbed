@@ -18,6 +18,11 @@ import edu.colorado.fitzgero.sotestbed.matsim.simulator.flowhandler.RoadNetworkL
   * stores information about the flows and observed traversal times for a link and provides
   * a method to collect the average traversal time over some history
   *
+  * data is stored such that the time of query isn't relevant. this allows
+  * the query timing window does not need to match nor sync with the binStartTime (allowing
+  * for overlap, such as a 5-minute history checked every 2 minutes). however it is
+  * assumed that both advance linearly with static step sizes.
+  *
   * @param currentAgentCount
   * @param linkEnterTimes
   * @param completedTraversals
@@ -32,14 +37,16 @@ final case class RoadNetworkFlowRecord(
 
   /**
     * convenience method that performs all processing associated with collecting network update data
+    * and advancing the bin model to some new start time.
     *
     * @param binStartInclusive start of the time horizon to sample trip durations from
     * @return the observations based on the current state and the updated flow record with stale trips
     */
   def updateAndCollect(binStartInclusive: SimTime): (RoadNetworkFlowRecord, RoadNetworkFlowObservation) = {
     val updated  = this.computeAverageTraversalDurationSeconds(binStartInclusive)
-    val duration = updated.getAverageTraversalDurationSeconds(binStartInclusive)
-    (updated, RoadNetworkFlowObservation(this.getFlowCount, duration))
+    val duration = updated.mostRecentAverageTraversalDurationSeconds
+    val cleaned  = updated.clearObservationsBefore(binStartInclusive)
+    (cleaned, RoadNetworkFlowObservation(cleaned.getFlowCount, duration))
   }
 
   override def toString: String =
@@ -47,21 +54,31 @@ final case class RoadNetworkFlowRecord(
 
   def getFlowCount: Int = this.currentAgentCount
 
-  def getAverageTraversalDurationSeconds(binStartInclusive: SimTime): Option[Double] =
-    if (currentAgentCount == 0) None
-    else this.mostRecentAverageTraversalDurationSeconds
+  // def getAverageTraversalDurationSeconds(binStartInclusive: SimTime): Option[Double] =
+  //   if (currentAgentCount == 0) None
+  //   else this.mostRecentAverageTraversalDurationSeconds
 
   def computeAverageTraversalDurationSeconds(binStartInclusive: SimTime): RoadNetworkFlowRecord = {
     val (acc, cnt) = this.completedTraversals.foldLeft((0.0, 0)) {
       case ((acc, cnt), t) =>
-        if (t.startTime < binStartInclusive) (acc, cnt) else (acc + t.duration.value.toDouble, cnt + 1)
+        if (t.startTime < binStartInclusive) (acc, cnt)
+        else (acc + t.duration.value.toDouble, cnt + 1)
     }
-    val avg = if (cnt == 0) None else Some(acc / cnt)
-    this.copy(
-      mostRecentAverageTraversalDurationSeconds = avg,
-      completedTraversals = this.completedTraversals.filter(_.startTime >= binStartInclusive)
-    )
+    // computes the next average, based on the following conditions:
+    // 1. no agents on the link? no estimate (fall back on free flow)
+    // 2. agents are on the link but no trips were completed? carry over the previous estimate
+    //    - this covers the (hopefully rare) case that the traversals are taking longer than the window itself
+    // 3. there are observations from which we can compute a new average
+    val newAverage: Option[Double] =
+      if (currentAgentCount == 0 && cnt == 0) None
+      else if (cnt == 0) this.mostRecentAverageTraversalDurationSeconds
+      else Some(acc / cnt)
+
+    this.copy(mostRecentAverageTraversalDurationSeconds = newAverage)
   }
+
+  def clearObservationsBefore(binStartInclusive: SimTime): RoadNetworkFlowRecord =
+    this.copy(completedTraversals = this.completedTraversals.filter(_.startTime >= binStartInclusive))
 
   def processLinkEnter(vehicleId: Id[Vehicle], enterTime: SimTime): RoadNetworkFlowRecord =
     this.copy(

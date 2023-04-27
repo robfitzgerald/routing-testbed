@@ -25,7 +25,7 @@ sealed trait GenerateAgentData
 object GenerateAgentData {
 
   final case class GenerateEnterSimulation(
-    travelTime: TravelTime,
+    travelTime: Id[Link] => SimTime,
     personId: Id[Person],
     vehicleId: Id[Vehicle],
     currentTime: SimTime
@@ -36,7 +36,7 @@ object GenerateAgentData {
     vehicleId: Id[Vehicle],
     requestClass: RequestClass,
     timeEnteredVehicle: SimTime,
-    travelTime: TravelTime,
+    travelTime: Id[Link] => SimTime,
     agentData: Option[AgentData],
     mostRecentTimeReplanned: Option[SimTime],
     minimumReplanningLeadTime: TravelTimeSeconds,

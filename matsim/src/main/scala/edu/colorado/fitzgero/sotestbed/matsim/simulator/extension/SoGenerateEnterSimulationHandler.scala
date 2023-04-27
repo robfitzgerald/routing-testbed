@@ -19,7 +19,7 @@ import cats.effect.unsafe.implicits.global
 class SoGenerateEnterSimulationHandler(
   soReplanningThisIteration: Boolean,
   qSim: QSim,
-  travelTimeCalculator: TravelTimeCalculator,
+  travelTimeLookupFunction: Id[Link] => SimTime,
   completePathStore: collection.mutable.Map[Id[Person], Map[DepartureTime, List[Id[Link]]]],
   newSOAgentBatchData: collection.mutable.ListBuffer[AgentBatchData]
 ) extends VehicleEntersTrafficEventHandler
@@ -42,7 +42,7 @@ class SoGenerateEnterSimulationHandler(
 
       // let the routing algorithm know this agent has entered the system
       val generateArgs = GenerateAgentData.GenerateEnterSimulation(
-        travelTimeCalculator.getLinkTravelTimes,
+        travelTimeLookupFunction,
         personId,
         vehicleId,
         simTime

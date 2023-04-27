@@ -66,7 +66,7 @@ object AgentTripData extends LazyLogging {
     agentData: AgentData,
     leg: Leg,
     currentTime: Long,
-    travelTime: TravelTime,
+    travelTime: Id[Link] => SimTime,
     qSim: QSim
   ): AgentTripData = {
     // build Requests for this time step
@@ -77,14 +77,15 @@ object AgentTripData extends LazyLogging {
     val destinationEdgeId = EdgeId(leg.getRoute.getEndLinkId.toString)
 
     // pull in observed travel times over links here if requested
-    val ttReq = MATSimRouteOps.EdgeDataRequestWithTravelTime(
-      agentState.person,
-      agentState.vehicle,
-      SimTime(currentTime),
-      travelTime
-    )
+    // val ttReq = MATSimRouteOps.EdgeDataRequestWithTravelTime(
+    //   agentState.person,
+    //   agentState.vehicle,
+    //   SimTime(currentTime),
+    //   travelTime
+    // )
     val experiencedEdgeData: List[EdgeData] = MATSimRouteOps.convertExperiencedRouteToEdgeData(experiencedRoute, qSim)
-    val remainingEdgeData: List[EdgeData]   = MATSimRouteOps.convertRouteToEdgeData(remainingLinkIds, qSim, Some(ttReq))
+    val remainingEdgeData: List[EdgeData] =
+      MATSimRouteOps.convertRouteToEdgeData(remainingLinkIds, qSim, Some(travelTime))
 
     AgentTripData(experiencedEdgeData, remainingEdgeData)
   }

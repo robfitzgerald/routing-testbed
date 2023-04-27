@@ -14,6 +14,8 @@ import org.matsim.api.core.v01.events.VehicleLeavesTrafficEvent
 import org.matsim.api.core.v01.events.VehicleEntersTrafficEvent
 import com.typesafe.scalalogging.LazyLogging
 import org.matsim.vehicles.Vehicle
+import org.matsim.core.mobsim.qsim.QSim
+import scala.collection.JavaConverters._
 
 /**
   * keeps track of changes in the road network, based on events where vehicles enter and leave the network,
@@ -52,7 +54,37 @@ class RoadNetworkFlowHandler
   def getFlow(linkId: Id[Link]): Option[Flow] =
     this.linkRecords.get(linkId).map(o => Flow(o.getFlowCount.toDouble))
 
-  def collectObservations(binStartTime: SimTime): Map[Id[Link], RoadNetworkFlowObservation] = {
+  /**
+    * builds a travel time lookup table that, for a given link, checks if we
+    * have observed traversals since the $binStartTime. if not, the table
+    * looks up the free flow travel time for the link instead as a fallback
+    * (based on the assumption that there are no agents competing for right of way)
+    *
+    * @param binStartTime start time for collecting travel time observations. collects
+    *                     all completed trips from this start time to current
+    * @return either observed travel time average or the free flow travel time
+    */
+  def buildTravelTimeEstimator(binStartTime: SimTime): QSim => Id[Link] => SimTime = {
+    val obsTable = updateAndCollectLinkObservations(binStartTime)
+    (qSim: QSim) =>
+      val linkTable = qSim.getNetsimNetwork.getNetwork.getLinks.asScala
+      (linkId: Id[Link]) =>
+        val observedTravelTimeResult = for {
+          obs <- obsTable.get(linkId)
+          tt  <- obs.averageTraversalDurationSeconds
+        } yield SimTime(math.max(1.0, tt))
+
+        observedTravelTimeResult.getOrElse {
+          linkTable.get(linkId) match {
+            case None =>
+              throw new Exception(f"internal error - missing link $linkId from QSim")
+            case Some(link) =>
+              SimTime(math.max(1.0, link.getLength / link.getFreespeed))
+          }
+        }
+  }
+
+  def updateAndCollectLinkObservations(binStartTime: SimTime): Map[Id[Link], RoadNetworkFlowObservation] = {
     val observations = for {
       (linkId, record) <- this.linkRecords.toMap
       (updatedRecord, obs) = record.updateAndCollect(binStartTime)
