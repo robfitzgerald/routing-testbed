@@ -16,12 +16,14 @@ import com.typesafe.scalalogging.LazyLogging
 import org.matsim.vehicles.Vehicle
 import org.matsim.core.mobsim.qsim.QSim
 import scala.collection.JavaConverters._
+import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
+import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 
 /**
   * keeps track of changes in the road network, based on events where vehicles enter and leave the network,
   * for an absolute representation of flow values. only stores entries for links with non-zero flows.
   */
-class RoadNetworkFlowHandler
+class RoadNetworkFlowHandler(private val qSim: QSim)
     extends LinkEnterEventHandler
     with LinkLeaveEventHandler
     with VehicleEntersTrafficEventHandler
@@ -31,6 +33,9 @@ class RoadNetworkFlowHandler
     with LazyLogging {
 
   private val linkRecords: collection.mutable.Map[Id[Link], RoadNetworkFlowRecord] = collection.mutable.Map.empty
+  private var observationTable: Map[Id[Link], RoadNetworkFlowObservation]          = Map.empty
+  private val qSimLinks: Map[Id[Link], Link]                                       = qSim.getNetsimNetwork.getNetwork.getLinks.asScala.toMap
+  private val nLinks: Int                                                          = qSimLinks.size
 
   def clear(): Unit = {
     if (linkRecords.nonEmpty) {
@@ -54,37 +59,77 @@ class RoadNetworkFlowHandler
   def getFlow(linkId: Id[Link]): Option[Flow] =
     this.linkRecords.get(linkId).map(o => Flow(o.getFlowCount.toDouble))
 
-  /**
-    * builds a travel time lookup table that, for a given link, checks if we
-    * have observed traversals since the $binStartTime. if not, the table
-    * looks up the free flow travel time for the link instead as a fallback
-    * (based on the assumption that there are no agents competing for right of way)
-    *
-    * @param binStartTime start time for collecting travel time observations. collects
-    *                     all completed trips from this start time to current
-    * @return either observed travel time average or the free flow travel time
-    */
-  def buildTravelTimeEstimator(binStartTime: SimTime): QSim => Id[Link] => SimTime = {
-    val obsTable = updateAndCollectLinkObservations(binStartTime)
-    (qSim: QSim) =>
-      val linkTable = qSim.getNetsimNetwork.getNetwork.getLinks.asScala
-      (linkId: Id[Link]) =>
-        val observedTravelTimeResult = for {
-          obs <- obsTable.get(linkId)
-          tt  <- obs.averageTraversalDurationSeconds
-        } yield SimTime(math.max(1.0, tt))
+  def getLength(linkId: Id[Link]): Meters =
+    Meters(this.getLinkFromQSim(linkId).getLength)
 
-        observedTravelTimeResult.getOrElse {
-          linkTable.get(linkId) match {
-            case None =>
-              throw new Exception(f"internal error - missing link $linkId from QSim")
-            case Some(link) =>
-              SimTime(math.max(1.0, link.getLength / link.getFreespeed))
-          }
-        }
+  // /**
+  //   * builds a travel time lookup table that, for a given link, checks if we
+  //   * have observed traversals since the $binStartTime. if not, the table
+  //   * looks up the free flow travel time for the link instead as a fallback
+  //   * (based on the assumption that there are no agents competing for right of way)
+  //   *
+  //   * @param binStartTime start time for collecting travel time observations. collects
+  //   *                     all completed trips from this start time to current
+  //   * @return either observed travel time average or the free flow travel time
+  //   */
+  // def buildTravelTimeEstimator: QSim => Id[Link] => SimTime = { (qSim: QSim) =>
+  //   val linkTable = qSim.getNetsimNetwork.getNetwork.getLinks.asScala
+  //   (linkId: Id[Link]) =>
+  //     val observedTravelTimeResult = for {
+  //       obs <- this.observationTable.get(linkId)
+  //       tt  <- obs.averageTraversalDurationSeconds
+  //     } yield SimTime(math.max(1.0, tt))
+
+  //     observedTravelTimeResult.getOrElse {
+  //       linkTable.get(linkId) match {
+  //         case None =>
+  //           throw new Exception(f"internal error - missing link $linkId from QSim")
+  //         case Some(link) =>
+  //           SimTime(math.max(1.0, link.getLength / link.getFreespeed))
+  //       }
+  //     }
+  // }
+
+  def averageTravelTimeEstimateSeconds: Double = {
+    val ttSum = this.qSimLinks.keys.foldLeft(SimTime.Zero) { (acc, linkId) => acc + travelTimeEstimate(linkId) }
+    ttSum.value.toDouble / this.nLinks
   }
 
-  def updateAndCollectLinkObservations(binStartTime: SimTime): Map[Id[Link], RoadNetworkFlowObservation] = {
+  def averageSpeedEstimateSeconds: Double = {
+    val speedSum = this.qSimLinks.keys.foldLeft(0.0) { (acc, linkId) => acc + speedEstimate(linkId).value }
+    speedSum / this.nLinks
+  }
+
+  def travelTimeEstimate(linkId: Id[Link]): SimTime = {
+    val observedTravelTimeResult = for {
+      obs <- this.observationTable.get(linkId)
+      tt  <- obs.averageTraversalDurationSeconds
+    } yield SimTime(math.max(1.0, tt))
+
+    observedTravelTimeResult.getOrElse {
+      val link = getLinkFromQSim(linkId)
+      SimTime(math.max(1.0, link.getLength / link.getFreespeed))
+    }
+  }
+
+  def speedEstimate(linkId: Id[Link]): MetersPerSecond = {
+    val observedSpeedResult = for {
+      obs <- this.observationTable.get(linkId)
+      tt  <- obs.averageTraversalSpeedMps
+    } yield MetersPerSecond(math.max(0.01, tt))
+
+    observedSpeedResult.getOrElse(MetersPerSecond(getLinkFromQSim(linkId).getFreespeed))
+  }
+
+  private[flowhandler] def getLinkFromQSim(linkId: Id[Link]): Link =
+    this.qSimLinks.get(linkId) match {
+      case None =>
+        throw new Exception(f"internal error - missing link $linkId from QSim")
+      case Some(link) =>
+        link
+    }
+
+  def updateAndCollectLinkObservations(binStartTime: SimTime): Unit = {
     val observations = for {
       (linkId, record) <- this.linkRecords.toMap
       (updatedRecord, obs) = record.updateAndCollect(binStartTime)
@@ -92,19 +137,30 @@ class RoadNetworkFlowHandler
       linkRecords.update(linkId, updatedRecord) // side effect
       (linkId, obs)
     }
-    observations
+    this.observationTable = observations
   }
 
-  def processEnterLink(linkId: Id[Link], vehicleId: Id[Vehicle], time: Double): Unit = {
-    val record  = this.linkRecords.getOrElse(linkId, RoadNetworkFlowRecord())
-    val updated = record.processLinkEnter(vehicleId, SimTime(time))
+  def processEnterLink(linkId: Id[Link], vehicleId: Id[Vehicle], time: Double, position: Option[LinkPosition]): Unit = {
+    val length  = getLinkFromQSim(linkId).getLength
+    val record  = this.linkRecords.getOrElse(linkId, RoadNetworkFlowRecord(length))
+    val updated = record.processLinkEnter(vehicleId, SimTime(time), position)
     this.linkRecords.update(linkId, updated)
   }
 
-  def processExitLink(linkId: Id[Link], vehicleId: Id[Vehicle], time: Double): Unit = {
-    val record  = this.linkRecords.getOrElse(linkId, RoadNetworkFlowRecord())
-    val updated = record.processLinkExit(vehicleId, SimTime(time))
+  def processExitLink(linkId: Id[Link], vehicleId: Id[Vehicle], time: Double, position: Option[LinkPosition]): Unit = {
+    val length  = getLinkFromQSim(linkId).getLength
+    val record  = this.linkRecords.getOrElse(linkId, RoadNetworkFlowRecord(length))
+    val updated = record.processLinkExit(vehicleId, SimTime(time), position)
     this.linkRecords.update(linkId, updated)
+  }
+
+  def removeActiveTraversal(linkId: Id[Link], vehicleId: Id[Vehicle]): Unit = {
+    for {
+      record <- this.linkRecords.get(linkId)
+    } {
+      val updated = record.removeActiveTraversal(vehicleId)
+      this.linkRecords.update(linkId, updated)
+    }
   }
 
   // def incrementCount(linkId: Id[Link]): Unit = this.linkRecords.update(linkId, getCount(linkId) + 1)
@@ -120,20 +176,30 @@ class RoadNetworkFlowHandler
   // }
 
   def handleEvent(event: LinkEnterEvent): Unit =
-    this.processEnterLink(event.getLinkId, event.getVehicleId, event.getTime)
+    this.processEnterLink(event.getLinkId, event.getVehicleId, event.getTime, position = None)
 
   def handleEvent(event: LinkLeaveEvent): Unit =
-    this.processExitLink(event.getLinkId, event.getVehicleId, event.getTime)
+    this.processExitLink(event.getLinkId, event.getVehicleId, event.getTime, position = None)
 
   def handleEvent(event: VehicleEntersTrafficEvent): Unit =
-    this.processEnterLink(event.getLinkId, event.getVehicleId, event.getTime)
+    this.processEnterLink(
+      event.getLinkId,
+      event.getVehicleId,
+      event.getTime,
+      position = Some(LinkPosition(event.getRelativePositionOnLink))
+    )
 
   def handleEvent(event: VehicleLeavesTrafficEvent): Unit =
-    this.processExitLink(event.getLinkId, event.getVehicleId, event.getTime)
+    this.processExitLink(
+      event.getLinkId,
+      event.getVehicleId,
+      event.getTime,
+      position = Some(LinkPosition(event.getRelativePositionOnLink))
+    )
 
   // def handleEvent(event: PersonStuckEvent): Unit =
   // this.processExitLink(event.getLinkId, event.getVehicleId, event.getTime)
 
   def handleEvent(event: VehicleAbortsEvent): Unit =
-    this.processExitLink(event.getLinkId, event.getVehicleId, event.getTime)
+    this.removeActiveTraversal(event.getLinkId, event.getVehicleId)
 }

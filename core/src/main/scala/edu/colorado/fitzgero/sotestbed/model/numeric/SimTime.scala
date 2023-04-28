@@ -18,6 +18,7 @@ final class SimTime(val value: Long) extends AnyVal {
   def <=(that: SimTime): Boolean                         = this.value <= that.value
   def >(that: SimTime): Boolean                          = this.value > that.value
   def >=(that: SimTime): Boolean                         = this.value >= that.value
+  def unary_-()                                          = -this.value
   def to(that: SimTime): NumericRange.Inclusive[Long]    = this.value to that.value
   def until(that: SimTime): NumericRange.Exclusive[Long] = this.value until that.value
   def toHourOfDay: Long                                  = this.value / 3600

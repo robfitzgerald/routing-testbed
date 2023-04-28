@@ -86,13 +86,9 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var roadNetworkFlowHandler: RoadNetworkFlowHandler     = _
   var soAgentReplanningHandler: SOAgentReplanningHandler = _
   var mostRecentNetworkUpdate: Option[SimTime]           = None
-  var travelTimes: Option[(Id[Link]) => SimTime]         = None
 
   def getMostRecentNetworkUpdate: SimTime =
     this.mostRecentNetworkUpdate.getOrElse(throw new Exception("getting most recent network update before it exists"))
-
-  def getTravelTimesFn: Id[Link] => SimTime =
-    this.travelTimes.getOrElse(throw new Exception(s"getting travel times function before it exists"))
 
   val completePathStore: collection.mutable.Map[Id[Person], Map[DepartureTime, List[Id[Link]]]] =
     collection.mutable.Map.empty
@@ -106,7 +102,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
   var runStatsPrintWriter: PrintWriter        = _
   var agentExperiencePrintWriter: PrintWriter = _
   var agentPathPrintWriter: PrintWriter       = _
-  var speedTracePrintWriter: PrintWriter      = _
+  var networkStateTraceWriter: PrintWriter    = _
 
   // matsim variables
   var controler: Controler                                      = _
@@ -196,8 +192,8 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       agentPathPrintWriter.write("agentId,WKT\n")
 
       val speedTraceFilePath: String = config.experimentLoggingDirectory.resolve("speedTrace.csv").toString
-      self.speedTracePrintWriter = new PrintWriter(speedTraceFilePath)
-      self.speedTracePrintWriter.write("time,avgSpeedMph\n")
+      self.networkStateTraceWriter = new PrintWriter(speedTraceFilePath)
+      self.networkStateTraceWriter.write("time,avgSpeedMph,avgTravelTimeSeconds\n")
 
       // initialize intermediary data structures holding data between route algorithms + simulation
       self.soAgentReplanningHandler = new SOAgentReplanningHandler(
@@ -205,7 +201,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
         config.routing.maxPathAssignments,
         config.routing.minimumReplanningWaitTime
       )
-      self.roadNetworkFlowHandler = new RoadNetworkFlowHandler
 
       // track iterations in MATSimProxy
       self.controler.addControlerListener(new IterationStartsListener {
@@ -281,7 +276,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
             runStatsPrintWriter.close()
             agentExperiencePrintWriter.close()
             agentPathPrintWriter.close()
-            speedTracePrintWriter.close()
+            networkStateTraceWriter.close()
             self.matsimShutdown = true
           } match {
             case Failure(exception) =>
@@ -308,9 +303,10 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                 self.playPauseSimulationControl.pause()
 
                 // initialize our travel time estimqation logic (as a free-flow speed lookup at time "0")
-                val travelTimesFn = self.roadNetworkFlowHandler.buildTravelTimeEstimator(SimTime(0))(self.qSim)
-                self.travelTimes = Some(travelTimesFn)
-                self.mostRecentNetworkUpdate = Some(SimTime(0))
+                self.roadNetworkFlowHandler = new RoadNetworkFlowHandler(self.qSim)
+                self.roadNetworkFlowHandler
+                  .updateAndCollectLinkObservations(SimTime.Zero - self.minimumNetworkUpdateThreshold)
+                self.mostRecentNetworkUpdate = Some(SimTime.Zero - self.minimumNetworkUpdateThreshold)
 
                 // self.travelTimeCalculator =
                 //   new TravelTimeCalculator.Builder(self.qSim.getNetsimNetwork.getNetwork).build()
@@ -357,7 +353,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
                         // let the routing algorithm know this agent has entered the system
                         val generateArgs = GenerateAgentData.GenerateEnterSimulation(
-                          self.getTravelTimesFn,
+                          self.roadNetworkFlowHandler.travelTimeEstimate,
                           personId,
                           vehicleId,
                           simTime
@@ -603,34 +599,35 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           if (currentTime.value > 0 && currentTime.value % 900 == 0) {
             self.agentExperiencePrintWriter.flush()
             self.agentPathPrintWriter.flush()
-            speedTracePrintWriter.flush()
+            networkStateTraceWriter.flush()
           }
 
           // update our travel times model based on our new simulation time (at config-specified rate)
-          val binStartTime            = this.getMostRecentNetworkUpdate
-          val updateThresholdExceeded = timeAfterAdvance - binStartTime >= this.minimumNetworkUpdateThreshold
-          if (updateThresholdExceeded) {
-            val travelTimesFn = this.roadNetworkFlowHandler.buildTravelTimeEstimator(binStartTime)(this.qSim)
-            this.travelTimes = Some(travelTimesFn)
+          val binStartTime                   = this.getMostRecentNetworkUpdate
+          val networkUpdateThresholdExceeded = timeAfterAdvance - binStartTime >= this.minimumNetworkUpdateThreshold
+          if (networkUpdateThresholdExceeded) {
+            this.roadNetworkFlowHandler.updateAndCollectLinkObservations(binStartTime)
             this.mostRecentNetworkUpdate = Some(timeAfterAdvance)
 
             logger.whenInfoEnabled {
-              val (wSpdSum, dists) = this.qSim.getNetsimNetwork.getNetwork.getLinks.asScala.values
-                .foldLeft((0.0, 0.0)) {
-                  case ((speedAcc, distAcc), link) =>
-                    val tt         = travelTimesFn(link.getId).value.toDouble
-                    val dist       = link.getLength
-                    val speedMps   = dist / tt
-                    val speedMph   = speedMps * 2.237
+              val (wSpdSum, wTTSum, dists) = this.qSim.getNetsimNetwork.getNetwork.getLinks.asScala.keys
+                .foldLeft((0.0, 0.0, 0.0)) {
+                  case ((speedAcc, ttAcc, distAcc), linkId) =>
+                    val tt         = this.roadNetworkFlowHandler.travelTimeEstimate(linkId).value.toDouble
+                    val speed      = this.roadNetworkFlowHandler.speedEstimate(linkId).value
+                    val dist       = this.roadNetworkFlowHandler.getLength(linkId).value
+                    val speedMph   = speed * 2.237
                     val distWgtSpd = speedMph * dist
-                    (speedAcc + distWgtSpd, distAcc + dist)
+                    val distWgtTT  = tt * dist
+                    (speedAcc + distWgtSpd, ttAcc + distWgtTT, distAcc + dist)
                 }
-              val speedMph = wSpdSum / dists
-              val totalKm  = dists / 1000.0
+              val speedMph   = wSpdSum / dists
+              val travelTime = wTTSum / dists
+              val totalKm    = dists / 1000.0
               logger.info(
-                f"$timeAfterAdvance average distance-weighted speed across $totalKm%.2f km links: $speedMph%.2f mph"
+                f"$timeAfterAdvance across $totalKm%.2f km links: avg $speedMph%.2f mph, $travelTime%.2f secs per link"
               )
-              speedTracePrintWriter.write(f"$timeAfterAdvance,$speedMph%.4f\n")
+              networkStateTraceWriter.write(f"$timeAfterAdvance,$speedMph%.4f,$travelTime%.4f\n")
             }
           }
 
@@ -904,16 +901,12 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
     val binStartTime = SimTime(this.playPauseSimulationControl.getLocalTime) - this.minimumNetworkUpdateThreshold
 
-    // collects the current flow count and average trip duration travel time for each link
-    // and then resets the observations for the next window of time
-    val travelTimeFn = this.roadNetworkFlowHandler.buildTravelTimeEstimator(binStartTime)(this.qSim)
-
     val rows = this.qSim.getNetsimNetwork.getNetwork.getLinks.values.asScala.toList.map {
       case link: Link =>
         val linkId     = link.getId
         val edgeId     = EdgeId(linkId.toString)
-        val travelTime = travelTimeFn(linkId)
-        val speed      = MetersPerSecond(Meters(link.getLength.toLong), TravelTimeSeconds(travelTime.value))
+        val travelTime = this.roadNetworkFlowHandler.travelTimeEstimate(linkId)
+        val speed      = this.roadNetworkFlowHandler.speedEstimate(linkId)
         val flow       = this.roadNetworkFlowHandler.getFlow(linkId)
         (edgeId, flow, speed)
     }
@@ -933,7 +926,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       val ueRequestFn: (Id[Vehicle], Id[Person], SimTime) => IO[Option[AgentBatchData]] =
         GenerateAgentDataOps.generateUeAgentRouteRequest(
           self.qSim,
-          self.getTravelTimesFn,
+          self.roadNetworkFlowHandler.travelTimeEstimate,
           self.minimumReplanningLeadTime,
           self.minimumRemainingRouteTimeForReplanning
         )
@@ -965,7 +958,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
         GenerateAgentDataOps.generateSoAgentRouteRequest(
           self.qSim,
           self.soAgentReplanningHandler,
-          self.getTravelTimesFn,
+          self.roadNetworkFlowHandler.travelTimeEstimate,
           self.minimumReplanningLeadTime,
           self.minimumRemainingRouteTimeForReplanning
         )
