@@ -31,6 +31,7 @@ object PopSampling {
     * @param demandFileEndTimeFieldName
     * @param demandFileCountFieldName
     * @param demandFileSeparator
+    * @param seed seed value for random sampling. default Zero
     */
   final case class DemandSamplingTableInput(
     geometriesFile: File,
@@ -44,22 +45,8 @@ object PopSampling {
     demandFileStartTimeFieldName: String = "start_time",
     demandFileEndTimeFieldName: String = "end_time",
     demandFileCountFieldName: String = "count",
-    demandFileSeparator: Char = ','
-  ) extends PopSampling
-
-  /**
-    * build a population sampling algorithm that uniformly samples trips from edges in the road network
-    *
-    * @param workActivityMinTime
-    * @param workActivityMaxTime
-    * @param workDurationHours
-    * @param seed
-    */
-  final case class UnifEdgeSingleTrip(
-    workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
-    workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
-    workDurationHours: Int = 8,
-    seed: Option[Long] = None
+    demandFileSeparator: Char = ',',
+    seed: Option[Int] = None
   ) extends PopSampling
 
   /**
@@ -70,12 +57,14 @@ object PopSampling {
     * @param workActivityMinTime
     * @param workActivityMaxTime
     * @param workDurationHours
+    * @param singleTrip if true, generate one trip per reified MATSim person (two "persons", one Home->Work, one Work->Home)
     * @param seed
     */
   final case class UniformPopLinkSampling(
     workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
     workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
     workDurationHours: Int = 8,
+    singleTrip: Boolean = true,
     seed: Option[Long] = None
   ) extends PopSampling
 
@@ -115,40 +104,35 @@ object PopSampling {
 
           result.left.map { s => new Error(s.toString) }
 
-        case pop: UnifEdgeSingleTrip =>
-          val result = for {
-            roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimPopConfig.fs.matsimNetworkFile)
-            matsimNetwork <- Try { NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
-          } yield {
-            UniformEdgePopSamplingSingleTrip(
-              roadNetwork,
-              matsimNetwork,
-              matsimPopConfig.pop.size,
-              //            matsimPopConfig.pop.adoptionRate,
-              pop.workActivityMinTime,
-              pop.workActivityMaxTime,
-              pop.workDurationHours,
-              pop.seed
-            )
-          }
-
-          result.left.map { s => new Error(s.toString) }
-
         case pop: UniformPopLinkSampling =>
           val result = for {
             roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimPopConfig.fs.matsimNetworkFile)
             matsimNetwork <- Try { NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
           } yield {
-            UniformEdgePopulationSamplingAlgorithm(
-              roadNetwork,
-              matsimNetwork,
-              matsimPopConfig.pop.size,
-              //            matsimPopConfig.pop.adoptionRate,
-              pop.workActivityMinTime,
-              pop.workActivityMaxTime,
-              pop.workDurationHours,
-              pop.seed
-            )
+            if (pop.singleTrip) {
+              UniformEdgePopSamplingSingleTrip(
+                roadNetwork,
+                matsimNetwork,
+                matsimPopConfig.pop.size,
+                //            matsimPopConfig.pop.adoptionRate,
+                pop.workActivityMinTime,
+                pop.workActivityMaxTime,
+                pop.workDurationHours,
+                pop.seed
+              )
+            } else {
+              UniformEdgePopulationSamplingAlgorithm(
+                roadNetwork,
+                matsimNetwork,
+                matsimPopConfig.pop.size,
+                //            matsimPopConfig.pop.adoptionRate,
+                pop.workActivityMinTime,
+                pop.workActivityMaxTime,
+                pop.workDurationHours,
+                pop.seed
+              )
+            }
+
           }
 
           result.left.map { s => new Error(s.toString) }

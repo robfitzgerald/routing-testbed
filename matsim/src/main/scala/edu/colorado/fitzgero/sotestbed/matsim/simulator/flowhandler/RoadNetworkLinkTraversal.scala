@@ -7,4 +7,12 @@ final case class RoadNetworkLinkTraversal(
   duration: SimTime,
   startPos: LinkPosition,
   endPos: LinkPosition
-)
+) {
+
+  def fullLinkTraversal: Boolean =
+    startPos == LinkPosition.Start && endPos == LinkPosition.End
+
+  override def toString = {
+    s"-[$startTime:pos=$startPos]-[${startTime + duration}:pos=$endPos]->"
+  }
+}

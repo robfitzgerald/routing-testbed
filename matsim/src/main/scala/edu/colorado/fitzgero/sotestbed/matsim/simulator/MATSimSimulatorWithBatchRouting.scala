@@ -230,7 +230,6 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           self.ueAgentAssignedDijkstraRoute.clear()
           self.departureTimeStore.clear()
           self.soAgentReplanningHandler.clear()
-          self.roadNetworkFlowHandler.clear()
 
           self.soReplanningThisIteration = if (event.getIteration == 0) {
             // user determines first iteration so routing behavior

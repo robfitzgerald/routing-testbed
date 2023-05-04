@@ -7,6 +7,7 @@ import edu.colorado.fitzgero.sotestbed.matsim.simulator.flowhandler.RoadNetworkL
 import edu.colorado.fitzgero.sotestbed.model.numeric.MetersPerSecond
 import edu.colorado.fitzgero.sotestbed.model.numeric.Meters
 import edu.colorado.fitzgero.sotestbed.model.numeric.TravelTimeSeconds
+import com.typesafe.scalalogging.LazyLogging
 
 // we want to store the agent's id and the start time when they enter a link
 // we want to transform the stored entry into an observation of time duration ordered
@@ -38,7 +39,7 @@ final case class RoadNetworkFlowRecord(
   completedTraversals: List[RoadNetworkLinkTraversal] = List.empty,
   mostRecentAverageTraversalDurationSeconds: Option[Double] = None,
   mostRecentAverageTraversalSpeedMps: Option[Double] = None
-) {
+) extends LazyLogging {
 
   /**
     * convenience method that performs all processing associated with collecting network update data
@@ -60,20 +61,34 @@ final case class RoadNetworkFlowRecord(
 
   def getFlowCount: Int = this.currentAgentCount
 
-  def computeNewAverages(binStartInclusive: SimTime): RoadNetworkFlowRecord = {
-    val (ttSum, spdSum, cnt) = this.completedTraversals.foldLeft((0.0, 0.0, 0)) {
-      case ((ttAcc, spdAcc, cnt), t) =>
-        if (t.startTime < binStartInclusive) (ttAcc, spdAcc, cnt)
-        else {
-          val relLength = (t.endPos.value - t.startPos.value) * this.linkLengthMeters
-          val speed     = MetersPerSecond(Meters(relLength), TravelTimeSeconds(t.duration.value.toDouble)).value
-          (
-            ttAcc + t.duration.value.toDouble,
-            spdAcc + speed,
-            cnt + 1
-          )
-        }
-    }
+  /**
+    * computes new average observed travel time and speed values for this record.
+    * only reports full link traversals, no partial link traversals
+    *
+    * @param binStartInclusive time in simulation to use as a lower bound for the inclusion of recent trips
+    * @param minSpeedMps minimum allowed speed value to report for a given traversal
+    * @return the updated record with new averages cached on it
+    */
+  def computeNewAverages(binStartInclusive: SimTime, minSpeedMps: Double = 1.0): RoadNetworkFlowRecord = {
+    val (ttSum, spdSum, cnt) = this.completedTraversals
+      .filter(_.fullLinkTraversal) // why record partial traversals in the first place then
+      .foldLeft((0.0, 0.0, 0)) {
+        case ((ttAcc, spdAcc, cnt), t) =>
+          if (t.startTime < binStartInclusive) (ttAcc, spdAcc, cnt)
+          else {
+            val relativeLength = (t.endPos.value - t.startPos.value) * this.linkLengthMeters
+            val speed          = relativeLength / t.duration.value.toDouble
+            val speedSafe      = if (speed.isInfinite) minSpeedMps else math.max(minSpeedMps, speed)
+            (ttAcc + t.duration.value.toDouble, spdAcc + speedSafe, cnt + 1)
+            // if (t.duration.value >= relLength) {
+            //   // don't record speeds when the speed would be less than 1 meter per second
+            //   (ttAcc + t.duration.value.toDouble, spdAcc, cnt + 1)
+            // } else {
+            //   val speed = MetersPerSecond(Meters(relLength), TravelTimeSeconds(t.duration.value.toDouble)).value
+            //   (ttAcc + t.duration.value.toDouble, spdAcc + speed, cnt + 1)
+            // }
+          }
+      }
     // computes the next average, based on the following conditions:
     // 1. no agents on the link? no estimate (fall back on free flow)
     // 2. agents are on the link but no trips were completed? carry over the previous estimate
@@ -88,6 +103,13 @@ final case class RoadNetworkFlowRecord(
       if (currentAgentCount == 0 && cnt == 0) None
       else if (cnt == 0) this.mostRecentAverageTraversalSpeedMps
       else Some(spdSum / cnt)
+
+    if (newSpeed.exists(s => s == Double.PositiveInfinity || s == Double.NegativeInfinity)) {
+      val traversals = this.completedTraversals.map(_.toString)
+      val header     = f"inf speed observed with avg travel time $newTT"
+      val msg        = traversals.mkString(header + "\n", ",\n", "")
+      logger.warn(msg)
+    }
 
     this.copy(
       mostRecentAverageTraversalDurationSeconds = newTT,

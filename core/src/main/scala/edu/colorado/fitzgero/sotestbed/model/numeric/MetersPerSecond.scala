@@ -3,6 +3,9 @@ package edu.colorado.fitzgero.sotestbed.model.numeric
 case class MetersPerSecond(val value: Double) extends AnyVal {
   override def toString: String = f"${this.value}%.2f"
   def asMph: Double             = value * MetersPerSecond.secondsPerHourOverMetersPerMile
+
+  def isInfinite: Boolean =
+    value == Double.PositiveInfinity || value == Double.NegativeInfinity
 }
 
 object MetersPerSecond {

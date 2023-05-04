@@ -23,6 +23,18 @@ import scala.util.Random
 import edu.colorado.fitzgero.sotestbed.util.WeightedSamplingWithReplacement
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
 
+/**
+  * based on sampling trips from the DRCoG Focus model.
+  * an input file provides zone x zone demand for some set of geometry zones.
+  * each row has src/dst zone, departure time window, and count of trips.
+  *
+  * if the user specifies unweighted sampling, then, for each trip count on each row, a trip
+  * is generated in MATSim.
+  *
+  * if the user specifies weighted sampling, they provide a targetPopulationSize. the counts
+  * are converted into weights as ${row.count} / ${sum(rows)}. random weighted sampling generates
+  * the $targetPopulationSize number of MATSim trips.
+  */
 sealed trait DemandTablePopSampling extends PopSamplingAlgorithm
 
 object DemandTablePopSampling {
@@ -77,7 +89,7 @@ object DemandTablePopSampling {
         pop.demandFileSeparator
       )
       tree <- buildZoneIdSpatialIndex(geoms)
-      samp <- buildFromGeometriesAndDemandTable(tree, geoms, demand, rn, pop.targetPopulationSize)
+      samp <- buildFromGeometriesAndDemandTable(tree, geoms, demand, rn, pop.targetPopulationSize, pop.seed)
     } yield samp
   }
 
@@ -204,13 +216,15 @@ object DemandTablePopSampling {
     geoms: List[(String, Geometry)],
     demand: List[DemandTableRow],
     rn: RoadNetworkIO,
-    targetPopulationSize: Option[Int]
+    targetPopulationSize: Option[Int],
+    seed: Option[Int]
   ): Either[Error, DemandTablePopSampling] = {
+    val seedValue = seed.getOrElse(0)
     targetPopulationSize match {
       case None =>
-        Right(UnweightedSampling(tree, geoms.toMap, demand, rn, 0))
+        Right(UnweightedSampling(tree, geoms.toMap, demand, rn, seedValue))
       case Some(target) =>
-        addTableWeights(demand).map { wDemand => WeightedSampling(target, tree, geoms.toMap, wDemand, rn, 0) }
+        addTableWeights(demand).map { wDemand => WeightedSampling(target, tree, geoms.toMap, wDemand, rn, seedValue) }
     }
   }
 

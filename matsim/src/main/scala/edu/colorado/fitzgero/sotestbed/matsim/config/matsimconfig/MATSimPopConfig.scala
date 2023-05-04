@@ -28,26 +28,13 @@ case class MATSimPopConfig(
 ) {
 
   def updateSeed(newSeed: Long): MATSimPopConfig = {
-    pop.popSampling match {
-      case u: PopSampling.UniformPopLinkSampling =>
-        val updatedPopSampling: PopSampling = u.copy(seed = Some { newSeed })
-        val newPop: MATSimPopConfig.Pop = this.pop.copy(
-          popSampling = updatedPopSampling
-        )
-        this.copy(pop = newPop)
-      case u: PopSampling.UnifEdgeSingleTrip =>
-        val updatedPopSampling: PopSampling = u.copy(seed = Some { newSeed })
-        val newPop: MATSimPopConfig.Pop = this.pop.copy(
-          popSampling = updatedPopSampling
-        )
-        this.copy(pop = newPop)
-      case u: PopSampling.UniformPopPolygonSampling =>
-        val updatedPopSampling: PopSampling = u.copy(seed = Some { newSeed })
-        val newPop: MATSimPopConfig.Pop = this.pop.copy(
-          popSampling = updatedPopSampling
-        )
-        this.copy(pop = newPop)
+    // scala Random takes Int, silly
+    val updatedSampling = pop.popSampling match {
+      case u: PopSampling.UniformPopLinkSampling    => u.copy(seed = Some(newSeed))
+      case u: PopSampling.UniformPopPolygonSampling => u.copy(seed = Some(newSeed))
+      case u: PopSampling.DemandSamplingTableInput  => u.copy(seed = Some(newSeed.toInt))
     }
+    this.copy(pop = this.pop.copy(popSampling = updatedSampling))
   }
 }
 

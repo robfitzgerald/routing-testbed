@@ -9,8 +9,8 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
   "udpateAndCollect" when {
     "record is empty" should {
       "produce an unchanged state and the expected observation" in {
-        val emptyRecord                  = RoadNetworkFlowRecord()
-        val emptyObservation             = RoadNetworkFlowObservation(flowCount = 0, averageTraversalDurationSeconds = None)
+        val emptyRecord                  = RoadNetworkFlowRecord(linkLengthMeters = 100.0)
+        val emptyObservation             = RoadNetworkFlowObservation(0, None, None)
         var arbitraryTime                = SimTime(30)
         val (updatedRecord, observation) = emptyRecord.updateAndCollect(arbitraryTime)
         updatedRecord should equal(emptyRecord)
@@ -22,19 +22,22 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
         val vehicleId: Id[Vehicle]  = Id.create("testVehicle", classOf[Vehicle])
         val enterTime: SimTime      = SimTime(5)
         val exitTime: SimTime       = SimTime(65)
+        val linkLength: Double      = 100.0
         val duration: SimTime       = exitTime - enterTime
         val durationSeconds: Double = duration.value.toDouble
+        val speedMps: Double        = linkLength / durationSeconds
         val record =
-          RoadNetworkFlowRecord()
-            .processLinkEnter(vehicleId, enterTime)
-            .processLinkExit(vehicleId, exitTime)
+          RoadNetworkFlowRecord(linkLength)
+            .processLinkEnter(vehicleId, enterTime, None)
+            .processLinkExit(vehicleId, exitTime, None)
 
         val binStartTime: SimTime = SimTime(0)
         val expectedRecord = record.copy(
-          mostRecentAverageTraversalDurationSeconds = Some(durationSeconds)
+          mostRecentAverageTraversalDurationSeconds = Some(durationSeconds),
+          mostRecentAverageTraversalSpeedMps = Some(speedMps)
         )
         val expectedObservation =
-          RoadNetworkFlowObservation(flowCount = 0, averageTraversalDurationSeconds = Some(durationSeconds))
+          RoadNetworkFlowObservation(flowCount = 0, Some(durationSeconds), Some(speedMps))
         val (updatedRecord, observation) = record.updateAndCollect(binStartTime)
 
         updatedRecord should equal(expectedRecord)
@@ -60,19 +63,20 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
         }
 
         val record =
-          RoadNetworkFlowRecord()
-            .processLinkEnter(V1.id, V1.enter)
-            .processLinkEnter(V2.id, V2.enter)
-            .processLinkExit(V1.id, V1.exit)
-            .processLinkExit(V2.id, V2.exit)
+          RoadNetworkFlowRecord(linkLengthMeters = 100.0)
+            .processLinkEnter(V1.id, V1.enter, None)
+            .processLinkEnter(V2.id, V2.enter, None)
+            .processLinkExit(V1.id, V1.exit, None)
+            .processLinkExit(V2.id, V2.exit, None)
 
         val binStartTime: SimTime = SimTime(0)
         val avgDurSecs            = (V1.durSecs + V2.durSecs) / 2.0 // 39 seconds
+        val avgSpdMps             = (record.linkLengthMeters / V1.durSecs + record.linkLengthMeters / V2.durSecs) / 2.0
         val expectedRecord = record.copy(
           mostRecentAverageTraversalDurationSeconds = Some(avgDurSecs)
         )
         val expectedObservation =
-          RoadNetworkFlowObservation(flowCount = 0, averageTraversalDurationSeconds = Some(avgDurSecs))
+          RoadNetworkFlowObservation(0, Some(avgDurSecs), Some(avgSpdMps))
         val (updatedRecord, observation) = record.updateAndCollect(binStartTime)
 
         updatedRecord should equal(expectedRecord)
@@ -98,7 +102,7 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
         }
 
         val record =
-          RoadNetworkFlowRecord()
+          RoadNetworkFlowRecord(linkLengthMeters = 100.0)
             .processLinkEnter(V1.id, V1.enter)
             .processLinkEnter(V2.id, V2.enter)
             .processLinkExit(V1.id, V1.exit)
@@ -136,7 +140,7 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
         }
 
         val record =
-          RoadNetworkFlowRecord()
+          RoadNetworkFlowRecord(linkLengthMeters = 100.0)
             .processLinkEnter(V1.id, V1.enter)
             .processLinkEnter(V2.id, V2.enter)
             .processLinkExit(V1.id, V1.exit)
@@ -178,7 +182,7 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
         val bin2: SimTime = SimTime(30)
 
         val r0 =
-          RoadNetworkFlowRecord()
+          RoadNetworkFlowRecord(linkLengthMeters = 100.0)
             .processLinkEnter(V1.id, V1.enter)
             .processLinkEnter(V2.id, V2.enter)
             .processLinkExit(V1.id, V1.exit)
