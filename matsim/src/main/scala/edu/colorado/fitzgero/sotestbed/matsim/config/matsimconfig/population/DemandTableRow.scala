@@ -9,15 +9,17 @@ final case class DemandTableRow(src: String, dst: String, start: LocalTime, end:
 
 object DemandTableRow {
 
+  val TimeFormat = "HH:mm:ss"
+
   private implicit val timeOrIntDecoder: CellDecoder[LocalTime] =
     CellDecoder.from { timeString =>
       Try { LocalTime.ofSecondOfDay(timeString.toLong) }
-        .orElse { Try { LocalTime.parse(timeString, DateTimeFormatter.ofPattern("hh:mm:ss")) } }
+        .orElse { Try { LocalTime.parse(timeString, DateTimeFormatter.ofPattern(TimeFormat)) } }
         .toEither
         .left
         .map { t =>
           DecodeError.TypeError(
-            s"could not parse '$timeString' as int (second of day) or LocalTime in hh:mm:dd format"
+            s"could not parse '$timeString' as int (second of day) or LocalTime in $TimeFormat format"
           )
         }
     }

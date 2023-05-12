@@ -44,22 +44,22 @@ object AgentPerformanceMetrics extends LazyLogging {
 
   val SpeedUpperBoundMph: Double = 80.0
 
-  /**
-    * given a running MATSimRunConfig for an optimal experiment, computes the performance metrics
-    *
-    * @param config the matsim config for an optimal experiment
-    * @return performance metrics
-    */
-  def fromConfig(config: MATSimRunConfig): Either[Exception, AgentPerformanceMetrics] = {
-    val selfishConfig: MATSimRunConfig =
-      config.copy(scenarioData = config.scenarioData.copy(algorithm = "selfish"))
-    val selfishAgentExperienceFile: File =
-      selfishConfig.experimentLoggingDirectory.resolve("agentExperience.csv").toFile
-    val optimalAgentExperienceFile: File =
-      config.experimentLoggingDirectory.resolve("agentExperience.csv").toFile
+  // /**
+  //   * given a running MATSimRunConfig for an optimal experiment, computes the performance metrics
+  //   *
+  //   * @param config the matsim config for an optimal experiment
+  //   * @return performance metrics
+  //   */
+  // def fromConfig(config: MATSimRunConfig): Either[Exception, AgentPerformanceMetrics] = {
+  //   val selfishConfig: MATSimRunConfig =
+  //     config.copy(scenarioData = config.scenarioData.copy(algorithm = "selfish"))
+  //   val selfishAgentExperienceFile: File =
+  //     selfishConfig.experimentLoggingDirectory.resolve("agentExperience.csv").toFile
+  //   val optimalAgentExperienceFile: File =
+  //     config.experimentLoggingDirectory.resolve("agentExperience.csv").toFile
 
-    fromFiles(selfishAgentExperienceFile, optimalAgentExperienceFile)
-  }
+  //   fromFiles(selfishAgentExperienceFile, optimalAgentExperienceFile)
+  // }
 
   /**
     * given two agent experience files, compute the performance metrics measured by difference values

@@ -43,7 +43,7 @@ final case class MATSimConfig(
   io: MATSimConfig.Io,
   run: MATSimConfig.Run,
   routing: MATSimConfig.Routing,
-  population: MATSimConfig.Population,
+  population: PopSampling,
   algorithm: MATSimConfig.Algorithm
 )
 
@@ -122,9 +122,8 @@ object MATSimConfig {
 
   final case class Io(
     matsimNetworkFile: File,
-    populationPolygonFile: Option[File],
-    matsimConfigFile: File,
     routingReportConfig: RoutingReportConfig,
+    matsimConfigFile: File = Paths.get("matsim-default-config.xml").toFile,
     heatmapLogCycleMinutes: Int = 15,
     heatmapH3Resolution: Int = 9,
     populationFile: File = Paths.get("/tmp/popTempFile.xml").toFile, // overwritten in MATSimBatchExperimentApp
@@ -138,12 +137,12 @@ object MATSimConfig {
     }
   }
 
-  final case class Population(
-    workActivityMinTime: LocalTime,
-    workActivityMaxTime: LocalTime,
-    workDurationHours: Int,
-    size: Int
-  )
+  // final case class Population(
+  //   workActivityMinTime: LocalTime,
+  //   workActivityMaxTime: LocalTime,
+  //   workDurationHours: Int,
+  //   size: Int
+  // )
 
   sealed trait Algorithm {
 

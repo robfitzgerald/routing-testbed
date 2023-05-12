@@ -1,6 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.matsim.app
 
 import java.io.File
+import java.nio.file.Files
 import scala.io.Source
 
 import kantan.csv._
@@ -12,8 +13,33 @@ import org.locationtech.jts.io.geojson.GeoJsonReader
 import scala.util.Try
 import cats.effect.IO
 import java.time.LocalTime
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimRunConfig
+import java.nio.file.Path
 
 object PopulationSamplingOps {
+
+  /**
+    * checks if a population file exists matching the provided configuration and (optional) trial # (for repeater
+    * app runs). if not found, run the population generation algorithm in this run config.
+    *
+    * @param matsimRunConfig
+    * @param trial
+    * @return
+    */
+  def buildPopulationIfMissing(conf: MATSimRunConfig): Either[Error, Path] = {
+    val outDirPath = conf.trialSharedDirectory
+    val filepath   = conf.populationFilepath
+
+    if (filepath.toFile.isFile) Right(filepath)
+    else {
+      for {
+        _ <- Try { Files.createDirectories(outDirPath) }.toEither.left.map { t =>
+          new Error(f"unable to create directory $outDirPath")
+        }
+        _ <- PopSamplingAlgorithm.generatePopulation(conf.population, filepath, conf.trial)
+      } yield filepath
+    }
+  }
 
   /**
     * reads in a GeoJSON file

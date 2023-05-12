@@ -9,9 +9,11 @@ import edu.colorado.fitzgero.sotestbed.matsim.config.generator.GeneratorAppOps
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.{MATSimConfig, MATSimRunConfig}
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.MATSimConfig._
 import edu.colorado.fitzgero.sotestbed.matsim.runner.MATSimExperimentRunner3
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.PopSamplingAlgorithm
 import pureconfig.ConfigSource
 import pureconfig.generic.auto._
 import cats.effect.unsafe.implicits.global
+import java.nio.file.Paths
 
 object MATSimExperiment2021App
     extends CommandApp(
@@ -28,40 +30,28 @@ object MATSimExperiment2021App
           configFile <- configFileOpt
         } yield {
 
-          // parse the HOCON configuration file
-          val matsimConfigOrError = ConfigSource
+          // parse the HOCON configuration file, set up for this run
+          val matsimRunConfigOrError = ConfigSource
             .file(configFile.toFile)
             .load[MATSimConfig]
             .left
             .map { error => new Error(s"failed to parse configuration\n${error.prettyPrint(2)}") }
             .map {
               config =>
-                val popFileName: String = s"population-${config.population.size}.xml"
+                val popFileName: String = config.population.filename()
 
                 // ack, we need to set the batchName first before using the updated IO object to set
                 // the population file path.. who made this crap? :-D
                 val ioWithBatchName = config.io.copy(
                   batchName = GeneratorAppOps.leadingEnumerationFrom(configFile.toFile)
                 )
-                val popFilePath = ioWithBatchName.batchLoggingDirectory.resolve(popFileName).toFile
-                config.copy(io = ioWithBatchName.copy(populationFile = popFilePath))
-            }
+                val cwdPath     = Paths.get("").toAbsolutePath
+                val popFilePath = cwdPath.resolve(ioWithBatchName.batchLoggingDirectory).resolve(popFileName).toFile
 
-          // make some transformations to fit our config into the legacy expectations
-          val matsimRunConfigOrError = for {
-            config <- matsimConfigOrError
-          } yield {
-            val popSize = config.population.size
-            val scenarioData = MATSimRunConfig.ScenarioData(
-              algorithm = config.algorithm.name,
-              variationName = popSize.toString,
-              popSize = popSize,
-              trialNumber = 0,
-              headerColumnOrder = List.empty,
-              scenarioParameters = Map.empty
-            )
-            MATSimRunConfig(config, scenarioData)
-          }
+                println(f"setting population filepath: $popFilePath")
+                val updatedMATSimConfig = config.copy(io = ioWithBatchName.copy(populationFile = popFilePath))
+                MATSimRunConfig(updatedMATSimConfig)
+            }
 
           val directoryUnusedOrError = for {
             matsimRunConfig <- matsimRunConfigOrError
@@ -70,50 +60,19 @@ object MATSimExperiment2021App
             } else Right(())
           } yield ()
 
-          // set up our random generator, a function of the current time and 3 algorithm parameters
-          val randomOrError = for {
-            matsimRunConfig <- matsimRunConfigOrError
-            _ <- directoryUnusedOrError
-          } yield {
-            val seed: Long = matsimRunConfig.population.size +
-              matsimRunConfig.routing.batchWindow.value +
-              (matsimRunConfig.routing.adoptionRate * 1000).toInt +
-              System.currentTimeMillis
-            new Random(seed)
-          }
-
           // write the OS output directory and population file if missing
           val populationCreatedOrError = for {
             matsimRunConfig <- matsimRunConfigOrError
-            random          <- randomOrError
-          } yield {
-            // handle OS interaction
-            Files.createDirectories(matsimRunConfig.experimentLoggingDirectory)
-            Files.createDirectories(matsimRunConfig.io.batchLoggingDirectory)
-
-            // create population file if missing
-            if (!matsimRunConfig.io.populationFile.isFile) {
-              MATSimPopulationRunner.generateUniformPopulation(
-                networkFile = matsimRunConfig.io.matsimNetworkFile,
-                polygonFileOption = matsimRunConfig.io.populationPolygonFile,
-                popFileDestination = matsimRunConfig.io.populationFile,
-                popSize = matsimRunConfig.population.size,
-                adoptionRate = matsimRunConfig.routing.adoptionRate,
-                workActivityMinTime = matsimRunConfig.population.workActivityMinTime,
-                workActivityMaxTime = matsimRunConfig.population.workActivityMaxTime,
-                workDurationHours = matsimRunConfig.population.workDurationHours,
-                seed = Some { random.nextInt }
-              )
-            }
-            ()
-          }
+            _               <- directoryUnusedOrError
+            popFilePath     <- PopulationSamplingOps.buildPopulationIfMissing(matsimRunConfig)
+            _ = println(f"using population file at $popFilePath")
+          } yield ()
 
           // run our experiment
           val innerResult = for {
             _               <- populationCreatedOrError
             matsimRunConfig <- matsimRunConfigOrError
-            random          <- randomOrError
-            runner = MATSimExperimentRunner3(matsimRunConfig, random.nextLong)
+            runner = MATSimExperimentRunner3(matsimRunConfig)
             _      = runner.run().unsafeRunSync
           } yield runner
 

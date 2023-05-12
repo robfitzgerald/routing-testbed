@@ -103,21 +103,21 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
 
         val record =
           RoadNetworkFlowRecord(linkLengthMeters = 100.0)
-            .processLinkEnter(V1.id, V1.enter)
-            .processLinkEnter(V2.id, V2.enter)
-            .processLinkExit(V1.id, V1.exit)
-            .processLinkExit(V2.id, V2.exit)
+            .processLinkEnter(V1.id, V1.enter, None)
+            .processLinkEnter(V2.id, V2.enter, None)
+            .processLinkExit(V1.id, V1.exit, None)
+            .processLinkExit(V2.id, V2.exit, None)
 
         val binStartTime: SimTime = SimTime(10)
         val expectedDuration      = V2.durSecs
 
         // v1 omitted from the expected record because it's stale
         val expectedRecord = record.copy(
-          completedTraversals = List(RoadNetworkLinkTraversal(V2.enter, V2.dur)),
+          completedTraversals = List(RoadNetworkLinkTraversal(V2.enter, V2.dur, LinkPosition.Start, LinkPosition.End)),
           mostRecentAverageTraversalDurationSeconds = Some(expectedDuration)
         )
         val expectedObservation =
-          RoadNetworkFlowObservation(flowCount = 0, averageTraversalDurationSeconds = Some(expectedDuration))
+          RoadNetworkFlowObservation(0, Some(expectedDuration), None)
         val (updatedRecord, observation) = record.updateAndCollect(binStartTime)
 
         updatedRecord should equal(expectedRecord)
@@ -141,9 +141,9 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
 
         val record =
           RoadNetworkFlowRecord(linkLengthMeters = 100.0)
-            .processLinkEnter(V1.id, V1.enter)
-            .processLinkEnter(V2.id, V2.enter)
-            .processLinkExit(V1.id, V1.exit)
+            .processLinkEnter(V1.id, V1.enter, None)
+            .processLinkEnter(V2.id, V2.enter, None)
+            .processLinkExit(V1.id, V1.exit, None)
 
         val binStartTime: SimTime = SimTime(0)
         val expectedDuration      = V1.durSecs
@@ -153,7 +153,7 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
           mostRecentAverageTraversalDurationSeconds = Some(expectedDuration)
         )
         val expectedObservation =
-          RoadNetworkFlowObservation(flowCount = 1, averageTraversalDurationSeconds = Some(expectedDuration))
+          RoadNetworkFlowObservation(1, Some(expectedDuration), None)
         val (updatedRecord, observation) = record.updateAndCollect(binStartTime)
 
         updatedRecord should equal(expectedRecord)
@@ -183,12 +183,12 @@ class RoadNetworkFlowRecordTest extends SoTestBedBaseTest {
 
         val r0 =
           RoadNetworkFlowRecord(linkLengthMeters = 100.0)
-            .processLinkEnter(V1.id, V1.enter)
-            .processLinkEnter(V2.id, V2.enter)
-            .processLinkExit(V1.id, V1.exit)
+            .processLinkEnter(V1.id, V1.enter, None)
+            .processLinkEnter(V2.id, V2.enter, None)
+            .processLinkExit(V1.id, V1.exit, None)
 
         val (r1, obs1) = r0.updateAndCollect(bin1)
-        val r2         = r1.processLinkExit(V2.id, V2.exit)
+        val r2         = r1.processLinkExit(V2.id, V2.exit, None)
         val (r3, obs2) = r2.updateAndCollect(bin2)
 
         r0.currentAgentCount should equal(1) // V2 still on link

@@ -22,6 +22,7 @@ import java.time.LocalTime
 import scala.util.Random
 import edu.colorado.fitzgero.sotestbed.util.WeightedSamplingWithReplacement
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
+import com.typesafe.scalalogging.LazyLogging
 
 /**
   * based on sampling trips from the DRCoG Focus model.
@@ -37,7 +38,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySi
   */
 sealed trait DemandTablePopSampling extends PopSamplingAlgorithm
 
-object DemandTablePopSampling {
+object DemandTablePopSampling extends LazyLogging {
 
   final case class UnweightedSampling(
     strTree: STRtree,
@@ -71,14 +72,18 @@ object DemandTablePopSampling {
     * @param pop the input configurations
     */
   def build(pop: PopSampling.DemandSamplingTableInput, rn: RoadNetworkIO): Either[Error, DemandTablePopSampling] = {
+    logger.info("building demand sampling table input with parameters:")
+    logger.info(pop.toString)
     for {
       geoms <- PopSamplingFileOps.readWktCsv(
-        pop.geometriesFile,
-        pop.geometriesFileSrid,
-        pop.geometriesFileIdFieldName,
-        pop.geometriesFileGeomFieldName,
+        file = pop.geometriesFile,
+        srid = pop.geometriesFileSrid,
+        idCol = pop.geometriesFileIdFieldName,
+        geomCol = pop.geometriesFileGeomFieldName,
         targetSrid = 3857
       )
+      _ = logger.info(f"read ${geoms.length} rows from geometries file ${pop.geometriesFile}")
+      // validZoneIds = geoms.map { case (k, _) => k }.toSet
       demand <- PopSamplingFileOps.readDemandTableCsv(
         pop.demandFile,
         pop.demandFileSrcIdFieldName,
@@ -88,8 +93,10 @@ object DemandTablePopSampling {
         pop.demandFileCountFieldName,
         pop.demandFileSeparator
       )
+      _ = logger.info(f"read ${demand.length} rows from demand table file ${pop.demandFile}")
       tree <- buildZoneIdSpatialIndex(geoms)
       samp <- buildFromGeometriesAndDemandTable(tree, geoms, demand, rn, pop.targetPopulationSize, pop.seed)
+      _ = logger.info("finished building demand sampling algorithm")
     } yield samp
   }
 
@@ -105,8 +112,11 @@ object DemandTablePopSampling {
     val rng = new Random(seed)
     for {
       lookup <- buildEdgeIdsByZoneLookup(tree, rn)
-      agents <- table.traverse { row => (0 until row.cnt).toList.traverse { i => agentFromRow(i, row, rng, lookup) } }
-    } yield agents.flatten
+    } yield for {
+      row   <- table
+      i     <- (0 until row.cnt).toList
+      agent <- agentFromRow(i, row, rng, lookup)
+    } yield agent
   }
 
   /**
@@ -123,7 +133,7 @@ object DemandTablePopSampling {
     val rows = WeightedSamplingWithReplacement.run(rng, table, k).toList
     for {
       lookup <- buildEdgeIdsByZoneLookup(tree, rn)
-      agents <- rows.zipWithIndex.traverse { case (row, idx) => agentFromRow(idx, row, rng, lookup) }
+      agents = rows.zipWithIndex.flatMap { case (row, idx) => agentFromRow(idx, row, rng, lookup) }
     } yield agents
   }
 
@@ -132,28 +142,31 @@ object DemandTablePopSampling {
     row: DemandTableRow,
     rng: Random,
     lookup: Map[String, Vector[EdgeId]]
-  ): Either[Error, Agent] = {
-    for {
-      srcEdges <- lookup.get(row.src).toRight(new Error("internal error"))
-      dstEdges <- lookup.get(row.dst).toRight(new Error("internal error"))
-    } yield {
-      // pick a random time in the provided range
-      val startSec = row.start.toSecondOfDay
-      val endSec   = row.end.toSecondOfDay
-      val randSec  = rng.between(startSec, endSec)
+  ): Option[Agent] = {
+    val lookupResult = (lookup.get(row.src), lookup.get(row.dst))
+    lookupResult match {
+      case (Some(srcEdges), Some(dstEdges)) =>
+        // pick a random time in the provided range
+        val startSec = row.start.toSecondOfDay
+        val endSec   = row.end.toSecondOfDay
+        val randSec = // time bins may wrap over midnight
+          if (startSec < endSec) rng.between(startSec, endSec)
+          else rng.between(startSec, 86400 + endSec) % 86400
 
-      // pick random start/end locations
-      val srcLoc = srcEdges(rng.nextInt(srcEdges.length))
-      val dstLoc = dstEdges(rng.nextInt(dstEdges.length))
+        // pick random start/end locations
+        val srcLoc = srcEdges(rng.nextInt(srcEdges.length))
+        val dstLoc = dstEdges(rng.nextInt(dstEdges.length))
 
-      val randTime = LocalTime.ofSecondOfDay(randSec)
-      val agentId  = s"${row.src}-${row.dst}-$sampleId"
-      val src      = rng.nextInt(srcEdges.length)
-      val dst      = rng.nextInt(dstEdges.length)
+        val randTime = LocalTime.ofSecondOfDay(randSec)
+        val agentId  = s"${row.src}-${row.dst}-$sampleId"
+        val src      = rng.nextInt(srcEdges.length)
+        val dst      = rng.nextInt(dstEdges.length)
 
-      val agent = Agent.singleTripAgent(agentId, srcLoc, dstLoc, randTime)
+        val agent = Agent.singleTripAgent(agentId, srcLoc, dstLoc, randTime)
 
-      agent
+        Some(agent)
+      case _ =>
+        None // src or dst zone didn't intersect with road network
     }
   }
 
@@ -173,10 +186,14 @@ object DemandTablePopSampling {
             else
               for {
                 srcVtxOpt <- rn.vertex(src)
-                srcVtx    <- IO.fromOption(srcVtxOpt)(new Error("internal error"))
+                srcVtx <- IO.fromOption(srcVtxOpt)(
+                  new Error(s"internal error, source vertex $src of edge $edgeId not found in graph")
+                )
                 dstVtxOpt <- rn.vertex(dst)
-                dstVtx    <- IO.fromOption(dstVtxOpt)(new Error("internal error"))
-                zoneOpt   <- zoneForLinkMidpoint(tree, srcVtx.attribute, dstVtx.attribute, gf)
+                dstVtx <- IO.fromOption(dstVtxOpt)(
+                  new Error(s"internal error, dest vertex $dst of edge $edgeId not found in graph")
+                )
+                zoneOpt <- zoneForLinkMidpoint(tree, srcVtx.attribute, dstVtx.attribute, gf)
               } yield zoneOpt.map { zone => (edgeId, zone) }
         }
       }
@@ -186,8 +203,10 @@ object DemandTablePopSampling {
           .filter { case (zone, edges) => edges.nonEmpty }
           .map { case (zone, edges) => (zone, edges.map { case (edgeId, _) => edgeId }.toVector) }
       }
-    Try { edgesByZoneIOResult.unsafeRunSync }.toEither.left
-      .map { t => new Error("internal error") }
+    val result = Try { edgesByZoneIOResult.unsafeRunSync }.toEither.left
+      .map { t => new Error("internal error", t) }
+
+    result
   }
 
   /**

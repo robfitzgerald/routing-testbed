@@ -160,7 +160,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       }
 
       // file system configuration
-      val experimentPath: Path = config.experimentDirectory
+      val experimentPath: Path = config.experimentLoggingDirectory
       Files.createDirectories(experimentPath)
       logger.info(s"experiment path: $experimentPath")
 
@@ -168,12 +168,13 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       Logger.getLogger("org.matsim").setLevel(Level.toLevel(config.io.matsimLogLevel))
       val matsimConfig: Config = ConfigUtils.loadConfig(config.io.matsimConfigFile.toString)
       matsimConfig.controler.setOutputDirectory(experimentPath.toString)
-      matsimConfig.plans.setInputFile(config.io.populationFile.toString)
+      matsimConfig.plans.setInputFile(config.populationFilepath.toString)
       matsimConfig.network.setInputFile(config.io.matsimNetworkFile.toString)
       matsimConfig.controler.setLastIteration(config.routing.selfish.lastIteration)
 
       // start MATSim and capture object references to simulation in broader MATSimActor scope
       self.controler = new Controler(matsimConfig)
+      logger.info("MATSim Controler initialized")
 
       // needs to happen after the controler checks the experiment directory (20200125-is this still true?)
       val statsFilePath: String =
@@ -547,13 +548,22 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
           })
           t.setName("matsim")
           t.start()
+
+          // run until we can observe that the sim has initialized
+          // we cheat at this to inspect that the play pause control
+          // has been set within the MATSim initialization handler
           while (self.playPauseSimulationControl == null) {
-            Try { Thread.sleep(100) } match {
-              case Success(()) => ()
-              case Failure(e) =>
-                logger.error("attempting to activate MATSim in child thread, failed:")
-                throw e
+            self.matsimThreadException match {
+              case Some(e) => throw e
+              case None =>
+                Try { Thread.sleep(100) } match {
+                  case Success(()) => ()
+                  case Failure(e) =>
+                    logger.error("attempting to activate MATSim in child thread, failed:")
+                    throw e
+                }
             }
+
           }
 
           matsimState = SimulatorState.Running

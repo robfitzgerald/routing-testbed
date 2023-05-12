@@ -25,7 +25,7 @@ final case class AltPathsAlgorithmRunner(
   costFunction: EdgeBPR => Cost,
   freeFlowCostFunction: EdgeBPR => Cost,
   useFreeFlowNetworkCostsInPathSearch: Boolean,
-  seed: Long
+  seed: Int
 ) extends LazyLogging {
 
   def run(

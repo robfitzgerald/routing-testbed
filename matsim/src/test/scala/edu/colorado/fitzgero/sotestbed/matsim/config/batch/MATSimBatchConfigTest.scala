@@ -24,13 +24,13 @@ class MATSimBatchConfigTest extends SoTestBedBaseTest {
           } {
             List(15L, 30L) should contain(conf.routing.batchWindow.value)
             conf.algorithm match {
-              case _: MATSimConfig.Algorithm.Selfish => fail("wrong algorithm type found")
               case so: MATSimConfig.Algorithm.SystemOptimal =>
                 so.name should equal("system optimal")
                 so.batchingFunction match {
                   case greedy: Random => List(5, 10) should contain(greedy.batchWindow)
                   case _              => fail("should have found a Greedy batching algorithm config object")
                 }
+              case other => fail(f"didn't expect ${other.getClass.getSimpleName}")
             }
           }
 

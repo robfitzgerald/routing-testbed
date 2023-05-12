@@ -54,11 +54,17 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPRCostOps
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.FlowObservationOps
 import edu.colorado.fitzgero.sotestbed.algorithm.routing.RoutingAlgorithmV3
 import edu.colorado.fitzgero.sotestbed.algorithm.batching.NetworkZoneBatching
+import scala.util.Random
 
 //import kantan.csv._
 //import kantan.csv.ops._
 
-case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long) extends LazyLogging {
+case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig) extends LazyLogging {
+
+  // val rng = matsimRunConfig.matsimRunSeed match {
+  //   case None       => new Random()
+  //   case Some(seed) => new Random(seed)
+  // }
 
   /**
     * performs a synchronous run of a MATSim simulation from a MATSimConfig
@@ -75,7 +81,8 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
         )
         .left
         .map { s => new Error(s) }
-      agentsUnderControlPercentage = if (matsimRunConfig.algorithm.isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
+      agentsUnderControlPercentage = if (matsimRunConfig.algorithm
+                                           .isInstanceOf[MATSimConfig.Algorithm.Selfish]) 0.0
       else matsimRunConfig.routing.adoptionRate
       agentsUnderControl <- matsimRunConfig.algorithm match {
         case _: Algorithm.Selfish => Right(Set.empty[Id[Person]])
@@ -97,7 +104,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             case Some(gf) => PopulationOps.readGrouping(gf)
             case None =>
               PopulationOps.loadAgentsUnderControl(
-                matsimRunConfig.io.populationFile,
+                matsimRunConfig.populationFilepath.toFile,
                 agentsUnderControlPercentage
               )
           }
@@ -120,7 +127,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
             case Some(gf) => PopulationOps.readGrouping(gf)
             case None =>
               PopulationOps.loadAgentsUnderControl(
-                matsimRunConfig.io.populationFile,
+                matsimRunConfig.populationFilepath.toFile,
                 agentsUnderControlPercentage
               )
           }
@@ -129,7 +136,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
       config = matsimRunConfig.copy(agentsUnderControl = agentsUnderControl)
     } yield {
 
-      Files.createDirectories(config.experimentDirectory)
+      Files.createDirectories(config.experimentLoggingDirectory)
 
       // build some cost functions
       val freeFlowCostFunction: EdgeBPR => Cost = (edgeBPR: EdgeBPR) =>
@@ -216,7 +223,7 @@ case class MATSimExperimentRunner3(matsimRunConfig: MATSimRunConfig, seed: Long)
                   costFunction = costFunction,
                   freeFlowCostFunction = freeFlowCostFunction,
                   useFreeFlowNetworkCostsInPathSearch = so.useFreeFlowNetworkCostsInPathSearch,
-                  seed = seed
+                  seed = matsimRunConfig.matsimRunSeed.getOrElse(System.currentTimeMillis.toInt)
                 )
               }
               val selectionAlgorithm: SelectionAlgorithm =

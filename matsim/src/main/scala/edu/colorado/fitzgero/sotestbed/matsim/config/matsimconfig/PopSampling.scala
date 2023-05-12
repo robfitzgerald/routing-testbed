@@ -22,6 +22,7 @@ object PopSampling {
     *
     * @param geometriesFile
     * @param demandFile
+    * @param matsimNetworkFile network file to build population on top of
     * @param targetPopulationSize
     * @param geometriesFileIdFieldName
     * @param geometriesFileGeomFieldName
@@ -36,6 +37,7 @@ object PopSampling {
   final case class DemandSamplingTableInput(
     geometriesFile: File,
     demandFile: File,
+    matsimNetworkFile: File,
     targetPopulationSize: Option[Int],
     geometriesFileIdFieldName: String = "id",
     geometriesFileGeomFieldName: String = "geometry",
@@ -54,6 +56,7 @@ object PopSampling {
     * a time range for the workplace activity. two trips are created for each agent in the population,
     * one headed to work in the morning, and one headed home in the evening.
     *
+    * @param matsimNetworkFile network file to build population on top of
     * @param workActivityMinTime
     * @param workActivityMaxTime
     * @param workDurationHours
@@ -61,6 +64,8 @@ object PopSampling {
     * @param seed
     */
   final case class UniformPopLinkSampling(
+    matsimNetworkFile: File,
+    size: Int,
     workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
     workActivityMaxTime: LocalTime = LocalTime.parse("09:30:00"),
     workDurationHours: Int = 8,
@@ -75,6 +80,7 @@ object PopSampling {
     * a time range for the workplace activity. two trips are created for each agent in the population,
     * one headed to work in the morning, and one headed home in the evening.
     *
+    * @param matsimNetworkFile network file to build population on top of
     * @param geometryPath
     * @param geometrySRID
     * @param workActivityMinTime
@@ -84,6 +90,8 @@ object PopSampling {
     */
   final case class UniformPopPolygonSampling(
     geometryPath: File,
+    matsimNetworkFile: File,
+    size: Int,
     geometrySRID: Int = 4326, // assumed to be WGS84
     networkSRID: Int = 3857,  // assumed to be web mercator
     workActivityMinTime: LocalTime = LocalTime.parse("08:30:00"),
@@ -94,26 +102,59 @@ object PopSampling {
 
   implicit class PopSamplingImpl(p: PopSampling) {
 
-    def build(matsimPopConfig: MATSimPopConfig): Either[Error, PopSamplingAlgorithm] =
+    def getSamplingAlgorithmName: String = p.getClass.getSimpleName
+
+    def getSeed: Option[Int] = p match {
+      case u: DemandSamplingTableInput  => u.seed.map(_.toInt)
+      case u: UniformPopLinkSampling    => u.seed.map(_.toInt)
+      case u: UniformPopPolygonSampling => u.seed.map(_.toInt)
+    }
+
+    def filename(iteration: Option[Int] = None, suffix: String = ".xml"): String = {
+      val seedString = p.getSeed.map(_.toString).getOrElse("none")
+      val sizeString = p match {
+        case u: DemandSamplingTableInput  => u.targetPopulationSize.getOrElse("none")
+        case u: UniformPopLinkSampling    => u.size.toString
+        case u: UniformPopPolygonSampling => u.size.toString
+      }
+      f"population-$getSamplingAlgorithmName-i=$iteration-s=$seedString-k=$sizeString$suffix"
+    }
+
+    def description: String = {
+      val seedString = p.getSeed.map(_.toString).getOrElse("none")
+      val sizeString = p match {
+        case u: DemandSamplingTableInput  => u.targetPopulationSize.map(_.toString).getOrElse("none")
+        case u: UniformPopLinkSampling    => u.size.toString
+        case u: UniformPopPolygonSampling => u.size.toString
+      }
+      f"""POPULATION INPUT:
+         |algorithm: $getSamplingAlgorithmName
+         |size argument: $sizeString
+         |random seed: $seedString""".stripMargin
+    }
+
+    def build(): Either[Error, PopSamplingAlgorithm] =
       p match {
         case pop: DemandSamplingTableInput =>
           val result = for {
-            rn   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimPopConfig.fs.matsimNetworkFile)
+            rn   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(pop.matsimNetworkFile).left.map { s => new Error(s) }
             samp <- DemandTablePopSampling.build(pop, rn)
           } yield samp
 
-          result.left.map { s => new Error(s.toString) }
+          result
 
         case pop: UniformPopLinkSampling =>
           val result = for {
-            roadNetwork   <- LocalAdjacencyListFlowNetwork.fromMATSimXML(matsimPopConfig.fs.matsimNetworkFile)
-            matsimNetwork <- Try { NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
+            roadNetwork <- LocalAdjacencyListFlowNetwork.fromMATSimXML(pop.matsimNetworkFile).left.map { s =>
+              new Error(s)
+            }
+            matsimNetwork <- Try { NetworkUtils.readNetwork(pop.matsimNetworkFile.toString) }.toEither
           } yield {
             if (pop.singleTrip) {
               UniformEdgePopSamplingSingleTrip(
                 roadNetwork,
                 matsimNetwork,
-                matsimPopConfig.pop.size,
+                pop.size,
                 //            matsimPopConfig.pop.adoptionRate,
                 pop.workActivityMinTime,
                 pop.workActivityMaxTime,
@@ -124,7 +165,7 @@ object PopSampling {
               UniformEdgePopulationSamplingAlgorithm(
                 roadNetwork,
                 matsimNetwork,
-                matsimPopConfig.pop.size,
+                pop.size,
                 //            matsimPopConfig.pop.adoptionRate,
                 pop.workActivityMinTime,
                 pop.workActivityMaxTime,
@@ -135,19 +176,19 @@ object PopSampling {
 
           }
 
-          result.left.map { s => new Error(s.toString) }
+          result.left.map { s => new Error(s) }
 
         case pop: UniformPopPolygonSampling =>
           val result = for {
             geometry      <- PopulationSamplingOps.readBoundingGeometryXYCsv(pop.geometryPath)
-            matsimNetwork <- Try { NetworkUtils.readNetwork(matsimPopConfig.fs.matsimNetworkFile.toString) }.toEither
+            matsimNetwork <- Try { NetworkUtils.readNetwork(pop.matsimNetworkFile.toString) }.toEither
           } yield {
             UniformPolygonPopulationSamplingAlgorithm(
               geometry,
               boundingGeometrySRID = pop.geometrySRID,
               networkSRID = pop.networkSRID,
               matsimNetwork,
-              matsimPopConfig.pop.size,
+              pop.size,
 //            matsimPopConfig.pop.adoptionRate,
               pop.workActivityMinTime,
               pop.workActivityMaxTime,
@@ -156,7 +197,7 @@ object PopSampling {
             )
           }
 
-          result.left.map { s => new Error(s.toString) }
+          result.left.map { s => new Error(s) }
 
       }
   }
