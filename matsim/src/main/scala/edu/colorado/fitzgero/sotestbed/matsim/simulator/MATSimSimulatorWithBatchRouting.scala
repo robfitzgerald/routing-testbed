@@ -161,7 +161,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       }
 
       // file system configuration
-      val experimentPath: Path = config.experimentLoggingDirectory
+      val experimentPath: Path = config.experimentMATSimDirectory
       Files.createDirectories(experimentPath)
       logger.info(s"experiment path: $experimentPath")
 
