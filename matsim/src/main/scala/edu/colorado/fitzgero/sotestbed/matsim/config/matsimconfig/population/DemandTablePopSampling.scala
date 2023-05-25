@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population
 
 import org.locationtech.jts.index.strtree.STRtree
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.PopSampling
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.PopSamplingConfig
 import edu.colorado.fitzgero.sotestbed.matsim.app.PopulationSamplingOps
 import org.locationtech.jts.geom.Geometry
 import scala.util.Try
@@ -42,6 +42,8 @@ sealed trait DemandTablePopSampling extends PopSamplingAlgorithm
 object DemandTablePopSampling extends LazyLogging {
 
   final case class UnweightedSampling(
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime],
     strTree: STRtree,
     geoms: Map[String, Geometry],
     table: List[DemandTableRow],
@@ -49,12 +51,17 @@ object DemandTablePopSampling extends LazyLogging {
     seed: Int
   ) extends DemandTablePopSampling {
 
-    def generate: Either[Error, List[Agent]] =
-      generateAgentsFromExactTableCounts(this.strTree, this.table, this.rn, this.seed)
+    def generate: Either[Error, List[Agent]] = {
+      val filterFn = buildAgentFilter(startTime, endTime)
+      generateAgentsFromExactTableCounts(this.strTree, this.table, this.rn, this.seed, startTime, endTime)
+    }
+
   }
 
   final case class WeightedSampling(
     targetPopulationSize: Int,
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime],
     strTree: STRtree,
     geoms: Map[String, Geometry],
     table: List[(DemandTableRow, Double)],
@@ -62,8 +69,19 @@ object DemandTablePopSampling extends LazyLogging {
     seed: Int
   ) extends DemandTablePopSampling {
 
-    def generate: Either[Error, List[Agent]] =
-      generateAgentsViaWeightedSampling(this.targetPopulationSize, this.strTree, this.table, this.rn, this.seed)
+    def generate: Either[Error, List[Agent]] = {
+      val filterFn = buildAgentFilter(startTime, endTime)
+      generateAgentsViaWeightedSampling(
+        this.targetPopulationSize,
+        this.strTree,
+        this.table,
+        this.rn,
+        this.seed,
+        startTime,
+        endTime
+      )
+    }
+
   }
 
   /**
@@ -72,7 +90,10 @@ object DemandTablePopSampling extends LazyLogging {
     *
     * @param pop the input configurations
     */
-  def build(pop: PopSampling.DemandSamplingTableInput, rn: RoadNetworkIO): Either[Error, DemandTablePopSampling] = {
+  def build(
+    pop: PopSamplingConfig.DemandSamplingTableInput,
+    rn: RoadNetworkIO
+  ): Either[Error, DemandTablePopSampling] = {
     logger.info("building demand sampling table input with parameters:")
     logger.info(pop.toString)
     for {
@@ -95,9 +116,20 @@ object DemandTablePopSampling extends LazyLogging {
         pop.demandFileCountFieldName,
         pop.demandFileSeparator
       )
-      _ = logger.info(f"read ${demand.length} rows from demand table file ${pop.demandFile}")
+      demandFilterFn = buildDemandRowFilter(pop.startTime, pop.endTime)
+      demandFiltered = demand.filter(demandFilterFn)
+      _              = logger.info(f"read ${demand.length} rows from demand table file ${pop.demandFile}")
       tree <- buildZoneIdSpatialIndex(geoms)
-      samp <- buildFromGeometriesAndDemandTable(tree, geoms, demand, rn, pop.targetPopulationSize, pop.seed)
+      samp <- buildFromGeometriesAndDemandTable(
+        tree,
+        geoms,
+        demandFiltered,
+        rn,
+        pop.targetPopulationSize,
+        pop.startTime,
+        pop.endTime,
+        pop.seed
+      )
       _ = logger.info("finished building demand sampling algorithm")
     } yield samp
   }
@@ -109,7 +141,9 @@ object DemandTablePopSampling extends LazyLogging {
     tree: STRtree,
     table: List[DemandTableRow],
     rn: RoadNetworkIO,
-    seed: Long
+    seed: Long,
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime]
   ): Either[Error, List[Agent]] = {
     val rng = new Random(seed)
     for {
@@ -117,7 +151,7 @@ object DemandTablePopSampling extends LazyLogging {
     } yield for {
       row   <- table
       i     <- (0 until row.cnt).toList
-      agent <- agentFromRow(i, row, rng, lookup)
+      agent <- agentFromRow(i, row, rng, lookup, startTime, endTime)
     } yield agent
   }
 
@@ -129,13 +163,15 @@ object DemandTablePopSampling extends LazyLogging {
     tree: STRtree,
     table: List[(DemandTableRow, Double)],
     rn: RoadNetworkIO,
-    seed: Long
+    seed: Long,
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime]
   ): Either[Error, List[Agent]] = {
     val rng  = new Random(seed)
     val rows = WeightedSamplingWithReplacement.run(rng, table, k).toList
     for {
       lookup <- buildEdgeIdsByZoneLookup(tree, rn)
-      agents = rows.zipWithIndex.flatMap { case (row, idx) => agentFromRow(idx, row, rng, lookup) }
+      agents = rows.zipWithIndex.flatMap { case (row, idx) => agentFromRow(idx, row, rng, lookup, startTime, endTime) }
     } yield agents
   }
 
@@ -143,7 +179,9 @@ object DemandTablePopSampling extends LazyLogging {
     sampleId: Int,
     row: DemandTableRow,
     rng: Random,
-    lookup: Map[String, Vector[EdgeId]]
+    lookup: Map[String, Vector[EdgeId]],
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime]
   ): Option[Agent] = {
     val staysInSrcZone = row.src == row.dst
 
@@ -171,8 +209,15 @@ object DemandTablePopSampling extends LazyLogging {
     sampleLinks(row.src, row.dst) match {
       case Some((srcLoc, dstLoc)) =>
         // pick a random time in the provided range
-        val startSec = row.start.toSecondOfDay
-        val endSec   = row.end.toSecondOfDay
+        val startSec = startTime match {
+          case None    => row.start.toSecondOfDay
+          case Some(s) => math.max(s.toSecondOfDay, row.start.toSecondOfDay)
+        }
+        val endSec = endTime match {
+          case None    => row.end.toSecondOfDay
+          case Some(e) => math.min(row.end.toSecondOfDay, e.toSecondOfDay)
+        }
+
         val randSec = // time bins may wrap over midnight
           if (startSec < endSec) rng.between(startSec, endSec)
           else rng.between(startSec, 86400 + endSec) % 86400
@@ -251,14 +296,18 @@ object DemandTablePopSampling extends LazyLogging {
     demand: List[DemandTableRow],
     rn: RoadNetworkIO,
     targetPopulationSize: Option[Int],
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime],
     seed: Option[Int]
   ): Either[Error, DemandTablePopSampling] = {
     val seedValue = seed.getOrElse(0)
     targetPopulationSize match {
       case None =>
-        Right(UnweightedSampling(tree, geoms.toMap, demand, rn, seedValue))
+        Right(UnweightedSampling(startTime, endTime, tree, geoms.toMap, demand, rn, seedValue))
       case Some(target) =>
-        addTableWeights(demand).map { wDemand => WeightedSampling(target, tree, geoms.toMap, wDemand, rn, seedValue) }
+        addTableWeights(demand).map { wDemand =>
+          WeightedSampling(target, startTime, endTime, tree, geoms.toMap, wDemand, rn, seedValue)
+        }
     }
   }
 
@@ -278,5 +327,36 @@ object DemandTablePopSampling extends LazyLogging {
       tree
     }.toEither.left.map { t => new Error("failure building zone id spatial index", t) }
   }
+
+  private[population] def buildDemandRowFilter(
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime]
+  ): DemandTableRow => Boolean =
+    (startTime, endTime) match {
+      // case (None, None)    => (_: DemandTableRow) => true
+      // case (Some(s), None) => (r: DemandTableRow) => true  // these are both always true, since the time bins can arbitrarily
+      // case (None, Some(e)) => (r: DemandTableRow) => true  // wrap around; instead, one-sided tresholds are applied to agent rows
+      case (Some(s), Some(e)) =>
+        (r: DemandTableRow) =>
+          val (rStart, rEnd) = (r.start.toSecondOfDay, r.end.toSecondOfDay)
+          val rEndNonCyclic  = if (rEnd < rStart) rEnd + 86400 else rEnd // truncate wrap-around time bins at midnight
+          val lb             = math.max(s.toSecondOfDay, rStart)
+          val ub             = math.min(e.toSecondOfDay, rEndNonCyclic)
+          lb <= rStart && rEndNonCyclic <= ub
+      case _ => (r: DemandTableRow) => true
+    }
+
+  private[population] def buildAgentFilter(
+    startTime: Option[LocalTime],
+    endTime: Option[LocalTime]
+  ): Agent => Boolean =
+    (startTime, endTime) match {
+      case (None, None)    => (_: Agent) => true
+      case (Some(s), None) => (a: Agent) => a.firstActivityEndTime.exists(t => s.toSecondOfDay <= t.toSecondOfDay)
+      case (None, Some(e)) => (a: Agent) => a.firstActivityEndTime.exists(t => t.toSecondOfDay <= e.toSecondOfDay)
+      case (Some(s), Some(e)) =>
+        (a: Agent) =>
+          a.firstActivityEndTime.exists(t => s.toSecondOfDay <= t.toSecondOfDay && t.toSecondOfDay <= e.toSecondOfDay)
+    }
 
 }
