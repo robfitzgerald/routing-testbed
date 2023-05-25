@@ -64,12 +64,13 @@ class ChokePointsHeuristic(minimumReplanningLeadTime: SimTime, highlyCongestedTh
               edgesW <- edges.traverse(e => congestion(e, roadNetwork).map(c => (e, c)))
             } yield {
               edgesW.filter { case (e, c) => c < highlyCongestedThreshold } match {
-                case Nil => None
-                case nonEmptyCongestedLinks =>
-                  val congStr = nonEmptyCongestedLinks
+                case Nil                                             => None
+                case congestedLinks if overlap(congestedLinks, path) => None // don't replan on those same links
+                case congestedLinks =>
+                  val congStr = congestedLinks
                     .map { case (e, c) => f"${e.edgeId}:${c * 100}%.2f%%" }
                     .mkString("[", ",", "]")
-                  val len = nonEmptyCongestedLinks.length
+                  val len = congestedLinks.length
                   logger.info(f"request ${req.agent} has highly-congested links: $congStr, applying replanning route")
                   Some(req, path)
               }
@@ -167,4 +168,11 @@ object ChokePointsHeuristic {
       ffSpeed / speedEst
     }
   }
+
+  def overlap(congestedEdges: List[(EdgeData, Double)], replanningPath: Path): Boolean =
+    congestedEdges
+      .map { case (e, _) => e.edgeId }
+      .toSet
+      .intersect(replanningPath.map { _.edgeId }.toSet)
+      .nonEmpty
 }
