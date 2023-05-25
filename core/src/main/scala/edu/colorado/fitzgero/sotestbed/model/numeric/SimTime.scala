@@ -7,6 +7,8 @@ import scala.util.Try
 
 import cats.data.Validated
 import kantan.csv._
+import io.circe.{Error => CirceError, _}
+import io.circe.syntax._
 
 final class SimTime(val value: Long) extends AnyVal {
   def +(that: SimTime): SimTime                          = SimTime(this.value + that.value)
@@ -95,5 +97,10 @@ object SimTime {
   val ce: CellEncoder[SimTime] = CellEncoder.from { _.toString }
 
   implicit val codec: CellCodec[SimTime] = CellCodec.from(cd, ce)
+  implicit val jsonEnc: Encoder[SimTime] = Encoder.instance { _.toString.asJson }
+
+  implicit val jsonDec: Decoder[SimTime] = Decoder[LocalTime].emap { localTime =>
+    Right(SimTime.fromLocalTime(localTime))
+  }
 
 }
