@@ -19,8 +19,11 @@ import edu.colorado.fitzgero.sotestbed.algorithm.batching.EdgeData
 import edu.colorado.fitzgero.sotestbed.model.numeric.NonNegativeNumber
 import edu.colorado.fitzgero.sotestbed.model.agent.Response
 
-class ChokePointsHeuristic(minimumReplanningLeadTime: SimTime, highlyCongestedThreshold: Double)
-    extends SelectionAlgorithm
+class ChokePointsHeuristic(
+  minimumReplanningLeadTime: SimTime,
+  maximumReplanningLeadTime: SimTime,
+  highlyCongestedThreshold: Double
+) extends SelectionAlgorithm
     with LazyLogging {
 
   def selectRoutes(
@@ -53,7 +56,11 @@ class ChokePointsHeuristic(minimumReplanningLeadTime: SimTime, highlyCongestedTh
         case (req, reqAlts) =>
           for {
             agentData <- hist.getNewestDataOrError(req.agent)
-            edges = edgesSuitableForReplanning(agentData.remainingRoute, minimumReplanningLeadTime)
+            edges = edgesSuitableForReplanning(
+              agentData.remainingRoute,
+              minimumReplanningLeadTime,
+              maximumReplanningLeadTime
+            )
           } yield (req, reqAlts.head, edges)
       }
 
@@ -124,35 +131,59 @@ class ChokePointsHeuristic(minimumReplanningLeadTime: SimTime, highlyCongestedTh
 
 object ChokePointsHeuristic {
 
-  def apply(minimumReplanningLeadTime: SimTime, highlyCongestedThreshold: Double): ChokePointsHeuristic = {
-    val validTime   = minimumReplanningLeadTime >= SimTime.Zero
-    val validThresh = 0.0 <= highlyCongestedThreshold && highlyCongestedThreshold <= 1.0
-    assert(validTime, s"minimum replanning lead time $minimumReplanningLeadTime must be non-negative")
+  def apply(
+    minReplanningLeadTime: SimTime,
+    maxReplanningLeadTime: SimTime,
+    highlyCongestedThreshold: Double
+  ): ChokePointsHeuristic = {
+    val validMinTime  = minReplanningLeadTime >= SimTime.Zero
+    val validMaxTime  = maxReplanningLeadTime >= SimTime.Zero
+    val validTimeDiff = minReplanningLeadTime < maxReplanningLeadTime
+    val validThresh   = 0.0 <= highlyCongestedThreshold && highlyCongestedThreshold <= 1.0
+    assert(validMinTime, s"minimum replanning lead time $minReplanningLeadTime must be non-negative")
+    assert(validMaxTime, s"maximum replanning lead time $maxReplanningLeadTime must be non-negative")
+    assert(
+      validTimeDiff,
+      s"min replanning lead time $minReplanningLeadTime must be less than max $maxReplanningLeadTime"
+    )
     assert(validThresh, s"highly congested threshold $highlyCongestedThreshold must be in range [0, 1]")
-    new ChokePointsHeuristic(minimumReplanningLeadTime, highlyCongestedThreshold)
+    new ChokePointsHeuristic(minReplanningLeadTime, maxReplanningLeadTime, highlyCongestedThreshold)
   }
 
   /**
     * finds edges in the future of a trip that exceed some lead time. if any edges are missing
-    * travel time estimates, an empty list is returned.
+    * travel time estimates, we stop the search prematurely.
+    *
+    * travel times come from estimates that are impacted by current network conditions.
     *
     * @param edges
-    * @param leadTime
+    * @param minLeadTime time that must be exhausted before we start accumulating edges
+    * @param maxLeadTime after this time, we no longer accumulate edges
     * @return
     */
-  @tailrec
-  def edgesSuitableForReplanning(edges: List[EdgeData], leadTime: SimTime): List[EdgeData] = {
-    edges match {
-      case Nil => Nil
-      case edge :: remaining =>
-        edge.estimatedTimeAtEdge match {
-          case None => Nil
-          case Some(timeEstimate) =>
-            val updatedLead = SimTime(math.max(0, (leadTime - timeEstimate).value))
-            if (updatedLead == SimTime.Zero) remaining
-            else edgesSuitableForReplanning(remaining, updatedLead)
-        }
+  def edgesSuitableForReplanning(edges: List[EdgeData], minLeadTime: SimTime, maxLeadTime: SimTime): List[EdgeData] = {
+    @tailrec
+    def _search(
+      remaining: List[EdgeData],
+      min: SimTime,
+      max: SimTime,
+      found: List[EdgeData] = List.empty
+    ): List[EdgeData] = {
+      remaining match {
+        case Nil => found
+        case edge :: remaining =>
+          edge.estimatedTimeAtEdge match {
+            case None => found
+            case Some(edgeTime) =>
+              val nextMin = SimTime(math.max(0, (min - edgeTime).value))
+              val nextMax = SimTime(math.max(0, (max - edgeTime).value))
+              if (nextMax == SimTime.Zero) found
+              else if (minLeadTime > SimTime.Zero) _search(remaining, nextMin, nextMax, found)
+              else _search(remaining, nextMin, nextMax, edge +: found)
+          }
+      }
     }
+    _search(edges, minLeadTime, maxLeadTime)
   }
 
   def congestion(edge: EdgeData, rn: RoadNetworkIO): IO[Double] = {

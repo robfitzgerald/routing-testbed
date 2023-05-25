@@ -183,11 +183,18 @@ object SelectionAlgorithmConfig {
     }
   }
 
-  final case class ChokePointHeuristicSelection(minimumReplanningLeadTime: SimTime, highlyCongestedThreshold: Double)
-      extends SelectionAlgorithmConfig {
+  final case class ChokePointHeuristicSelection(
+    minimumReplanningLeadTime: SimTime,
+    maximumReplanningLeadTime: SimTime,
+    highlyCongestedThreshold: Double
+  ) extends SelectionAlgorithmConfig {
 
     def build(outDir: Path): selection.SelectionAlgorithm =
-      selection.chokepoints.ChokePointsHeuristic(minimumReplanningLeadTime, highlyCongestedThreshold)
+      selection.chokepoints.ChokePointsHeuristic(
+        minimumReplanningLeadTime,
+        maximumReplanningLeadTime,
+        highlyCongestedThreshold
+      )
   }
 
   final case object TspSelection extends SelectionAlgorithmConfig {
