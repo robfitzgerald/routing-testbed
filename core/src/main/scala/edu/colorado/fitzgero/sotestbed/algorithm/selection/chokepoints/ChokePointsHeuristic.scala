@@ -123,6 +123,14 @@ class ChokePointsHeuristic(minimumReplanningLeadTime: SimTime, highlyCongestedTh
 
 object ChokePointsHeuristic {
 
+  def apply(minimumReplanningLeadTime: SimTime, highlyCongestedThreshold: Double): ChokePointsHeuristic = {
+    val validTime   = minimumReplanningLeadTime >= SimTime.Zero
+    val validThresh = 0.0 <= highlyCongestedThreshold && highlyCongestedThreshold <= 1.0
+    assert(validTime, s"minimum replanning lead time $minimumReplanningLeadTime must be non-negative")
+    assert(validThresh, s"highly congested threshold $highlyCongestedThreshold must be in range [0, 1]")
+    new ChokePointsHeuristic(minimumReplanningLeadTime, highlyCongestedThreshold)
+  }
+
   /**
     * finds edges in the future of a trip that exceed some lead time. if any edges are missing
     * travel time estimates, an empty list is returned.

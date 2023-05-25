@@ -37,6 +37,7 @@ import edu.colorado.fitzgero.sotestbed.model.roadnetwork.edge.EdgeBPR
 import edu.colorado.fitzgero.sotestbed.model.roadnetwork.impl.LocalAdjacencyListFlowNetwork.Coordinate
 import edu.colorado.fitzgero.sotestbed.rllib.{Grouping, PolicyClientOps}
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.fairness._
+import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
 
 sealed trait SelectionAlgorithmConfig {
   def build(outDir: Path): selection.SelectionAlgorithm
@@ -180,6 +181,13 @@ object SelectionAlgorithmConfig {
           )
       }
     }
+  }
+
+  final case class ChokePointHeuristicSelection(minimumReplanningLeadTime: SimTime, highlyCongestedThreshold: Double)
+      extends SelectionAlgorithmConfig {
+
+    def build(outDir: Path): selection.SelectionAlgorithm =
+      selection.chokepoints.ChokePointsHeuristic(minimumReplanningLeadTime, highlyCongestedThreshold)
   }
 
   final case object TspSelection extends SelectionAlgorithmConfig {

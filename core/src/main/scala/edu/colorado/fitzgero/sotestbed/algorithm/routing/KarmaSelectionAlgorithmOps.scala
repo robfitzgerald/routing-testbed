@@ -17,6 +17,7 @@ import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.rl.networkpolic
 import edu.colorado.fitzgero.sotestbed.rllib.Observation
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignalGenerator
 import edu.colorado.fitzgero.sotestbed.model.numeric.SimTime
+import edu.colorado.fitzgero.sotestbed.algorithm.selection.chokepoints.ChokePointsHeuristic
 
 object KarmaSelectionAlgorithmOps {
 
@@ -40,6 +41,9 @@ object KarmaSelectionAlgorithmOps {
     zoneLookup: Map[String, List[EdgeId]]
   ): IO[SelectionRunner] = {
     selectionRunner.selectionAlgorithm match {
+      case c: ChokePointsHeuristic =>
+        // hack to provide agent experiences
+        IO.pure(selectionRunner.copy(selectionAlgorithm = c.build(bm.storedHistory)))
       case k: KarmaSelectionAlgorithm =>
         // generate a signal for each batch
         val batchesWithSignals: IO[Map[String, NetworkPolicySignal]] = k.networkPolicy match {
