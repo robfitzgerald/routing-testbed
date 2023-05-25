@@ -43,7 +43,7 @@ final case class MATSimConfig(
   io: MATSimConfig.Io,
   run: MATSimConfig.Run,
   routing: MATSimConfig.Routing,
-  population: PopSampling,
+  population: PopSamplingConfig,
   algorithm: MATSimConfig.Algorithm
 )
 

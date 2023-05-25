@@ -2,7 +2,7 @@ package edu.colorado.fitzgero.sotestbed.matsim.config.population
 
 import java.io.File
 import edu.colorado.fitzgero.sotestbed.SoTestBedBaseTest
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.PopSampling
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.PopSamplingConfig
 import java.nio.file.Paths
 import java.nio.file.Files
 import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population.PopSamplingAlgorithm
@@ -16,7 +16,7 @@ class PopSamplingTest extends SoTestBedBaseTest {
 
             val resourceDir = Paths.get("matsim/src/test/resources/pop_sampling_demand_table/")
 
-            val popSampling = PopSampling.DemandSamplingTableInput(
+            val popSampling = PopSamplingConfig.DemandSamplingTableInput(
               geometriesFile = resourceDir.resolve("taz_epsg3857.csv").toFile,
               demandFile = resourceDir.resolve("demand_table.csv").toFile,
               matsimNetworkFile = resourceDir.resolve("matsim_network.xml").toFile,
@@ -49,7 +49,7 @@ class PopSamplingTest extends SoTestBedBaseTest {
 
             val resourceDir          = Paths.get("matsim/src/test/resources/pop_sampling_demand_table/")
             val targetPopulationSize = 1000
-            val popSampling = PopSampling.DemandSamplingTableInput(
+            val popSampling = PopSamplingConfig.DemandSamplingTableInput(
               geometriesFile = resourceDir.resolve("taz_epsg3857.csv").toFile,
               demandFile = resourceDir.resolve("demand_table.csv").toFile,
               matsimNetworkFile = resourceDir.resolve("matsim_network.xml").toFile,

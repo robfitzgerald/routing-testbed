@@ -1,7 +1,7 @@
 package edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.population
 
 import edu.colorado.fitzgero.sotestbed.matsim.model.agent.Agent
-import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.PopSampling
+import edu.colorado.fitzgero.sotestbed.matsim.config.matsimconfig.PopSamplingConfig
 import java.nio.file.Path
 import scala.xml.XML
 import scala.xml.dtd._
@@ -19,7 +19,7 @@ object PopSamplingAlgorithm extends LazyLogging {
     * creates a population sampling algorithm, builds a population from that input, and writes the population
     * in MATSim population_v6.dtd format to the provided directory.
     */
-  def generatePopulation(popSampling: PopSampling, filePath: Path, trial: Option[Int]): Either[Error, Unit] = {
+  def generatePopulation(popSampling: PopSamplingConfig, filePath: Path, trial: Option[Int]): Either[Error, Unit] = {
     for {
       alg        <- popSampling.build
       population <- alg.generate
