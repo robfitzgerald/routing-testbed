@@ -28,6 +28,7 @@ object PopSampling {
     * @param geometriesFileGeomFieldName
     * @param demandFileSrcIdFieldName
     * @param demandFileDstIdFieldName
+    * @param demandFileBinFieldName
     * @param demandFileStartTimeFieldName
     * @param demandFileEndTimeFieldName
     * @param demandFileCountFieldName
@@ -44,6 +45,7 @@ object PopSampling {
     geometriesFileSrid: Int = 4326,
     demandFileSrcIdFieldName: String = "src",
     demandFileDstIdFieldName: String = "dst",
+    demandFileBinFieldName: String = "TripDepartureTOD",
     demandFileStartTimeFieldName: String = "start_time",
     demandFileEndTimeFieldName: String = "end_time",
     demandFileCountFieldName: String = "count",

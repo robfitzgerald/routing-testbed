@@ -73,19 +73,32 @@ object PopSamplingFileOps extends LazyLogging {
     file: File,
     srcCol: String,
     dstCol: String,
+    binNameCol: String,
     startTimeCol: String,
     endTimeCol: String,
     countCol: String,
     sep: Char
   ): Either[Error, List[DemandTableRow]] = {
     implicit val hd: HeaderDecoder[DemandTableRow] =
-      DemandTableRow.headerDecoder(srcCol, dstCol, startTimeCol, endTimeCol, countCol)
+      DemandTableRow.headerDecoder(srcCol, dstCol, binNameCol, startTimeCol, endTimeCol, countCol)
     val conf = rfc.withCellSeparator(sep).withHeader
     val readResult = file
       .asCsvReader[DemandTableRow](conf)
       .toList
       .sequence
 
-    readResult.left.map { t => new Error(s"failure reading demand table file", t) }
+    // no uniqueness guarantees; more than one row could share the same source taz + destination
+    // taz + bin name combination. let's aggregate them here.
+    val aggregated = readResult.map {
+      _.foldLeft(Map.empty[String, DemandTableRow]) { (acc, row) =>
+        val key = f"${row.src}-${row.dst}-${row.bin}"
+        acc.get(key) match {
+          case None           => acc.updated(key, row)
+          case Some(existing) => acc.updated(key, row.copy(cnt = row.cnt + existing.cnt))
+        }
+      }.values.toList
+    }
+
+    aggregated.left.map { t => new Error(s"failure reading demand table file", t) }
   }
 }

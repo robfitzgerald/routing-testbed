@@ -23,6 +23,7 @@ import scala.util.Random
 import edu.colorado.fitzgero.sotestbed.util.WeightedSamplingWithReplacement
 import edu.colorado.fitzgero.sotestbed.algorithm.selection.karma.NetworkPolicySignal
 import com.typesafe.scalalogging.LazyLogging
+import scala.annotation.tailrec
 
 /**
   * based on sampling trips from the DRCoG Focus model.
@@ -88,6 +89,7 @@ object DemandTablePopSampling extends LazyLogging {
         pop.demandFile,
         pop.demandFileSrcIdFieldName,
         pop.demandFileDstIdFieldName,
+        pop.demandFileBinFieldName,
         pop.demandFileStartTimeFieldName,
         pop.demandFileEndTimeFieldName,
         pop.demandFileCountFieldName,
@@ -143,27 +145,40 @@ object DemandTablePopSampling extends LazyLogging {
     rng: Random,
     lookup: Map[String, Vector[EdgeId]]
   ): Option[Agent] = {
-    val lookupResult = (lookup.get(row.src), lookup.get(row.dst))
-    lookupResult match {
-      case (Some(srcEdges), Some(dstEdges)) =>
+    val staysInSrcZone = row.src == row.dst
+
+    @tailrec
+    def sampleDstNoRepeat(srcEdge: EdgeId, dstEdges: Vector[EdgeId]): EdgeId = {
+      val dstEdge = dstEdges(rng.nextInt(dstEdges.length))
+      if (dstEdge != srcEdge) dstEdge
+      else sampleDstNoRepeat(srcEdge, dstEdges)
+    }
+
+    def sampleLinks(srcZone: String, dstZone: String): Option[(EdgeId, EdgeId)] = {
+      (lookup.get(row.src), lookup.get(row.dst)) match {
+        case (Some(srcEdges), Some(dstEdges)) =>
+          if (srcZone == dstZone && srcEdges.lengthCompare(2) < 0) None // rare edge case, zone has 0/1 link
+          else {
+            val srcEdge = srcEdges(rng.nextInt(srcEdges.length))
+            val dstEdge = sampleDstNoRepeat(srcEdge, dstEdges)
+            Some((srcEdge, dstEdge))
+          }
+        case _ =>
+          None // src or dst zone didn't intersect with road network
+      }
+    }
+
+    sampleLinks(row.src, row.dst) match {
+      case Some((srcLoc, dstLoc)) =>
         // pick a random time in the provided range
         val startSec = row.start.toSecondOfDay
         val endSec   = row.end.toSecondOfDay
         val randSec = // time bins may wrap over midnight
           if (startSec < endSec) rng.between(startSec, endSec)
           else rng.between(startSec, 86400 + endSec) % 86400
-
-        // pick random start/end locations
-        val srcLoc = srcEdges(rng.nextInt(srcEdges.length))
-        val dstLoc = dstEdges(rng.nextInt(dstEdges.length))
-
         val randTime = LocalTime.ofSecondOfDay(randSec)
-        val agentId  = s"${row.src}-${row.dst}-$sampleId"
-        val src      = rng.nextInt(srcEdges.length)
-        val dst      = rng.nextInt(dstEdges.length)
-
-        val agent = Agent.singleTripAgent(agentId, srcLoc, dstLoc, randTime)
-
+        val agentId  = s"${row.src}-${row.dst}-${row.bin}-$sampleId"
+        val agent    = Agent.singleTripAgent(agentId, srcLoc, dstLoc, randTime)
         Some(agent)
       case _ =>
         None // src or dst zone didn't intersect with road network

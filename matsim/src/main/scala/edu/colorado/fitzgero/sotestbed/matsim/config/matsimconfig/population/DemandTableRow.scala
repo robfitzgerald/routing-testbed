@@ -5,7 +5,7 @@ import kantan.csv._
 import scala.util.Try
 import java.time.format.DateTimeFormatter
 
-final case class DemandTableRow(src: String, dst: String, start: LocalTime, end: LocalTime, cnt: Int)
+final case class DemandTableRow(src: String, dst: String, bin: String, start: LocalTime, end: LocalTime, cnt: Int)
 
 object DemandTableRow {
 
@@ -27,9 +27,10 @@ object DemandTableRow {
   def headerDecoder(
     srcCol: String,
     dstCol: String,
+    binNameCol: String,
     startCol: String,
     endCol: String,
     cntCol: String
   ): HeaderDecoder[DemandTableRow] =
-    HeaderDecoder.decoder(srcCol, dstCol, startCol, endCol, cntCol) { DemandTableRow.apply }
+    HeaderDecoder.decoder(srcCol, dstCol, binNameCol, startCol, endCol, cntCol) { DemandTableRow.apply }
 }

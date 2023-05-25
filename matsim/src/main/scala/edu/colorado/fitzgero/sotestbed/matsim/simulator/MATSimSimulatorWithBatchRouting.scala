@@ -48,6 +48,7 @@ import org.matsim.core.trafficmonitoring.TravelTimeCalculator
 import org.matsim.vehicles.Vehicle
 import org.matsim.core.router.util.TravelTime
 import edu.colorado.fitzgero.sotestbed.matsim.simulator.flowhandler.RoadNetworkFlowHandler
+import org.matsim.core.controler.OutputDirectoryHierarchy.OverwriteFileSetting
 
 /**
   * performs [[HandCrankedSimulator]] on a MATSim simulation which allows it to be used in a [[edu.colorado.fitzgero.sotestbed.experiment.RoutingExperiment]]
@@ -171,6 +172,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       matsimConfig.plans.setInputFile(config.populationFilepath.toString)
       matsimConfig.network.setInputFile(config.io.matsimNetworkFile.toString)
       matsimConfig.controler.setLastIteration(config.routing.selfish.lastIteration)
+      matsimConfig.controler.setOverwriteFileSetting(OverwriteFileSetting.overwriteExistingFiles)
 
       // start MATSim and capture object references to simulation in broader MATSimActor scope
       self.controler = new Controler(matsimConfig)
@@ -202,6 +204,8 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
         config.routing.maxPathAssignments,
         config.routing.minimumReplanningWaitTime
       )
+
+      logger.info("adding custom MATSim listeners and modules")
 
       // track iterations in MATSimProxy
       self.controler.addControlerListener(new IterationStartsListener {
@@ -297,12 +301,14 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
               def notifyMobsimInitialized(e: MobsimInitializedEvent[_ <: Mobsim]): Unit = {
 
+                logger.info(s"mobsim initialized. adding custom routing module")
                 self.qSim = e.getQueueSimulation.asInstanceOf[QSim]
                 // must wait until MATSim is running to add these extensions
                 self.playPauseSimulationControl = new PlayPauseControlSecondStepper(self.qSim)
                 self.playPauseSimulationControl.pause()
 
                 // initialize our travel time estimqation logic (as a free-flow speed lookup at time "0")
+
                 self.roadNetworkFlowHandler = new RoadNetworkFlowHandler(self.qSim)
                 self.roadNetworkFlowHandler
                   .updateAndCollectLinkObservations(SimTime.Zero - self.minimumNetworkUpdateThreshold)
@@ -526,6 +532,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
       })
 
       self.matsimState = HandCrankedSimulator.SimulatorState.Initialized
+      logger.info("finished hand crank simulator wrapper initialization")
       ()
     })
 
@@ -537,8 +544,8 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
     matsimState match {
       case SimulatorState.Initialized =>
-        IO {
-          logger.debug("initializing MATSim")
+        IO.fromTry(Try {
+          logger.info("booting up MATSim Controler thread")
 
           t = new Thread(controler)
           t.setUncaughtExceptionHandler(new UncaughtExceptionHandler {
@@ -559,7 +566,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
                 Try { Thread.sleep(100) } match {
                   case Success(()) => ()
                   case Failure(e) =>
-                    logger.error("attempting to activate MATSim in child thread, failed:")
+                    logger.error("attempting to activate MATSim in child thread failed:")
                     throw e
                 }
             }
@@ -568,12 +575,12 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
           matsimState = SimulatorState.Running
 
-          logger.debug("reached point where simulator can hand off to experiment runner")
+          logger.info("MATSim now running")
           ()
-        }
+        })
 
       case SimulatorState.Running =>
-        IO {
+        IO.fromTry(Try {
           // crank matsim
 
           val iterationBeforeCrank: Int = observedMATSimIteration
@@ -687,7 +694,7 @@ trait MATSimSimulatorWithBatchRouting extends HandCrankedSimulator[IO] with Lazy
 
           // done cranking
           ()
-        }
+        })
 
       case x =>
         val exception = new IllegalStateException(s"advance function should never see matsim simulation in state '$x'")
